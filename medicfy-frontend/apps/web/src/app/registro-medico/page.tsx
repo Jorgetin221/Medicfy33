@@ -1,0 +1,164 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { registerDoctorSchema, emailVerifySchema, type RegisterDoctorInput, type EmailVerifyInput } from "@medicfy/contracts";
+import { apiFetch } from "@/lib/api-client";
+import { useSpecialties } from "@/lib/use-specialties";
+import { Button } from "@/components/ui/button";
+import { FieldWrapper, TextInput, SelectInput } from "@/components/ui/field";
+import { Card, ErrorState } from "@/components/ui/states";
+import { Aviso } from "@/components/ui/alert";
+
+// PUB-03. M1-RN-002: registro de médico, queda en verification_status
+// = SUBMITTED tras verificar su email — la verificación de cédula es
+// manual por admin (M2), no ocurre en esta pantalla.
+export default function RegistroMedicoPage() {
+  const router = useRouter();
+  const [step, setStep] = useState<"form" | "verify" | "done">("form");
+  const [userId, setUserId] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<unknown>(null);
+
+  const { specialties, isLoading: specialtiesLoading, error: specialtiesError } = useSpecialties();
+
+  const form = useForm<RegisterDoctorInput>({ resolver: zodResolver(registerDoctorSchema) });
+
+  async function onSubmit(values: RegisterDoctorInput) {
+    setSubmitError(null);
+    try {
+      const res = await apiFetch<{ userId: string }>("/auth/register/doctor", { method: "POST", body: values });
+      setUserId(res.userId);
+      setStep("verify");
+    } catch (error) {
+      setSubmitError(error);
+    }
+  }
+
+  if (step === "verify" && userId) {
+    return <VerifyEmailStep userId={userId} onVerified={() => setStep("done")} />;
+  }
+
+  if (step === "done") {
+    return (
+      <main className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-4 p-6 text-center">
+        <h1 className="font-heading text-2xl text-brand-900">Cuenta creada</h1>
+        <Aviso variant="exito" title="Correo verificado">
+          Un administrador revisará tu cédula profesional antes de que puedas recibir pacientes.
+        </Aviso>
+        <Button onClick={() => router.push("/login")}>Ir a iniciar sesión</Button>
+      </main>
+    );
+  }
+
+  return (
+    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-6 p-6">
+      <div>
+        <h1 className="font-heading text-2xl text-brand-900">Registro de médico</h1>
+        <p className="text-base text-gray-500">Crea tu cuenta para empezar a usar Medicfy.</p>
+      </div>
+
+      <Card>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-4" noValidate>
+          <FieldWrapper label="Correo electrónico" htmlFor="email" error={form.formState.errors.email?.message}>
+            <TextInput id="email" type="email" error={!!form.formState.errors.email} {...form.register("email")} />
+          </FieldWrapper>
+
+          <FieldWrapper label="Contraseña" htmlFor="password" error={form.formState.errors.password?.message} hint="Mínimo 12 caracteres.">
+            <TextInput id="password" type="password" error={!!form.formState.errors.password} {...form.register("password")} />
+          </FieldWrapper>
+
+          <div className="grid grid-cols-2 gap-4">
+            <FieldWrapper label="Nombre(s)" htmlFor="legalFirstName" error={form.formState.errors.legalFirstName?.message}>
+              <TextInput id="legalFirstName" error={!!form.formState.errors.legalFirstName} {...form.register("legalFirstName")} />
+            </FieldWrapper>
+            <FieldWrapper label="Apellidos" htmlFor="legalLastName" error={form.formState.errors.legalLastName?.message}>
+              <TextInput id="legalLastName" error={!!form.formState.errors.legalLastName} {...form.register("legalLastName")} />
+            </FieldWrapper>
+          </div>
+
+          <FieldWrapper
+            label="Cédula profesional"
+            htmlFor="professionalLicense"
+            error={form.formState.errors.professionalLicense?.message}
+          >
+            <TextInput
+              id="professionalLicense"
+              error={!!form.formState.errors.professionalLicense}
+              {...form.register("professionalLicense")}
+            />
+          </FieldWrapper>
+
+          <FieldWrapper
+            label="Especialidad principal"
+            htmlFor="primarySpecialtyCode"
+            error={form.formState.errors.primarySpecialtyCode?.message ?? (specialtiesError ? "No se pudo cargar el catálogo." : undefined)}
+          >
+            <SelectInput
+              id="primarySpecialtyCode"
+              disabled={specialtiesLoading}
+              error={!!form.formState.errors.primarySpecialtyCode}
+              {...form.register("primarySpecialtyCode")}
+            >
+              <option value="">{specialtiesLoading ? "Cargando…" : "Selecciona una especialidad"}</option>
+              {specialties.map((s) => (
+                <option key={s.code} value={s.code}>
+                  {s.nameEs}
+                </option>
+              ))}
+            </SelectInput>
+          </FieldWrapper>
+
+          <FieldWrapper label="Teléfono" htmlFor="phone" error={form.formState.errors.phone?.message} hint="+52 y 10 dígitos.">
+            <TextInput id="phone" type="tel" placeholder="+523312345678" error={!!form.formState.errors.phone} {...form.register("phone")} />
+          </FieldWrapper>
+
+          {submitError ? <ErrorState error={submitError} /> : null}
+
+          <Button type="submit" isLoading={form.formState.isSubmitting}>
+            Crear cuenta
+          </Button>
+        </form>
+      </Card>
+    </main>
+  );
+}
+
+function VerifyEmailStep({ userId, onVerified }: { userId: string; onVerified: () => void }) {
+  const [error, setError] = useState<unknown>(null);
+  const form = useForm<Omit<EmailVerifyInput, "userId">>({
+    resolver: zodResolver(emailVerifySchema.omit({ userId: true })),
+    defaultValues: { code: "" },
+  });
+
+  async function onSubmit(values: Omit<EmailVerifyInput, "userId">) {
+    setError(null);
+    try {
+      await apiFetch("/auth/email/verify", { method: "POST", body: { userId, ...values } });
+      onVerified();
+    } catch (err) {
+      setError(err);
+    }
+  }
+
+  return (
+    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-6 p-6">
+      <div>
+        <h1 className="font-heading text-2xl text-brand-900">Verifica tu correo</h1>
+        <p className="text-base text-gray-500">Te enviamos un código de 6 dígitos.</p>
+      </div>
+      <Card>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-4" noValidate>
+          <FieldWrapper label="Código" htmlFor="code" error={form.formState.errors.code?.message}>
+            <TextInput id="code" inputMode="numeric" maxLength={6} error={!!form.formState.errors.code} {...form.register("code")} />
+          </FieldWrapper>
+          {error ? <ErrorState error={error} /> : null}
+          <Button type="submit" isLoading={form.formState.isSubmitting}>
+            Verificar
+          </Button>
+        </form>
+      </Card>
+    </main>
+  );
+}

@@ -1,0 +1,85 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Sistema de diseño "Parte A" (documento de UX, ago 2026). Mismos
+     nombres de token que antes — solo cambian los valores — para que
+     ninguna clase Tailwind existente (brand-*, gray-*, danger-*...)
+     necesite tocarse en cada pantalla ya construida. */
+  --brand-900: #0e2a5c;
+  --brand-700: #1b4db1;
+  --brand-500: #2e63ce;
+  --brand-100: #e4ecfb;
+
+  --gray-900: #101623;
+  --gray-700: #333d4f;
+  --gray-500: #5c687c;
+  --gray-300: #d7dde7;
+  --gray-100: #f4f7fb;
+  --white: #ffffff;
+
+  --danger-600: #b3261e;
+  --danger-050: #fdecea;
+  --warn-600: #8a5a00;
+  --warn-050: #fdf4e3;
+  --success-600: #136b47;
+  --success-050: #e7f5ef;
+  /* Reservado exclusivamente a alertas de seguridad del paciente. Nunca
+     se usa en errores de formulario — ver CLAUDE.md §5. El documento de
+     UX solo define un rojo semántico (crítico); el valor es el mismo
+     que danger-600 a propósito — la separación es de gobernanza de uso,
+     no de matiz visual. */
+  --critical-600: #b3261e;
+  --critical-050: #fdecea;
+
+  --font-heading: var(--font-heading-family), "Archivo", sans-serif;
+  --font-body: var(--font-body-family), "Source Sans 3", sans-serif;
+  /* Reservada al wordmark "Medicfy" y material de marketing — nunca al
+     resto de la interfaz de producto. */
+  --font-brand: var(--font-brand-family), "Montserrat", sans-serif;
+  /* Sin Google Font importada todavía: nada en este pase consume cifras
+     clínicas tabulares. Se importa IBM Plex Mono cuando exista un
+     consumidor real (CintaSignosVitales, CSL-01). */
+  --font-mono: ui-monospace, "SFMono-Regular", "IBM Plex Mono", Menlo, monospace;
+
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-base: 16px;
+  --text-lg: 18px;
+  --text-xl: 22px;
+  --text-2xl: 28px;
+  --text-3xl: 36px;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 16px;
+  --radius-full: 9999px;
+
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+body {
+  font-family: var(--font-body);
+  color: var(--gray-900);
+  background: var(--white);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+/* Entrada sutil para el hero (PUB-01) — gateada por motion-safe: en el
+   markup, así que un usuario con "reducir movimiento" nunca la ve. */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}

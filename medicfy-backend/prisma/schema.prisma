@@ -1,0 +1,1321 @@
+// Models are added module by module, starting with M1 (identity),
+// per the order of work in CLAUDE.md §4.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider          = "postgresql"
+  url               = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+}
+
+// ─── M1 — Identidad, cuentas y sesión (spec §6.1, §7 M1) ───
+
+enum UserStatus {
+  PENDING_EMAIL
+  ACTIVE
+  SUSPENDED
+  DEACTIVATED
+
+  @@map("user_status")
+}
+
+// PATIENT is the only role that never requires MFA (M1-RN-005).
+enum RoleName {
+  PATIENT
+  DOCTOR
+  ASSISTANT
+  LAB
+  SUPPORT
+  ADMIN
+  SUPERADMIN
+
+  @@map("role_name")
+}
+
+enum ConsentType {
+  PRIVACY_NOTICE
+  SENSITIVE_DATA
+  TELEMEDICINE
+  DIGITAL_PRESCRIPTION_CHANNEL
+  MARKETING
+
+  @@map("consent_type")
+}
+
+// Minimal M1/M2 boundary: only what M1-RN-002 and M1-CA-003 need to gate
+// clinical actions on verification status. Full profile, documents,
+// locations and services arrive with M2.
+enum DoctorVerificationStatus {
+  DRAFT
+  SUBMITTED
+  IN_REVIEW
+  VERIFIED
+  // Parte B §5.2 [AGREGAR]: cédula profesional verificada, certificado
+  // de especialidad todavía no. Opera con todo salvo que la
+  // especialidad se muestre como verificada en perfil/documentos.
+  VERIFIED_SPECIALTY_UNCONFIRMED
+  REJECTED
+  SUSPENDED
+
+  @@map("doctor_verification_status")
+}
+
+enum VerificationChannel {
+  EMAIL
+  PHONE
+
+  @@map("verification_channel")
+}
+
+enum AssistantInvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+
+  @@map("assistant_invitation_status")
+}
+
+enum AuditResult {
+  SUCCESS
+  DENIED
+
+  @@map("audit_result")
+}
+
+model User {
+  id                     String     @id @default(uuid())
+  email                  String     @unique
+  phoneE164              String?
+  passwordHash           String
+  primaryRole            RoleName
+  status                 UserStatus @default(PENDING_EMAIL)
+  emailVerifiedAt        DateTime?  @db.Timestamptz(3)
+  phoneVerifiedAt        DateTime?  @db.Timestamptz(3)
+  mfaEnabled             Boolean    @default(false)
+  mfaSecretEncrypted     String?
+  mfaBackupCodesHashed   String[]   @default([])
+  // M1-RN-005: MFA becomes mandatory (for roles that require it) once
+  // this counter reaches 3 successful logins without MFA enrolled.
+  loginsWithoutMfa       Int        @default(0)
+  // M1-RN-006: brute-force lockout. lockoutCount drives the exponential
+  // backoff (15min * 2^lockoutCount), and resets on a successful login.
+  failedLoginAttempts    Int        @default(0)
+  lockedUntil            DateTime?  @db.Timestamptz(3)
+  lockoutCount           Int        @default(0)
+  lastLoginAt            DateTime?  @db.Timestamptz(3)
+  lastLoginIp            String?
+  acceptedTermsVersion   String?
+  acceptedPrivacyVersion String?
+  acceptedAt             DateTime?  @db.Timestamptz(3)
+  createdAt              DateTime   @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime   @updatedAt @db.Timestamptz(3)
+
+  roles             UserRole[]
+  consents          Consent[]
+  sessions          Session[]
+  doctor            Doctor?
+  patient           Patient?
+  invitations       AssistantInvitation[] @relation("InvitingDoctor")
+  verificationCodes VerificationCode[]
+  passwordResets    PasswordResetToken[]
+
+  @@map("users")
+}
+
+// A user can hold several roles (M1-RN-001); scope_id lets a role be
+// scoped to a clinic/lab when that becomes relevant (v1.1+).
+model UserRole {
+  id        String   @id @default(uuid())
+  userId    String
+  role      RoleName
+  scopeId   String?
+  grantedBy String?
+  grantedAt DateTime @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, role, scopeId])
+  @@map("user_roles")
+}
+
+// Append-only per M1-RN-003/004 and R2: "el historial nunca se
+// sobrescribe". Revoking consent is a new row with granted=false, never
+// an UPDATE. Enforced at the PostgreSQL GRANT level in the migration
+// (medicfy_app has only INSERT+SELECT here), same pattern as
+// clinical_notes.
+model Consent {
+  id              String      @id @default(uuid())
+  userId          String
+  consentType     ConsentType
+  documentVersion String
+  granted         Boolean
+  ipAddress       String
+  userAgent       String
+  evidenceHash    String
+  createdAt       DateTime    @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("consents")
+}
+
+// M1-RN-007: access token 15 min (not persisted — stateless JWT).
+// Refresh token is persisted, rotated on use, capped at 30 days
+// absolute (expiresAt), and additionally subject to a role-based
+// inactivity window enforced in application code (30 min for clinical
+// roles, 7 days for patients) using lastUsedAt.
+model Session {
+  id                String    @id @default(uuid())
+  userId            String
+  refreshTokenHash  String    @unique
+  deviceFingerprint String?
+  ip                String?
+  userAgent         String?
+  createdAt         DateTime  @default(now()) @db.Timestamptz(3)
+  lastUsedAt        DateTime  @default(now()) @db.Timestamptz(3)
+  expiresAt         DateTime  @db.Timestamptz(3)
+  revokedAt         DateTime? @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("sessions")
+}
+
+// M2 §6.3: full doctor profile. legalFirstName, legalLastName,
+// professionalLicense, specialtyLicense and primarySpecialtyId are
+// immutable once verificationStatus=VERIFIED (AUTH-RN-004, M2-RN-001,
+// M2-CA-002) — enforced in DoctorProfileService, not here.
+model Doctor {
+  id                      String                   @id @default(uuid())
+  userId                  String                   @unique
+  legalFirstName          String
+  legalLastName           String
+  professionalLicense     String                   @unique
+  specialtyLicense        String?
+  primarySpecialtyId      String?
+  displayName             String?
+  photoUrl                String?
+  biography               String?
+  // Parte B §5.1: datos de contacto que aparecen en el encabezado de
+  // receta/orden — distintos del correo/teléfono de la cuenta (login),
+  // que vive en User. Siempre editables (no son campos legales).
+  professionalPhone       String?
+  professionalEmail       String?
+  // Parte B §1.2: "logo o frase de encabezado" — una u otra, nunca las
+  // dos a la fuerza. logoUrl/signatureImageUrl guardan el fileKey
+  // interno de FileStoragePort (mismo patrón que DoctorDocument.fileKey),
+  // no una URL pública real todavía.
+  letterheadPhrase        String?
+  logoUrl                 String?
+  signatureImageUrl       String?
+  secondarySpecialtyIds   String[]                 @default([])
+  yearsExperience         Int?
+  languages               String[]                 @default([])
+  university              String?
+  verificationStatus      DoctorVerificationStatus @default(SUBMITTED)
+  verificationNotes       String?
+  verifiedByUserId        String?
+  verifiedAt              DateTime?                @db.Timestamptz(3)
+  // M2-RN-004: needs >=1 active location OR teleconsultation to
+  // receive appointments (enforced when M5 books one, not here).
+  acceptsTeleconsultation Boolean                  @default(false)
+  acceptsNewPatients      Boolean                  @default(true)
+  // M4-RN-005: antelación mínima y ventana máxima de agenda,
+  // configurables por médico. Editable via PATCH /doctors/me like any
+  // other non-legal field (AUTH-RN-004: el médico sí edita "horarios").
+  minBookingNoticeMinutes Int                      @default(120)
+  maxBookingWindowDays    Int                      @default(90)
+  // M5-RN-002: "configurable por médico". NULL means the spec's own
+  // default applies (>24h 100%, 2-24h 50%, <2h/no-show 0%) — see
+  // apps/api/.../cancellation-policy.ts for the shared shape/default,
+  // used both here and to build each appointment's immutable
+  // snapshot at creation (M5-CA-003).
+  cancellationPolicy      Json?
+  // Populated by M6 (billing) — placeholder columns only, per §6.3.
+  subscriptionPlan        String?
+  subscriptionStatus      String?
+  createdAt               DateTime                 @default(now()) @db.Timestamptz(3)
+  updatedAt               DateTime                 @updatedAt @db.Timestamptz(3)
+
+  user                   User                    @relation(fields: [userId], references: [id])
+  primarySpecialty       Specialty?              @relation(fields: [primarySpecialtyId], references: [id])
+  documents              DoctorDocument[]
+  locations              PracticeLocation[]
+  services               DoctorService[]
+  availabilityRules      AvailabilityRule[]
+  availabilityExceptions AvailabilityException[]
+  careRelationships      CareRelationship[]
+  appointments           Appointment[]
+  encounters             ClinicalEncounter[]
+  prescriptions          Prescription[]
+  labOrders              LabOrder[]
+  noteTemplates          NoteTemplate[]
+
+  @@map("doctors")
+}
+
+// M8-RN-014 publishes schemas for exactly these four in v1.0; the
+// catalog itself (M2) is broader in principle but seeded with only
+// these per YAGNI — more rows are just data, not a migration.
+model Specialty {
+  id                       String   @id @default(uuid())
+  code                     String   @unique
+  nameEs                   String
+  cieGroup                 String?
+  isActive                 Boolean  @default(true)
+  requiresSpecialtyLicense Boolean  @default(true)
+  createdAt                DateTime @default(now()) @db.Timestamptz(3)
+
+  doctors Doctor[]
+  fieldSchemas SpecialtyFieldSchema[]
+
+  @@map("specialties")
+}
+
+enum DoctorDocumentType {
+  CEDULA_PROFESIONAL
+  CEDULA_ESPECIALIDAD
+  INE
+  CV
+  CERTIFICADO_CONSEJO
+  COMPROBANTE_DOMICILIO
+
+  @@map("doctor_document_type")
+}
+
+enum DoctorDocumentReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+
+  @@map("doctor_document_review_status")
+}
+
+// M2-CA-003: admin verification queue reviews these, hash included.
+model DoctorDocument {
+  id              String                     @id @default(uuid())
+  doctorId        String
+  docType         DoctorDocumentType
+  fileKey         String
+  fileHashSha256  String
+  uploadedAt      DateTime                   @default(now()) @db.Timestamptz(3)
+  reviewStatus    DoctorDocumentReviewStatus @default(PENDING)
+  reviewedBy      String?
+  reviewedAt      DateTime?                  @db.Timestamptz(3)
+  rejectionReason String?
+
+  doctor Doctor @relation(fields: [doctorId], references: [id])
+
+  @@map("doctor_documents")
+}
+
+model PracticeLocation {
+  id                  String   @id @default(uuid())
+  doctorId            String
+  name                String
+  addressStreet       String?
+  addressExt          String?
+  addressInt          String?
+  addressColonia      String?
+  addressMunicipality String?
+  addressState        String?
+  addressPostalCode   String?
+  latitude            Float?
+  longitude           Float?
+  phone               String?
+  isPrimary           Boolean  @default(false)
+  isActive            Boolean  @default(true)
+  createdAt           DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime @updatedAt @db.Timestamptz(3)
+
+  doctor            Doctor             @relation(fields: [doctorId], references: [id])
+  services          DoctorService[]
+  availabilityRules AvailabilityRule[]
+  appointments      Appointment[]
+
+  @@map("practice_locations")
+}
+
+enum ServiceType {
+  FIRST_VISIT
+  FOLLOW_UP
+  TELECONSULTATION
+  PROCEDURE
+
+  @@map("service_type")
+}
+
+// M2-RN-003: prices are private by default, never in a public
+// response (M2-CA-001) — enforced by never including them in any
+// public-facing serializer, not by a DB-level mechanism.
+enum PriceVisibility {
+  PRIVATE
+  SHARED_ON_BOOKING
+
+  @@map("price_visibility")
+}
+
+model DoctorService {
+  id              String          @id @default(uuid())
+  doctorId        String
+  locationId      String?
+  serviceType     ServiceType
+  name            String
+  durationMinutes Int
+  // CLAUDE.md §4: "Dinero: enteros en centavos, nunca float."
+  priceMxnCents   Int
+  currency        String          @default("MXN")
+  priceVisibility PriceVisibility @default(PRIVATE)
+  isActive        Boolean         @default(true)
+  createdAt       DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime        @updatedAt @db.Timestamptz(3)
+
+  doctor       Doctor            @relation(fields: [doctorId], references: [id])
+  location     PracticeLocation? @relation(fields: [locationId], references: [id])
+  appointments Appointment[]
+
+  @@map("doctor_services")
+}
+
+enum AppointmentModality {
+  IN_PERSON
+  ONLINE
+
+  @@map("appointment_modality")
+}
+
+// M4 §6.4: recurrencia semanal. weekday sigue la convención de
+// JS Date#getDay() (0=domingo..6=sábado) para evitar una traducción
+// extra entre el borde de la API y el cómputo de espacios en el
+// servidor. start/endMinute son minutos desde medianoche LOCAL
+// (America/Mexico_City, sin fecha ni zona horaria en el dato mismo —
+// M4-RN-001 exige que el cálculo de horario nunca ocurra en el
+// navegador, no que el dato cargue su propia zona) — evita las
+// ambigüedades de un tipo TIME de Postgres serializado por el driver.
+model AvailabilityRule {
+  id                  String              @id @default(uuid())
+  doctorId            String
+  locationId          String?
+  modality            AppointmentModality
+  weekday             Int
+  startMinute         Int
+  endMinute           Int
+  slotDurationMinutes Int
+  bufferMinutes       Int                 @default(0)
+  validFrom           DateTime            @db.Date
+  validUntil          DateTime?           @db.Date
+  isActive            Boolean             @default(true)
+  createdAt           DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime            @updatedAt @db.Timestamptz(3)
+
+  doctor   Doctor            @relation(fields: [doctorId], references: [id])
+  location PracticeLocation? @relation(fields: [locationId], references: [id])
+
+  @@map("availability_rules")
+}
+
+// M4 §6.4: bloqueos y vacaciones. startAt/endAt are TIMESTAMPTZ,
+// unlike AvailabilityRule's weekly recurrence fields, because an
+// exception is a one-off instant in time, not a wall-clock pattern.
+model AvailabilityException {
+  id           String   @id @default(uuid())
+  doctorId     String
+  startAt      DateTime @db.Timestamptz(3)
+  endAt        DateTime @db.Timestamptz(3)
+  reason       String?
+  blocksAllDay Boolean  @default(false)
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+
+  doctor Doctor @relation(fields: [doctorId], references: [id])
+
+  @@map("availability_exceptions")
+}
+
+// ─── M5a — Pacientes y citas (núcleo) ───
+
+enum PatientSource {
+  SELF_SIGNUP
+  CREATED_BY_DOCTOR
+
+  @@map("patient_source")
+}
+
+enum SexAtBirth {
+  F
+  M
+
+  @@map("sex_at_birth")
+}
+
+// M5-RN-008: birthDate/sexAtBirth/phoneE164/email are the minimum
+// required at registration ("nombre, teléfono, email, fecha de
+// nacimiento") — everything address/emergency-contact is optional,
+// same pattern as PracticeLocation's address fields. medicfyId is
+// generated from the patients_medicfy_id_seq sequence (see migration)
+// — a Postgres sequence, not app-level counting, so it stays correct
+// under concurrent patient creation.
+model Patient {
+  id                       String        @id @default(uuid())
+  userId                   String?       @unique
+  medicfyId                String        @unique
+  firstName                String
+  lastNamePaternal         String
+  lastNameMaternal         String?
+  birthDate                DateTime      @db.Date
+  sexAtBirth               SexAtBirth
+  genderIdentity           String?
+  curp                     String?
+  bloodType                String?
+  phoneE164                String
+  email                    String
+  addressStreet            String?
+  addressExt               String?
+  addressInt               String?
+  addressColonia           String?
+  addressMunicipality      String?
+  addressState             String?
+  addressPostalCode        String?
+  emergencyContactName     String?
+  emergencyContactPhone    String?
+  emergencyContactRelation String?
+  createdByUserId          String?
+  source                   PatientSource
+  createdAt                DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt                DateTime      @updatedAt @db.Timestamptz(3)
+
+  user              User?              @relation(fields: [userId], references: [id])
+  guardians         PatientGuardian[]
+  careRelationships CareRelationship[]
+  appointments      Appointment[]
+  allergies         PatientAllergy[]
+  medications       PatientMedication[]
+  encounters        ClinicalEncounter[]
+  attachments       ClinicalAttachment[]
+  prescriptions     Prescription[]
+  labOrders         LabOrder[]
+  labResults        LabResult[]
+
+  @@map("patients")
+}
+
+enum GuardianRelation {
+  MADRE
+  PADRE
+  TUTOR_LEGAL
+  OTRO
+
+  @@map("guardian_relation")
+}
+
+// §6.4 "Menor de edad" caso límite: obligatorio en alcance (piloto de
+// pediatría). El vínculo `guardianship` que ese texto describe ES esta
+// fila — no hay un modelo separado. La revocación automática al
+// cumplir 18 años (también en ese texto) se aplica en el momento del
+// acceso, no por un job de calendario — no hay BullMQ conectado
+// todavía (ver docs/CRITERIOS_DIFERIDOS.md, M2-CA-008), y comprobar
+// en el momento del acceso es correcto incluso sin scheduler: nunca
+// hay una ventana donde un tutor de un paciente que ya cumplió 18
+// años pase la verificación. Ver GuardianAccessService.
+model PatientGuardian {
+  id                    String           @id @default(uuid())
+  patientId             String
+  guardianName          String
+  guardianRelation      GuardianRelation
+  guardianCurp          String?
+  guardianPhoneE164     String
+  guardianEmail         String
+  // INE del tutor, cifrado — mismo mecanismo que DoctorDocument
+  // (FileStoragePort), solo la referencia vive aquí.
+  guardianIdDocumentKey String
+  consentGrantedAt      DateTime         @db.Timestamptz(3)
+  isPrimary             Boolean          @default(false)
+  revokedAt             DateTime?        @db.Timestamptz(3)
+  revokedReason         String?
+  createdAt             DateTime         @default(now()) @db.Timestamptz(3)
+
+  patient Patient @relation(fields: [patientId], references: [id])
+
+  @@map("patient_guardians")
+}
+
+enum CareRelationshipStatus {
+  ACTIVE
+  EXPIRED
+  REVOKED
+
+  @@map("care_relationship_status")
+}
+
+enum CareRelationshipOrigin {
+  APPOINTMENT
+  PATIENT_GRANTED
+  CREATED_BY_DOCTOR
+
+  @@map("care_relationship_origin")
+}
+
+// AUTH-RN-001: origin de las tres vías permitidas; expiresAt a 18
+// meses desde lastInteractionAt, revisado en el momento del acceso
+// (mismo patrón que PatientGuardian — sin scheduler todavía).
+model CareRelationship {
+  id                String                 @id @default(uuid())
+  patientId         String
+  doctorId          String
+  status            CareRelationshipStatus @default(ACTIVE)
+  origin            CareRelationshipOrigin
+  startedAt         DateTime               @default(now()) @db.Timestamptz(3)
+  lastInteractionAt DateTime               @default(now()) @db.Timestamptz(3)
+  expiresAt         DateTime               @db.Timestamptz(3)
+  revokedAt         DateTime?              @db.Timestamptz(3)
+  revokedBy         String?
+
+  patient Patient @relation(fields: [patientId], references: [id])
+  doctor  Doctor  @relation(fields: [doctorId], references: [id])
+
+  @@map("care_relationships")
+}
+
+enum AppointmentStatus {
+  PENDING_PAYMENT
+  SCHEDULED
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED_BY_PATIENT
+  CANCELLED_BY_DOCTOR
+  NO_SHOW
+
+  @@map("appointment_status")
+}
+
+enum AppointmentCreatedVia {
+  DOCTOR_PANEL
+  ASSISTANT
+  PATIENT_LINK
+  PUBLIC_DIRECTORY
+
+  @@map("appointment_created_via")
+}
+
+// §6.4. La restricción EXCLUDE USING gist (M4-CA-001, doble
+// agendamiento) se agrega a mano en la migración — Prisma no puede
+// expresarla en schema.prisma. paymentDeadlineAt/no-show: sin
+// scheduler todavía, se aplican como barrido perezoso (mismo patrón
+// que PatientGuardian/CareRelationship), no un cron real — ver
+// AppointmentStateMachineService.
+model Appointment {
+  id                         String                @id @default(uuid())
+  patientId                  String
+  doctorId                   String
+  locationId                 String?
+  serviceId                  String
+  modality                   AppointmentModality
+  startsAt                   DateTime              @db.Timestamptz(3)
+  endsAt                     DateTime              @db.Timestamptz(3)
+  timezone                   String                @default("America/Mexico_City")
+  status                     AppointmentStatus     @default(PENDING_PAYMENT)
+  createdByUserId            String
+  createdVia                 AppointmentCreatedVia
+  priceMxnCents              Int
+  // Populated by M6 (billing) — placeholder column, per §6.3's own
+  // pattern for fields a not-yet-built module will own.
+  paymentReference           String?
+  paymentDeadlineAt          DateTime?             @db.Timestamptz(3)
+  videoRoomUrl               String?
+  videoProviderRef           String?
+  cancellationReason         String?
+  cancelledAt                DateTime?             @db.Timestamptz(3)
+  cancelledByUserId          String?
+  reminder24hSentAt          DateTime?             @db.Timestamptz(3)
+  reminder2hSentAt           DateTime?             @db.Timestamptz(3)
+  rescheduledFromId          String?               @unique
+  // M5-RN-004: máximo 2 reagendas por cita — cuenta heredada +1 en
+  // cada reagenda, validada contra el tope en el servicio.
+  rescheduleCount            Int                   @default(0)
+  // M5-RN-002/M5-CA-003: snapshot inmutable de la política vigente al
+  // momento de crear la cita — nunca se resuelve por join a
+  // doctors.cancellationPolicy después.
+  cancellationPolicySnapshot Json
+  // M5-RN-006: excepción explícita del texto de la spec — "consulta
+  // sin nota" con justificación. M8 (nota clínica firmada) no existe
+  // todavía, así que hoy esta es la ÚNICA ruta a completed; cuando M8
+  // exista, la ruta real (nota firmada) se vuelve la primaria y esta
+  // queda como la excepción documentada que la spec ya preveía.
+  completedWithoutNoteReason String?
+  createdAt                  DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt                  DateTime              @updatedAt @db.Timestamptz(3)
+
+  patient         Patient                    @relation(fields: [patientId], references: [id])
+  doctor          Doctor                     @relation(fields: [doctorId], references: [id])
+  location        PracticeLocation?          @relation(fields: [locationId], references: [id])
+  service         DoctorService              @relation(fields: [serviceId], references: [id])
+  rescheduledFrom Appointment?               @relation("AppointmentReschedule", fields: [rescheduledFromId], references: [id])
+  rescheduledTo   Appointment?               @relation("AppointmentReschedule")
+  statusHistory   AppointmentStatusHistory[]
+  encounter       ClinicalEncounter?
+
+  @@map("appointments")
+}
+
+// M5-RN-001: "Toda transición se registra... sin excepciones" — mismo
+// mecanismo de solo-INSERT+SELECT bajo GRANT que clinical_notes,
+// consents y audit_log (M15-RN-001), aplicado aquí porque la propia
+// spec llama append-only a esta tabla en §6.4, no porque R1 la
+// nombre literalmente (R1 nombra 4 tablas; el mecanismo ya se aplicó
+// antes a consents, que tampoco está en esa lista literal).
+model AppointmentStatusHistory {
+  id              String             @id @default(uuid())
+  appointmentId   String
+  fromStatus      AppointmentStatus?
+  toStatus        AppointmentStatus
+  changedByUserId String?
+  reason          String?
+  changedAt       DateTime           @default(now()) @db.Timestamptz(3)
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id])
+
+  @@map("appointment_status_history")
+}
+
+// M1-RN-008: up to 3 pending invitations per doctor, 72h expiry —
+// enforced in application code (AssistantInvitationService).
+model AssistantInvitation {
+  id               String                    @id @default(uuid())
+  doctorUserId     String
+  email            String
+  token            String                    @unique
+  status           AssistantInvitationStatus @default(PENDING)
+  expiresAt        DateTime                  @db.Timestamptz(3)
+  acceptedAt       DateTime?                 @db.Timestamptz(3)
+  acceptedByUserId String?
+  createdAt        DateTime                  @default(now()) @db.Timestamptz(3)
+
+  doctorUser User @relation("InvitingDoctor", fields: [doctorUserId], references: [id])
+
+  @@map("assistant_invitations")
+}
+
+// Registration flow step 2: 6-digit code, 10 min validity.
+model VerificationCode {
+  id         String              @id @default(uuid())
+  userId     String
+  channel    VerificationChannel
+  codeHash   String
+  expiresAt  DateTime            @db.Timestamptz(3)
+  consumedAt DateTime?           @db.Timestamptz(3)
+  createdAt  DateTime            @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("verification_codes")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime  @db.Timestamptz(3)
+  usedAt    DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("password_reset_tokens")
+}
+
+// M1-scoped subset of spec §6.9. Hash-chaining columns
+// (prev_entry_hash/entry_hash) arrive with M15. No FK to users:
+// audit_log must accept an entry even when the actor can't be
+// resolved (e.g. a login attempt against an email that doesn't
+// exist), matching the spec's own polymorphic resource_type/
+// resource_id design. Append-only per M15-RN-001, same GRANT pattern
+// as consents and clinical_notes.
+model AuditLog {
+  id            String      @id @default(uuid())
+  actorUserId   String?
+  actorRole     String?
+  action        String
+  resourceType  String
+  resourceId    String?
+  // M8 (§7.15/R3): columna dedicada, no enterrada en metadata — la
+  // matriz de permisos exige que un médico pueda consultar "bitácora
+  // de accesos a sus pacientes" de forma eficiente. Sin @relation,
+  // mismo motivo que actorUserId: audit_log debe aceptar la fila
+  // aunque el paciente referenciado ya no se pueda resolver.
+  patientId     String?
+  ipAddress     String?
+  userAgent     String?
+  requestId     String?
+  justification String?
+  result        AuditResult
+  metadata      Json?
+  occurredAt    DateTime    @default(now()) @db.Timestamptz(3)
+
+  @@index([patientId])
+  @@map("audit_log")
+}
+
+// ─── M8 — Expediente clínico electrónico (spec §6.5, NOM-004) ───
+//
+// Reemplaza el placeholder ClinicalNote que existía antes de este
+// cambio (probaba solo el mecanismo append-only vía GRANT). Mismo
+// mecanismo aplicado aquí a clinical_notes, prescriptions y
+// lab_orders — ver la migración de este cambio para las sentencias
+// GRANT/REVOKE.
+
+enum EncounterType {
+  FIRST_VISIT
+  FOLLOW_UP
+  TELECONSULTATION
+  URGENT
+
+  @@map("encounter_type")
+}
+
+enum EncounterStatus {
+  DRAFT
+  SIGNED
+
+  @@map("encounter_status")
+}
+
+enum SignatureMethod {
+  // M9-RN-009/§3.2: única implementación construida en este pase.
+  INTERNAL_SYSTEM
+  // Variante del enum sin implementación detrás — bloqueada por
+  // decisión legal pendiente (spec congelada §3.2).
+  ADVANCED_EFIRMA
+
+  @@map("signature_method")
+}
+
+// M8-RN-002: draft autoguardado cada 10s, editable libremente. Al
+// firmar se congela: se calcula contentHashSha256 y se encadena con
+// previousHashSha256 del encuentro firmado anterior del mismo paciente
+// (M8-CA-004). M8-RN-003: un draft sin firmar >72h se marca abandonado,
+// evaluado en el momento del acceso — sin scheduler todavía, mismo
+// patrón que CareRelationship/PatientGuardian.
+model ClinicalEncounter {
+  id                 String           @id @default(uuid())
+  patientId          String
+  doctorId           String
+  appointmentId      String?          @unique
+  encounterType      EncounterType
+  // M8-RN-002: aquí vive el autoguardado mientras status=DRAFT — no
+  // en clinical_notes, que el GRANT de Postgres ya vuelve
+  // verdaderamente append-only (ni siquiera medicfy_app puede
+  // UPDATE-earla). ClinicalNote se inserta una sola vez, completa, al
+  // firmar (ver ClinicalEncounterService.sign).
+  draftContent       Json             @default("{}")
+  status             EncounterStatus  @default(DRAFT)
+  startedAt          DateTime         @default(now()) @db.Timestamptz(3)
+  endedAt            DateTime?        @db.Timestamptz(3)
+  signedAt           DateTime?        @db.Timestamptz(3)
+  signedByUserId     String?
+  signatureMethod    SignatureMethod?
+  contentHashSha256  String?
+  previousHashSha256 String?
+  abandonedAt        DateTime?        @db.Timestamptz(3)
+  createdAt          DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime         @updatedAt @db.Timestamptz(3)
+
+  patient       Patient                 @relation(fields: [patientId], references: [id])
+  doctor        Doctor                  @relation(fields: [doctorId], references: [id])
+  appointment   Appointment?            @relation(fields: [appointmentId], references: [id])
+  notes         ClinicalNote[]
+  diagnoses     EncounterDiagnosis[]
+  attachments   ClinicalAttachment[]
+  prescriptions Prescription[]
+  labOrders     LabOrder[]
+  specialtyData EncounterSpecialtyData?
+
+  @@map("clinical_encounters")
+}
+
+// Estructura NOM-004 mínima. NO HAY UPDATE. NO HAY DELETE (M8-RN-001)
+// — corregir = nueva fila con isCorrectionOfNoteId apuntando a la
+// anterior; la interfaz muestra ambas, marcando la corrección.
+model ClinicalNote {
+  id                   String   @id @default(uuid())
+  encounterId          String
+  chiefComplaint       String
+  currentIllness       String
+  vitals               Json
+  physicalExam         String?
+  assessment           String
+  plan                 String
+  prognosis            String?
+  isCorrectionOfNoteId String?
+  createdAt            DateTime @default(now()) @db.Timestamptz(3)
+
+  encounter          ClinicalEncounter @relation(fields: [encounterId], references: [id])
+  isCorrectionOfNote ClinicalNote?     @relation("NoteCorrection", fields: [isCorrectionOfNoteId], references: [id])
+  corrections        ClinicalNote[]    @relation("NoteCorrection")
+
+  @@map("clinical_notes")
+}
+
+enum DiagnosisType {
+  PRINCIPAL
+  SECONDARY
+
+  @@map("diagnosis_type")
+}
+
+enum DiagnosisCertainty {
+  SUSPECTED
+  CONFIRMED
+
+  @@map("diagnosis_certainty")
+}
+
+// M8-RN-006: diagnóstico principal obligatorio con CIE-10 para firmar.
+model EncounterDiagnosis {
+  id            String             @id @default(uuid())
+  encounterId   String
+  icd10Code     String
+  description   String
+  diagnosisType DiagnosisType
+  certainty     DiagnosisCertainty
+  createdAt     DateTime           @default(now()) @db.Timestamptz(3)
+
+  encounter ClinicalEncounter @relation(fields: [encounterId], references: [id])
+
+  @@map("encounter_diagnoses")
+}
+
+enum ClinicalAttachmentCategory {
+  LAB_RESULT
+  IMAGING
+  EXTERNAL_DOCUMENT
+  PHOTO
+  OTHER
+
+  @@map("clinical_attachment_category")
+}
+
+// M8-RN-010: cifrado en reposo + URL prefirmada ≤5 min vía
+// FileStoragePort — mismo puerto cerrado en el pase de Perfil, sin
+// cambios aquí.
+model ClinicalAttachment {
+  id               String                     @id @default(uuid())
+  patientId        String
+  encounterId      String?
+  fileKey          String
+  fileName         String
+  fileHashSha256   String
+  mimeType         String
+  sizeBytes        Int
+  category         ClinicalAttachmentCategory
+  uploadedByUserId String
+  description      String?
+  uploadedAt       DateTime                   @default(now()) @db.Timestamptz(3)
+
+  patient   Patient            @relation(fields: [patientId], references: [id])
+  encounter ClinicalEncounter? @relation(fields: [encounterId], references: [id])
+
+  @@map("clinical_attachments")
+}
+
+// CLAUDE.md §6/DOC-06: "plantillas insertables por atajo de teclado".
+// content lo escribe siempre el médico dueño — nunca texto clínico
+// precargado por Medicfy (CLAUDE.md §7). No es append-only (no está
+// en la lista literal de R1): es texto reusable del médico, no un
+// registro clínico del paciente.
+model NoteTemplate {
+  id          String   @id @default(uuid())
+  doctorId    String
+  label       String
+  content     String
+  shortcutKey String?
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  doctor Doctor @relation(fields: [doctorId], references: [id])
+
+  @@unique([doctorId, shortcutKey])
+  @@map("note_templates")
+}
+
+enum AllergyStatus {
+  ACTIVE
+  INACTIVE
+  RULED_OUT
+
+  @@map("allergy_status")
+}
+
+enum AllergyCertainty {
+  CONFIRMED
+  LIKELY
+  UNCERTAIN
+
+  @@map("allergy_certainty")
+}
+
+// M8-RN-008: cruzada automáticamente contra cada prescripción
+// (M9-RN-008a). Vive en el paciente, no en el encuentro — se captura
+// una vez y se arrastra (M8-RN-012).
+model PatientAllergy {
+  id             String           @id @default(uuid())
+  patientId      String
+  substance      String
+  allergyType    String
+  reaction       String?
+  severity       String
+  ageOfOnset     String?
+  status         AllergyStatus    @default(ACTIVE)
+  certainty      AllergyCertainty
+  source         String
+  lastReviewedAt DateTime         @default(now()) @db.Timestamptz(3)
+  createdAt      DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime         @updatedAt @db.Timestamptz(3)
+
+  patient Patient @relation(fields: [patientId], references: [id])
+
+  @@map("patient_allergies")
+}
+
+enum PatientMedicationStatus {
+  ACTIVE
+  SUSPENDED
+  COMPLETED
+
+  @@map("patient_medication_status")
+}
+
+// Conciliación de medicamentos habituales — vive en el paciente,
+// arrastrado a cada consulta (M8-RN-012), usado para el chequeo de
+// duplicidad terapéutica en M9-RN-008c.
+model PatientMedication {
+  id          String                  @id @default(uuid())
+  patientId   String
+  genericName String
+  brandName   String?
+  dose        String
+  route       String
+  frequency   String
+  startedAt   DateTime?               @db.Date
+  suspendedAt DateTime?               @db.Date
+  reason      String?
+  status      PatientMedicationStatus @default(ACTIVE)
+  prescriber  String?
+  source      String
+  createdAt   DateTime                @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime                @updatedAt @db.Timestamptz(3)
+
+  patient Patient @relation(fields: [patientId], references: [id])
+
+  @@map("patient_medications")
+}
+
+// Estándar público fijo (no es una regla clínica de negocio) —
+// sembrado parcialmente, ver seed script. Ampliar el catálogo es
+// importar datos oficiales (DOF/OMS), no inventar contenido.
+model Icd10Code {
+  code        String  @id
+  description String
+  isActive    Boolean @default(true)
+
+  @@map("icd10_codes")
+}
+
+enum ControlGroup {
+  I
+  II
+  III
+  IV
+  V
+  VI
+
+  @@map("control_group")
+}
+
+// M9-RN-012: Grupos I/II marcados isElectronicallyPrescribable=false;
+// el bloqueo duro vive en PrescriptionsService, no aquí. Sembrado con
+// un puñado de medicamentos sintéticos de ejemplo — ver el plan sobre
+// no inventar contenido clínico real (dosis/contraindicaciones/grupo
+// de control verdadero de cada fármaco).
+model MedicationCatalog {
+  id                           String       @id @default(uuid())
+  genericName                  String
+  brandNames                   String[]     @default([])
+  presentations                Json
+  atcCode                      String?
+  controlGroup                 ControlGroup
+  isElectronicallyPrescribable Boolean      @default(true)
+  commonDoses                  Json?
+  contraindications            String[]     @default([])
+  isActive                     Boolean      @default(true)
+  createdAt                    DateTime     @default(now()) @db.Timestamptz(3)
+
+  prescriptionItems PrescriptionItem[]
+
+  @@map("medications_catalog")
+}
+
+enum SpecialtyFieldSection {
+  ANTECEDENTES
+  INTERROGATORIO
+  EXPLORACION
+  ESCALAS
+  SEGUIMIENTO
+
+  @@map("specialty_field_section")
+}
+
+enum SpecialtyFieldInputType {
+  NUMBER
+  TEXT
+  TEXTAREA
+  SELECT
+  MULTISELECT
+  BOOLEAN
+  DATE
+  COMPUTED
+
+  @@map("specialty_field_input_type")
+}
+
+// M8-RN-014: campos por especialidad como DATOS, no código. Solo el
+// esquema base (medicina general, specialtyId=null) se publica en este
+// pase — ginecología, pediatría y medicina interna requieren
+// validación de un especialista de esa área (ver el plan), quedan sin
+// filas hasta tener ese contenido.
+model SpecialtyFieldSchema {
+  id              String                  @id @default(uuid())
+  specialtyId     String?
+  version         Int
+  section         SpecialtyFieldSection
+  fieldKey        String
+  label           String
+  inputType       SpecialtyFieldInputType
+  unit            String?
+  minValue        Float?
+  maxValue        Float?
+  options         Json?
+  isRequired      Boolean                 @default(false)
+  displayOrder    Int                     @default(0)
+  helpText        String?
+  computedFormula String?
+  publishedAt     DateTime?               @db.Timestamptz(3)
+  publishedBy     String?
+  createdAt       DateTime                @default(now()) @db.Timestamptz(3)
+
+  specialty Specialty? @relation(fields: [specialtyId], references: [id])
+
+  @@map("specialty_field_schemas")
+}
+
+// Validado contra el esquema al firmar; la versión queda fija — si
+// cambia una guía, las notas viejas conservan su cálculo (M8-RN-014).
+model EncounterSpecialtyData {
+  id                     String   @id @default(uuid())
+  encounterId            String   @unique
+  specialtySchemaVersion Int
+  data                   Json
+  createdAt              DateTime @default(now()) @db.Timestamptz(3)
+
+  encounter ClinicalEncounter @relation(fields: [encounterId], references: [id])
+
+  @@map("encounter_specialty_data")
+}
+
+enum PrescriptionType {
+  ELECTRONIC
+  EXTERNAL_PHYSICAL
+
+  @@map("prescription_type")
+}
+
+// M9 §6.6: folio único vía secuencia Postgres dedicada (mismo patrón
+// que patients_medicfy_id_seq — ver migración). Snapshots legales
+// inmutables (M9-RN-004): nunca resueltos por join al imprimir.
+//
+// R1 nombra "prescriptions" literalmente como append-only — a
+// diferencia de `appointments` (cuyo status sí se actualiza in-place
+// porque esa tabla no está en la lista de R1), esta fila NUNCA se
+// actualiza después de crearse, ni siquiera para marcarla cancelada.
+// "Cancelar" = insertar una fila en PrescriptionCancellation
+// (M9-RN-006); el estado "cancelada" se deriva de si existe esa fila,
+// nunca de un UPDATE aquí. "Reemitir" = nueva Prescription con
+// replacesPrescriptionId apuntando hacia atrás, fijado al crearse — no
+// requiere tocar la fila original en absoluto.
+model Prescription {
+  id                        String   @id @default(uuid())
+  encounterId               String
+  patientId                 String
+  doctorId                  String
+  folio                     String   @unique
+  prescriptionType          PrescriptionType @default(ELECTRONIC)
+  issuedAt                  DateTime @default(now()) @db.Timestamptz(3)
+  doctorNameSnapshot        String
+  doctorLicenseSnapshot     String
+  doctorSpecialtySnapshot   String?
+  doctorInstitutionSnapshot String?
+  practiceAddressSnapshot   String
+  patientNameSnapshot       String
+  patientAgeSnapshot        Int
+  patientSexSnapshot        String
+  diagnosisSnapshot         String
+  generalInstructions       String?
+  replacesPrescriptionId    String?  @unique
+  // NULL para prescriptionType=EXTERNAL_PHYSICAL (M9-RN-014): "sin
+  // PDF, sin QR, sin pretensión de validez electrónica" — Medicfy no
+  // firma nada, solo registra lo que el médico ya emitió en su
+  // recetario físico. physicalRecipeFolio guarda ESE folio (distinto
+  // de `folio`, que siempre es el interno de Medicfy).
+  physicalRecipeFolio       String?
+  signatureMethod           SignatureMethod?
+  signatureTimestamp        DateTime? @db.Timestamptz(3)
+  contentHashSha256         String?
+  pdfFileKey                String?
+  qrVerificationToken       String?  @unique
+  deliveredVia              String[] @default([])
+  deliveredAt               DateTime? @db.Timestamptz(3)
+  createdAt                 DateTime @default(now()) @db.Timestamptz(3)
+
+  encounter            ClinicalEncounter        @relation(fields: [encounterId], references: [id])
+  patient              Patient                  @relation(fields: [patientId], references: [id])
+  doctor               Doctor                   @relation(fields: [doctorId], references: [id])
+  replacesPrescription Prescription?            @relation("PrescriptionReplacement", fields: [replacesPrescriptionId], references: [id])
+  replacedByPrescription Prescription?          @relation("PrescriptionReplacement")
+  items                PrescriptionItem[]
+  cancellation         PrescriptionCancellation?
+
+  @@map("prescriptions")
+}
+
+// Fila única por receta (prescriptionId @unique — no se puede cancelar
+// dos veces), solo INSERT+SELECT para medicfy_app, igual que
+// clinical_notes. Es la única forma real de "cancelar" (M9-RN-006).
+model PrescriptionCancellation {
+  id                String   @id @default(uuid())
+  prescriptionId    String   @unique
+  reason            String
+  cancelledByUserId String
+  cancelledAt       DateTime @default(now()) @db.Timestamptz(3)
+
+  prescription Prescription @relation(fields: [prescriptionId], references: [id])
+
+  @@map("prescription_cancellations")
+}
+
+// M9-RN-003: denominación genérica obligatoria por ley; comercial
+// opcional. controlGroup se copia del catálogo al prescribir (mismo
+// principio de snapshot que los datos legales del médico).
+model PrescriptionItem {
+  id                   String       @id @default(uuid())
+  prescriptionId       String
+  genericName          String
+  brandName            String?
+  presentation         String
+  dose                 String
+  route                String
+  frequency            String
+  duration             String
+  quantity             String?
+  specialInstructions  String?
+  medicationCatalogId  String?
+  controlGroup         ControlGroup
+
+  prescription      Prescription       @relation(fields: [prescriptionId], references: [id])
+  medicationCatalog MedicationCatalog? @relation(fields: [medicationCatalogId], references: [id])
+
+  @@map("prescription_items")
+}
+
+// M10 (parcial en MVP, spec §2.2): PDF firmado, sin portal de
+// laboratorio ni assignedLabId activo — el paciente lo lleva a
+// cualquier laboratorio.
+//
+// R1 nombra "lab_orders" literalmente como append-only, mismo
+// tratamiento que prescriptions: esta fila nunca se actualiza después
+// de insertarse. "Estado" se deriva, no se guarda: issued por
+// defecto, results_uploaded si existe una fila en LabResult para esta
+// orden, cancelled si existe una fila en LabOrderCancellation.
+model LabOrder {
+  id                  String          @id @default(uuid())
+  encounterId         String
+  patientId           String
+  doctorId            String
+  folio               String          @unique
+  issuedAt            DateTime        @default(now()) @db.Timestamptz(3)
+  clinicalIndication  String
+  fastingRequired     Boolean         @default(false)
+  assignedLabId       String?
+  pdfFileKey          String?
+  qrVerificationToken String          @unique
+  contentHashSha256   String
+  signatureMethod     SignatureMethod
+  signedAt            DateTime        @db.Timestamptz(3)
+  createdAt           DateTime        @default(now()) @db.Timestamptz(3)
+
+  encounter    ClinicalEncounter    @relation(fields: [encounterId], references: [id])
+  patient      Patient              @relation(fields: [patientId], references: [id])
+  doctor       Doctor               @relation(fields: [doctorId], references: [id])
+  items        LabOrderItem[]
+  results      LabResult[]
+  cancellation LabOrderCancellation?
+
+  @@map("lab_orders")
+}
+
+// Mismo patrón que PrescriptionCancellation: única fila por orden
+// (labOrderId @unique), solo INSERT+SELECT, es la única forma real de
+// cancelar una orden de laboratorio.
+model LabOrderCancellation {
+  id                String   @id @default(uuid())
+  labOrderId        String   @unique
+  reason            String
+  cancelledByUserId String
+  cancelledAt       DateTime @default(now()) @db.Timestamptz(3)
+
+  labOrder LabOrder @relation(fields: [labOrderId], references: [id])
+
+  @@map("lab_order_cancellations")
+}
+
+model LabOrderItem {
+  id         String  @id @default(uuid())
+  labOrderId String
+  studyName  String
+  loincCode  String?
+  notes      String?
+
+  labOrder LabOrder @relation(fields: [labOrderId], references: [id])
+
+  @@map("lab_order_items")
+}
+
+enum LabResultUploaderRole {
+  DOCTOR
+  PATIENT
+
+  @@map("lab_result_uploader_role")
+}
+
+// v1.0: sube el médico o el paciente (§6.7).
+model LabResult {
+  id                 String                @id @default(uuid())
+  labOrderId         String?
+  patientId          String
+  uploadedByUserId   String
+  uploadedByRole     LabResultUploaderRole
+  fileKey            String
+  fileHashSha256     String
+  labName            String?
+  resultDate         DateTime?             @db.Date
+  reviewedByDoctorId String?
+  reviewedAt         DateTime?             @db.Timestamptz(3)
+  doctorComment      String?
+  uploadedAt         DateTime              @default(now()) @db.Timestamptz(3)
+
+  labOrder LabOrder? @relation(fields: [labOrderId], references: [id])
+  patient  Patient   @relation(fields: [patientId], references: [id])
+
+  @@map("lab_results")
+}
