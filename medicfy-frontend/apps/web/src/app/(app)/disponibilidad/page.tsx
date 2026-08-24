@@ -7,9 +7,13 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import {
   availabilityRuleCreateSchema,
   availabilityExceptionCreateSchema,
+  practiceLocationSchema,
+  doctorServiceSchema,
   minutesToTimeOfDay,
   type AvailabilityRuleCreateInput,
   type AvailabilityExceptionCreateInput,
+  type PracticeLocationInput,
+  type DoctorServiceInput,
 } from "@medicfy/contracts";
 import { apiFetch } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
@@ -19,6 +23,30 @@ import { Card, LoadingState, EmptyState, ErrorState } from "@/components/ui/stat
 
 const WEEKDAY_LABELS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 const MODALITY_LABELS: Record<string, string> = { IN_PERSON: "Presencial", ONLINE: "En línea" };
+const SERVICE_TYPE_LABELS: Record<string, string> = {
+  FIRST_VISIT: "Primera vez",
+  FOLLOW_UP: "Seguimiento",
+  TELECONSULTATION: "Teleconsulta",
+  PROCEDURE: "Procedimiento",
+};
+
+interface PracticeLocation {
+  id: string;
+  name: string;
+  addressStreet: string | null;
+  addressMunicipality: string | null;
+  isPrimary: boolean;
+  isActive: boolean;
+}
+
+interface DoctorService {
+  id: string;
+  name: string;
+  serviceType: "FIRST_VISIT" | "FOLLOW_UP" | "TELECONSULTATION" | "PROCEDURE";
+  durationMinutes: number;
+  priceMxn: number;
+  isActive: boolean;
+}
 
 interface AvailabilityRule {
   id: string;
@@ -59,15 +87,275 @@ export default function DisponibilidadPage() {
     );
   }
 
+  return <DisponibilidadContent accessToken={accessToken} />;
+}
+
+// ServicesSection necesita la lista de consultorios para su selector
+// (un servicio presencial se liga a uno) — vive aquí, no dentro de
+// LocationsSection, para que agregar un consultorio nuevo se refleje
+// de inmediato en ese selector sin recargar la página.
+function DisponibilidadContent({ accessToken }: { accessToken: string }) {
+  const [locations, setLocations] = useState<PracticeLocation[] | null>(null);
+  const [locationsError, setLocationsError] = useState<unknown>(null);
+
+  const loadLocations = useCallback(async () => {
+    setLocationsError(null);
+    try {
+      setLocations(await apiFetch<PracticeLocation[]>("/doctors/me/locations", { accessToken }));
+    } catch (error) {
+      setLocationsError(error);
+    }
+  }, [accessToken]);
+
+  useEffect(() => {
+    loadLocations();
+  }, [loadLocations]);
+
   return (
     <main className="mx-auto flex max-w-3xl flex-col gap-8 p-6">
       <div>
         <h1 className="font-heading text-2xl text-brand-900">Configuración de disponibilidad</h1>
-        <p className="text-base text-gray-500">Define cuándo puedes recibir citas y bloquea el tiempo que no.</p>
+        <p className="text-base text-gray-500">
+          Qué ofreces, dónde y cuándo — todo lo que se necesita para que un paciente pueda agendar contigo.
+        </p>
       </div>
+      <LocationsSection accessToken={accessToken} locations={locations} error={locationsError} onReload={loadLocations} />
+      <ServicesSection accessToken={accessToken} locations={locations ?? []} />
       <RulesSection accessToken={accessToken} />
       <ExceptionsSection accessToken={accessToken} />
     </main>
+  );
+}
+
+// M2-RN-004: "se necesita >=1 consultorio activo o teleconsulta para
+// recibir citas". Sin esto, un DoctorService presencial no tiene dónde
+// ocurrir y /citas/nueva nunca tiene espacios que ofrecer — hasta este
+// pase, el backend (POST /doctors/me/locations) existía pero ninguna
+// pantalla lo llamaba.
+function LocationsSection({
+  accessToken,
+  locations,
+  error,
+  onReload,
+}: {
+  accessToken: string;
+  locations: PracticeLocation[] | null;
+  error: unknown;
+  onReload: () => Promise<void>;
+}) {
+  const [createError, setCreateError] = useState<unknown>(null);
+
+  const form = useForm<PracticeLocationInput>({
+    resolver: zodResolver(practiceLocationSchema),
+    defaultValues: { isPrimary: true },
+  });
+
+  async function onSubmit(values: PracticeLocationInput) {
+    setCreateError(null);
+    try {
+      await apiFetch("/doctors/me/locations", { method: "POST", body: values, accessToken });
+      form.reset({ isPrimary: false });
+      await onReload();
+    } catch (err) {
+      setCreateError(err);
+    }
+  }
+
+  async function onDelete(id: string) {
+    setCreateError(null);
+    try {
+      await apiFetch(`/doctors/me/locations/${id}`, { method: "DELETE", accessToken });
+      await onReload();
+    } catch (err) {
+      setCreateError(err);
+    }
+  }
+
+  return (
+    <Card>
+      <h2 className="font-heading text-xl text-brand-900">Consultorios</h2>
+      <p className="text-sm text-gray-500">Necesitas al menos uno activo para recibir citas presenciales.</p>
+
+      <div className="mt-4">
+        {locations === null && !error ? <LoadingState /> : null}
+        {error ? <ErrorState error={error} onRetry={onReload} /> : null}
+        {locations && locations.length === 0 ? (
+          <EmptyState title="Sin consultorios registrados" description="Agrega el primero abajo." />
+        ) : null}
+        {locations && locations.length > 0 ? (
+          <ul className="flex flex-col gap-2">
+            {locations.map((loc) => (
+              <li key={loc.id} className="flex items-center justify-between gap-4 rounded-md border border-gray-300 p-3">
+                <p className="text-base text-gray-900">
+                  <span className="font-medium">{loc.name}</span>
+                  {loc.addressMunicipality ? <span className="text-gray-500"> · {loc.addressMunicipality}</span> : null}
+                  {loc.isPrimary ? <span className="ml-2 text-sm text-brand-700">(principal)</span> : null}
+                </p>
+                <button type="button" onClick={() => onDelete(loc.id)} className="min-h-[44px] text-sm font-medium text-danger-600 underline">
+                  Eliminar
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+
+      <form onSubmit={form.handleSubmit(onSubmit)} className="mt-6 flex flex-col gap-4 border-t border-gray-200 pt-6" noValidate>
+        <FieldWrapper label="Nombre del consultorio" htmlFor="loc-name" error={form.formState.errors.name?.message}>
+          <TextInput id="loc-name" placeholder="Consultorio Providencia" error={!!form.formState.errors.name} {...form.register("name")} />
+        </FieldWrapper>
+        <div className="grid grid-cols-2 gap-4">
+          <FieldWrapper label="Calle y número (opcional)" htmlFor="loc-street">
+            <TextInput id="loc-street" {...form.register("addressStreet")} />
+          </FieldWrapper>
+          <FieldWrapper label="Colonia (opcional)" htmlFor="loc-colonia">
+            <TextInput id="loc-colonia" {...form.register("addressColonia")} />
+          </FieldWrapper>
+          <FieldWrapper label="Municipio (opcional)" htmlFor="loc-municipality">
+            <TextInput id="loc-municipality" {...form.register("addressMunicipality")} />
+          </FieldWrapper>
+          <FieldWrapper label="Teléfono (opcional)" htmlFor="loc-phone">
+            <TextInput id="loc-phone" type="tel" {...form.register("phone")} />
+          </FieldWrapper>
+        </div>
+        {createError ? <ErrorState error={createError} /> : null}
+        <Button type="submit" isLoading={form.formState.isSubmitting}>
+          Agregar consultorio
+        </Button>
+      </form>
+    </Card>
+  );
+}
+
+// Mismo motivo que LocationsSection: POST /doctors/me/services ya
+// existía en el backend (M2-RN-003), pero /citas/nueva solo podía
+// LISTAR servicios — sin esta pantalla no había forma de crear el
+// primero, y sin al menos uno, agendar una cita es imposible.
+function ServicesSection({ accessToken, locations }: { accessToken: string; locations: PracticeLocation[] }) {
+  const [services, setServices] = useState<DoctorService[] | null>(null);
+  const [listError, setListError] = useState<unknown>(null);
+  const [createError, setCreateError] = useState<unknown>(null);
+
+  const load = useCallback(async () => {
+    setListError(null);
+    try {
+      setServices(await apiFetch<DoctorService[]>("/doctors/me/services", { accessToken }));
+    } catch (error) {
+      setListError(error);
+    }
+  }, [accessToken]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const form = useForm<DoctorServiceInput>({
+    resolver: zodResolver(doctorServiceSchema),
+    defaultValues: { serviceType: "FIRST_VISIT", durationMinutes: 30 },
+  });
+
+  async function onSubmit(values: DoctorServiceInput) {
+    setCreateError(null);
+    try {
+      await apiFetch("/doctors/me/services", { method: "POST", body: values, accessToken });
+      form.reset({ serviceType: values.serviceType, durationMinutes: values.durationMinutes });
+      await load();
+    } catch (error) {
+      setCreateError(error);
+    }
+  }
+
+  async function onDelete(id: string) {
+    setListError(null);
+    try {
+      await apiFetch(`/doctors/me/services/${id}`, { method: "DELETE", accessToken });
+      await load();
+    } catch (error) {
+      setListError(error);
+    }
+  }
+
+  return (
+    <Card>
+      <h2 className="font-heading text-xl text-brand-900">Servicios</h2>
+      <p className="text-sm text-gray-500">Lo que ofreces y su precio. Necesitas al menos uno para poder agendar citas.</p>
+
+      <div className="mt-4">
+        {services === null && !listError ? <LoadingState /> : null}
+        {listError ? <ErrorState error={listError} onRetry={load} /> : null}
+        {services && services.length === 0 ? (
+          <EmptyState title="Sin servicios configurados" description="Agrega el primero abajo — por ejemplo, &quot;Consulta general&quot;." />
+        ) : null}
+        {services && services.length > 0 ? (
+          <ul className="flex flex-col gap-2">
+            {services.map((s) => (
+              <li key={s.id} className="flex items-center justify-between gap-4 rounded-md border border-gray-300 p-3">
+                <p className="text-base text-gray-900">
+                  <span className="font-medium">{s.name}</span> · {SERVICE_TYPE_LABELS[s.serviceType]} · {s.durationMinutes} min · $
+                  {s.priceMxn} MXN
+                  {!s.isActive ? <span className="ml-2 text-sm text-gray-500">(inactivo)</span> : null}
+                </p>
+                <button type="button" onClick={() => onDelete(s.id)} className="min-h-[44px] text-sm font-medium text-danger-600 underline">
+                  Eliminar
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+
+      <form onSubmit={form.handleSubmit(onSubmit)} className="mt-6 flex flex-col gap-4 border-t border-gray-200 pt-6" noValidate>
+        <FieldWrapper label="Nombre" htmlFor="svc-name" error={form.formState.errors.name?.message}>
+          <TextInput id="svc-name" placeholder="Consulta general" error={!!form.formState.errors.name} {...form.register("name")} />
+        </FieldWrapper>
+        <div className="grid grid-cols-2 gap-4">
+          <FieldWrapper label="Tipo" htmlFor="svc-type" error={form.formState.errors.serviceType?.message}>
+            <SelectInput id="svc-type" error={!!form.formState.errors.serviceType} {...form.register("serviceType")}>
+              <option value="FIRST_VISIT">Primera vez</option>
+              <option value="FOLLOW_UP">Seguimiento</option>
+              <option value="TELECONSULTATION">Teleconsulta</option>
+              <option value="PROCEDURE">Procedimiento</option>
+            </SelectInput>
+          </FieldWrapper>
+          <FieldWrapper label="Consultorio (opcional)" htmlFor="svc-location">
+            <SelectInput id="svc-location" {...form.register("locationId", { setValueAs: (v: string) => (v === "" ? undefined : v) })}>
+              <option value="">Sin asignar</option>
+              {locations.map((loc) => (
+                <option key={loc.id} value={loc.id}>
+                  {loc.name}
+                </option>
+              ))}
+            </SelectInput>
+          </FieldWrapper>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <FieldWrapper label="Duración (min)" htmlFor="svc-duration" error={form.formState.errors.durationMinutes?.message}>
+            <TextInput
+              id="svc-duration"
+              type="number"
+              min={5}
+              max={240}
+              error={!!form.formState.errors.durationMinutes}
+              {...form.register("durationMinutes", { valueAsNumber: true })}
+            />
+          </FieldWrapper>
+          <FieldWrapper label="Precio (MXN)" htmlFor="svc-price" error={form.formState.errors.priceMxn?.message}>
+            <TextInput
+              id="svc-price"
+              type="number"
+              min={1}
+              max={99999}
+              error={!!form.formState.errors.priceMxn}
+              {...form.register("priceMxn", { valueAsNumber: true })}
+            />
+          </FieldWrapper>
+        </div>
+        {createError ? <ErrorState error={createError} /> : null}
+        <Button type="submit" isLoading={form.formState.isSubmitting}>
+          Agregar servicio
+        </Button>
+      </form>
+    </Card>
   );
 }
 
