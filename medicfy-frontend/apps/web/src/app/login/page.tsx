@@ -1,15 +1,17 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { loginSchema, mfaLoginVerifySchema, type LoginInput, type MfaLoginVerifyInput } from "@medicfy/contracts";
 import { apiFetch } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
+import { AuthLayout } from "@/components/auth-layout";
 import { Button } from "@/components/ui/button";
 import { FieldWrapper, TextInput } from "@/components/ui/field";
-import { Card, ErrorState } from "@/components/ui/states";
+import { ErrorState } from "@/components/ui/states";
 
 type LoginResult = { accessToken: string } | { mfaRequired: true; mfaSessionToken: string };
 
@@ -44,26 +46,43 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-6 p-6">
-      <div>
-        <h1 className="font-heading text-2xl text-brand-900">Iniciar sesión</h1>
-        <p className="text-base text-gray-500">Para médicos y asistentes.</p>
-      </div>
-      <Card>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-4" noValidate>
+    <AuthLayout
+      panelTitle="Tu consultorio, sin WhatsApp, sin Excel y sin recetario de papel"
+      panelBody="Expediente clínico conforme a NOM-004, receta electrónica con validez legal y la agenda de tu día, en un solo lugar."
+    >
+      <div className="flex flex-col gap-8">
+        <div>
+          <h1 className="font-heading text-3xl text-brand-900">Iniciar sesión</h1>
+          <p className="mt-2 text-base text-gray-500">Para médicos y asistentes de Medicfy.</p>
+        </div>
+
+        <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-5" noValidate>
           <FieldWrapper label="Correo electrónico" htmlFor="email" error={form.formState.errors.email?.message}>
-            <TextInput id="email" type="email" error={!!form.formState.errors.email} {...form.register("email")} />
+            <TextInput id="email" type="email" autoComplete="email" error={!!form.formState.errors.email} {...form.register("email")} />
           </FieldWrapper>
           <FieldWrapper label="Contraseña" htmlFor="password" error={form.formState.errors.password?.message}>
-            <TextInput id="password" type="password" error={!!form.formState.errors.password} {...form.register("password")} />
+            <TextInput
+              id="password"
+              type="password"
+              autoComplete="current-password"
+              error={!!form.formState.errors.password}
+              {...form.register("password")}
+            />
           </FieldWrapper>
           {submitError ? <ErrorState error={submitError} /> : null}
-          <Button type="submit" isLoading={form.formState.isSubmitting}>
+          <Button type="submit" isLoading={form.formState.isSubmitting} className="mt-1 w-full">
             Entrar
           </Button>
         </form>
-      </Card>
-    </main>
+
+        <p className="text-center text-base text-gray-700">
+          ¿No tienes cuenta?{" "}
+          <Link href="/registro-medico" className="font-medium text-brand-700 underline">
+            Regístrate
+          </Link>
+        </p>
+      </div>
+    </AuthLayout>
   );
 }
 
@@ -89,23 +108,35 @@ function MfaStep({ mfaSessionToken }: { mfaSessionToken: string }) {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-6 p-6">
-      <div>
-        <h1 className="font-heading text-2xl text-brand-900">Verificación en dos pasos</h1>
-        <p className="text-base text-gray-500">Ingresa el código de tu app de autenticación.</p>
-      </div>
-      <Card>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-4" noValidate>
+    <AuthLayout
+      panelTitle="Un paso más para proteger tu expediente"
+      panelBody="La verificación en dos pasos evita que alguien con tu contraseña pueda ver el historial clínico de tus pacientes."
+    >
+      <div className="flex flex-col gap-8">
+        <div>
+          <h1 className="font-heading text-3xl text-brand-900">Verificación en dos pasos</h1>
+          <p className="mt-2 text-base text-gray-500">Ingresa el código de 6 dígitos de tu app de autenticación.</p>
+        </div>
+
+        <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-5" noValidate>
           <input type="hidden" {...form.register("mfaSessionToken")} />
           <FieldWrapper label="Código" htmlFor="code" error={form.formState.errors.code?.message}>
-            <TextInput id="code" inputMode="numeric" maxLength={6} error={!!form.formState.errors.code} {...form.register("code")} />
+            <TextInput
+              id="code"
+              inputMode="numeric"
+              maxLength={6}
+              autoComplete="one-time-code"
+              autoFocus
+              error={!!form.formState.errors.code}
+              {...form.register("code")}
+            />
           </FieldWrapper>
           {error ? <ErrorState error={error} /> : null}
-          <Button type="submit" isLoading={form.formState.isSubmitting}>
+          <Button type="submit" isLoading={form.formState.isSubmitting} className="mt-1 w-full">
             Verificar
           </Button>
         </form>
-      </Card>
-    </main>
+      </div>
+    </AuthLayout>
   );
 }

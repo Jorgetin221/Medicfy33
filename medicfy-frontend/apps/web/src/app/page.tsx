@@ -68,15 +68,15 @@ export default function HomePage() {
           <Link href="/" className="font-brand text-xl font-bold text-brand-900">
             Medicfy
           </Link>
-          <nav className="flex items-center gap-2 sm:gap-4" aria-label="Principal">
+          <nav className="flex items-center gap-1 sm:gap-4" aria-label="Principal">
             <Link
               href="/login"
-              className="hidden min-h-[44px] items-center rounded-md px-3 text-base font-medium text-brand-700 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-700 sm:inline-flex"
+              className="inline-flex min-h-[44px] items-center rounded-md px-2 text-base font-medium text-brand-700 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-700 sm:px-3"
             >
               Iniciar sesión
             </Link>
             <Link href="/registro-medico">
-              <Button className="px-4">Regístrate</Button>
+              <Button className="px-3 sm:px-4">Regístrate</Button>
             </Link>
           </nav>
         </div>
