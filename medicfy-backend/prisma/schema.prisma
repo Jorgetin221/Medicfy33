@@ -1131,6 +1131,20 @@ enum PrescriptionType {
   @@map("prescription_type")
 }
 
+// Corrección v2.1 de especificacion-plataforma-clinica-con-ia.md §1:
+// "la firma digital no debe ser obligatoria para imprimir una
+// receta". Elección de primer nivel del médico para
+// prescriptionType=ELECTRONIC (null para EXTERNAL_PHYSICAL, donde
+// ninguna de las dos rutas aplica). Corresponde a
+// autografa_post_impresion / digital_electronica del §24 del
+// documento.
+enum PrescriptionSignatureRoute {
+  HANDWRITTEN_AFTER_PRINT
+  ELECTRONIC
+
+  @@map("prescription_signature_route")
+}
+
 // M9 §6.6: folio único vía secuencia Postgres dedicada (mismo patrón
 // que patients_medicfy_id_seq — ver migración). Snapshots legales
 // inmutables (M9-RN-004): nunca resueltos por join al imprimir.
@@ -1169,6 +1183,14 @@ model Prescription {
   // recetario físico. physicalRecipeFolio guarda ESE folio (distinto
   // de `folio`, que siempre es el interno de Medicfy).
   physicalRecipeFolio       String?
+  // Requerido para prescriptionType=ELECTRONIC, null para
+  // EXTERNAL_PHYSICAL. Cuando es HANDWRITTEN_AFTER_PRINT,
+  // signatureMethod/signatureTimestamp se quedan null a propósito —
+  // no hubo mecanismo digital que registrar (ver comentario del
+  // enum). contentHashSha256/qrVerificationToken SÍ se calculan
+  // siempre, en ambas rutas: la huella documental es sobre el
+  // contenido, no sobre el mecanismo de firma.
+  signatureRoute            PrescriptionSignatureRoute?
   signatureMethod           SignatureMethod?
   signatureTimestamp        DateTime? @db.Timestamptz(3)
   contentHashSha256         String?
@@ -1185,6 +1207,7 @@ model Prescription {
   replacedByPrescription Prescription?          @relation("PrescriptionReplacement")
   items                PrescriptionItem[]
   cancellation         PrescriptionCancellation?
+  handwrittenDelivery  PrescriptionHandwrittenDelivery?
 
   @@map("prescriptions")
 }
@@ -1202,6 +1225,24 @@ model PrescriptionCancellation {
   prescription Prescription @relation(fields: [prescriptionId], references: [id])
 
   @@map("prescription_cancellations")
+}
+
+// Solo aplica a signatureRoute=HANDWRITTEN_AFTER_PRINT. Misma razón
+// que PrescriptionCancellation: R1 prohíbe UPDATE sobre
+// prescriptions, así que "Firmada y entregada" (§17.4 del documento)
+// no puede escribirse encima de la fila original — su sola
+// existencia ES el estado "confirmada", nunca un UPDATE. Es una
+// declaración manual del médico (§17.4: "sin afirmar que el sistema
+// verificó físicamente la firma"), no una firma criptográfica.
+model PrescriptionHandwrittenDelivery {
+  id                String   @id @default(uuid())
+  prescriptionId    String   @unique
+  confirmedByUserId String
+  confirmedAt       DateTime @default(now()) @db.Timestamptz(3)
+
+  prescription Prescription @relation(fields: [prescriptionId], references: [id])
+
+  @@map("prescription_handwritten_deliveries")
 }
 
 // M9-RN-003: denominación genérica obligatoria por ley; comercial

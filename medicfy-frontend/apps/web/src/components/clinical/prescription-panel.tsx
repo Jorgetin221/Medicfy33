@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { PrescriptionCreateInput, PrescriptionItemCreateInput } from "@medicfy/contracts";
-import { apiFetch, ApiError } from "@/lib/api-client";
+import { apiFetch, apiFetchBlob, ApiError } from "@/lib/api-client";
 import { Panel } from "@/components/ui/panel";
 import { Button } from "@/components/ui/button";
 import { FieldWrapper, TextInput } from "@/components/ui/field";
@@ -10,10 +10,14 @@ import { Aviso } from "@/components/ui/alert";
 import { MedicationPicker, type MedicationCatalogEntry, type PrescriptionDraftItem } from "@/components/clinical/medication-picker";
 
 interface IssuedPrescription {
+  id: string;
   folio: string;
   qrVerificationToken: string | null;
+  signatureRoute: "HANDWRITTEN_AFTER_PRINT" | "ELECTRONIC";
   therapeuticDuplicates: string[];
 }
+
+type SignatureRoute = "HANDWRITTEN_AFTER_PRINT" | "ELECTRONIC";
 
 function toWireItem(item: PrescriptionDraftItem): PrescriptionItemCreateInput {
   return {
@@ -49,6 +53,10 @@ export function PrescriptionPanel({
   const [items, setItems] = useState<PrescriptionDraftItem[]>([]);
   const [diagnosisSnapshot, setDiagnosisSnapshot] = useState(defaultDiagnosis);
   const [generalInstructions, setGeneralInstructions] = useState("");
+  // Corrección v2.1 §1/§17.6: la firma digital nunca es obligatoria
+  // para imprimir — null hasta que el médico elige, para no asumir
+  // ninguna de las dos por defecto.
+  const [signatureRoute, setSignatureRoute] = useState<SignatureRoute | null>(null);
   const [password, setPassword] = useState("");
   const [totpCode, setTotpCode] = useState("");
   const [allergyConflict, setAllergyConflict] = useState<string[] | null>(null);
@@ -56,6 +64,8 @@ export function PrescriptionPanel({
   const [submitError, setSubmitError] = useState<unknown>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [issued, setIssued] = useState<IssuedPrescription | null>(null);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+  const [pdfError, setPdfError] = useState<unknown>(null);
 
   const [blockedMedication, setBlockedMedication] = useState<MedicationCatalogEntry | null>(null);
   const [physicalFolio, setPhysicalFolio] = useState("");
@@ -71,6 +81,7 @@ export function PrescriptionPanel({
     setItems([]);
     setDiagnosisSnapshot(defaultDiagnosis);
     setGeneralInstructions("");
+    setSignatureRoute(null);
     setPassword("");
     setTotpCode("");
     setAllergyConflict(null);
@@ -92,25 +103,30 @@ export function PrescriptionPanel({
     onClose();
   }
 
-  async function submitElectronic() {
+  async function submitPrescription() {
+    if (!signatureRoute) return;
     setSubmitError(null);
     setIsSubmitting(true);
     try {
-      const body: PrescriptionCreateInput = {
+      const base = {
         diagnosisSnapshot,
         items: items.map(toWireItem),
-        password,
-        totpCode,
         ...(generalInstructions ? { generalInstructions } : {}),
         ...(allergyOverrideConfirmed ? { allergyOverrideConfirmed: true } : {}),
       };
+      const body: PrescriptionCreateInput =
+        signatureRoute === "HANDWRITTEN_AFTER_PRINT"
+          ? { ...base, signatureRoute: "HANDWRITTEN_AFTER_PRINT" }
+          : { ...base, signatureRoute: "ELECTRONIC", password, totpCode };
       const result = await apiFetch<{
-        prescription: { folio: string; qrVerificationToken: string | null };
+        prescription: { id: string; folio: string; qrVerificationToken: string | null; signatureRoute: SignatureRoute };
         warnings: { therapeuticDuplicates: string[] };
       }>(`/prescriptions/encounters/${encounterId}`, { method: "POST", accessToken, body });
       setIssued({
+        id: result.prescription.id,
         folio: result.prescription.folio,
         qrVerificationToken: result.prescription.qrVerificationToken,
+        signatureRoute: result.prescription.signatureRoute,
         therapeuticDuplicates: result.warnings.therapeuticDuplicates,
       });
       onIssued();
@@ -123,6 +139,29 @@ export function PrescriptionPanel({
       }
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  // El endpoint exige JwtAuthGuard — un <a href> normal no manda el
+  // header Authorization (el access token vive solo en memoria de
+  // React, nunca en una cookie), así que hay que traer los bytes con
+  // fetch autenticado y abrirlos como blob. Mismo patrón que ya usa
+  // Perfil para logo/firma (apiFetchBlob).
+  async function downloadPdf() {
+    if (!issued) return;
+    setPdfError(null);
+    setIsDownloadingPdf(true);
+    try {
+      const blob = await apiFetchBlob(`/prescriptions/${issued.id}/pdf`, { accessToken });
+      if (!blob) {
+        setPdfError(new Error("No se encontró el PDF de esta receta."));
+        return;
+      }
+      window.open(URL.createObjectURL(blob), "_blank");
+    } catch (error) {
+      setPdfError(error);
+    } finally {
+      setIsDownloadingPdf(false);
     }
   }
 
@@ -153,7 +192,10 @@ export function PrescriptionPanel({
     }
   }
 
-  const canSubmitElectronic = items.length > 0 && diagnosisSnapshot.trim().length > 0 && password.length > 0 && totpCode.length === 6;
+  const hasRequiredContent = items.length > 0 && diagnosisSnapshot.trim().length > 0;
+  const canSubmit =
+    hasRequiredContent &&
+    (signatureRoute === "HANDWRITTEN_AFTER_PRINT" || (signatureRoute === "ELECTRONIC" && password.length > 0 && totpCode.length === 6));
 
   return (
     <Panel open={open} onClose={handleClose} title="Emitir receta">
@@ -166,11 +208,25 @@ export function PrescriptionPanel({
               </p>
             )}
           </Aviso>
+          {issued.signatureRoute === "HANDWRITTEN_AFTER_PRINT" && (
+            <Aviso variant="advertencia" title="Firma pendiente">
+              Imprime esta receta y fírmala a mano antes de entregarla al paciente. Cuando la hayas entregado, márcalo en la pestaña de Recetas del
+              expediente.
+            </Aviso>
+          )}
           {issued.therapeuticDuplicates.length > 0 && (
             <Aviso variant="advertencia" title="Posible duplicidad terapéutica">
               El paciente ya toma: {issued.therapeuticDuplicates.join(", ")}. Revisa antes de continuar.
             </Aviso>
           )}
+          <Button type="button" variant="secondary" isLoading={isDownloadingPdf} onClick={() => void downloadPdf()} className="w-fit">
+            Descargar / imprimir PDF
+          </Button>
+          {pdfError ? (
+            <Aviso variant="advertencia" title="No se pudo abrir el PDF">
+              {pdfError instanceof ApiError ? pdfError.message : "Intenta de nuevo."}
+            </Aviso>
+          ) : null}
           <div className="flex gap-3">
             <Button type="button" variant="secondary" onClick={resetAll}>
               Emitir otra receta
@@ -256,20 +312,55 @@ export function PrescriptionPanel({
             </Aviso>
           )}
 
-          <div className="grid grid-cols-2 gap-3">
-            <FieldWrapper label="Confirma tu contraseña" htmlFor="rx-password">
-              <TextInput id="rx-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-            </FieldWrapper>
-            <FieldWrapper label="Código de verificación (6 dígitos)" htmlFor="rx-totp">
-              <TextInput
-                id="rx-totp"
-                inputMode="numeric"
-                maxLength={6}
-                value={totpCode}
-                onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ""))}
+          {/* Corrección v2.1 §1/§17.6: la firma digital nunca es
+              obligatoria para imprimir — el médico elige entre las
+              dos rutas, ninguna es la opción "por defecto". */}
+          <fieldset className="flex flex-col gap-2 rounded-md border border-gray-300 p-4">
+            <legend className="px-1 text-sm font-medium text-gray-700">¿Cómo desea firmar esta receta?</legend>
+            <label className="flex min-h-11 cursor-pointer items-start gap-3 rounded-md p-2 hover:bg-gray-100">
+              <input
+                type="radio"
+                name="signatureRoute"
+                className="mt-1 h-4 w-4"
+                checked={signatureRoute === "HANDWRITTEN_AFTER_PRINT"}
+                onChange={() => setSignatureRoute("HANDWRITTEN_AFTER_PRINT")}
               />
-            </FieldWrapper>
-          </div>
+              <span>
+                <span className="block text-base font-medium text-gray-900">Imprimir y firmar a mano</span>
+                <span className="block text-sm text-gray-500">Genera la receta con un espacio para tu firma autógrafa. No pide contraseña ni código.</span>
+              </span>
+            </label>
+            <label className="flex min-h-11 cursor-pointer items-start gap-3 rounded-md p-2 hover:bg-gray-100">
+              <input
+                type="radio"
+                name="signatureRoute"
+                className="mt-1 h-4 w-4"
+                checked={signatureRoute === "ELECTRONIC"}
+                onChange={() => setSignatureRoute("ELECTRONIC")}
+              />
+              <span>
+                <span className="block text-base font-medium text-gray-900">Firma digital o electrónica</span>
+                <span className="block text-sm text-gray-500">Firma dentro de Medicfy confirmando tu contraseña y un código de verificación.</span>
+              </span>
+            </label>
+          </fieldset>
+
+          {signatureRoute === "ELECTRONIC" && (
+            <div className="grid grid-cols-2 gap-3">
+              <FieldWrapper label="Confirma tu contraseña" htmlFor="rx-password">
+                <TextInput id="rx-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+              </FieldWrapper>
+              <FieldWrapper label="Código de verificación (6 dígitos)" htmlFor="rx-totp">
+                <TextInput
+                  id="rx-totp"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={totpCode}
+                  onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ""))}
+                />
+              </FieldWrapper>
+            </div>
+          )}
 
           {submitError ? (
             <Aviso variant="critico" title="No se pudo emitir la receta">
@@ -280,10 +371,10 @@ export function PrescriptionPanel({
           <Button
             type="button"
             isLoading={isSubmitting}
-            disabled={!canSubmitElectronic || (allergyConflict !== null && !allergyOverrideConfirmed)}
-            onClick={() => void submitElectronic()}
+            disabled={!canSubmit || (allergyConflict !== null && !allergyOverrideConfirmed)}
+            onClick={() => void submitPrescription()}
           >
-            Firmar y emitir receta
+            {signatureRoute === "HANDWRITTEN_AFTER_PRINT" ? "Generar receta para firma" : "Firmar y emitir receta"}
           </Button>
         </div>
       )}

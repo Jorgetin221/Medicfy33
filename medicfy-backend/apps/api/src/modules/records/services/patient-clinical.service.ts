@@ -8,6 +8,7 @@ import type {
 import { ApiException } from "../../../common/api-exception";
 import { PrismaService } from "../../../prisma/prisma.service";
 import { omitUndefined } from "../../../common/omit-undefined";
+import { derivePrescriptionStatus } from "../../prescriptions/prescription-status.util";
 
 // M8-RN-008/M8-RN-012: alergias y medicamentos habituales viven en el
 // paciente, se capturan una vez y se arrastran a cada consulta — no
@@ -79,7 +80,7 @@ export class PatientClinicalService {
       this.prisma.prescription.findMany({
         where: { patientId },
         orderBy: { issuedAt: "desc" },
-        include: { cancellation: true, items: true },
+        include: { cancellation: true, handwrittenDelivery: true, items: true },
       }),
       this.prisma.labOrder.findMany({
         where: { patientId },
@@ -93,7 +94,7 @@ export class PatientClinicalService {
       prescriptions: prescriptions.map((p) => ({
         type: "prescription" as const,
         ...p,
-        status: p.cancellation ? ("CANCELLED" as const) : ("ISSUED" as const),
+        status: derivePrescriptionStatus(p),
       })),
       labOrders: labOrders.map((o) => ({
         type: "lab_order" as const,

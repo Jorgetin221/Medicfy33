@@ -80,10 +80,13 @@ export interface TimelinePrescription {
   id: string;
   folio: string;
   prescriptionType: "ELECTRONIC" | "EXTERNAL_PHYSICAL";
+  // Corrección v2.1: null para prescriptionType=EXTERNAL_PHYSICAL,
+  // donde ninguna de las dos rutas nuevas aplica.
+  signatureRoute: "HANDWRITTEN_AFTER_PRINT" | "ELECTRONIC" | null;
   issuedAt: string;
   diagnosisSnapshot: string;
   qrVerificationToken: string | null;
-  status: "ISSUED" | "CANCELLED";
+  status: "ISSUED" | "CANCELLED" | "PENDING_HANDWRITTEN_SIGNATURE";
   items: TimelinePrescriptionItem[];
 }
 

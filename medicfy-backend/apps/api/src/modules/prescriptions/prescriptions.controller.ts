@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Req, UseGuards, Param } from "@nestjs/common";
+import { Body, Controller, Get, Post, Req, StreamableFile, UseGuards, Param } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import {
   prescriptionCreateSchema,
@@ -72,6 +72,28 @@ export class PrescriptionsController {
     const cancellation = await this.prescriptions.cancel(prescriptionId, req.user.sub, body.reason);
     await this.audit(req, "prescriptions.cancel", prescriptionId);
     return cancellation;
+  }
+
+  // Corrección v2.1 §1/§17: antes de esta corrección no existía
+  // ningún PDF que descargar — la única salida era el JSON de
+  // /verificar/:token, que a propósito nunca trae contenido clínico.
+  @Get("prescriptions/:prescriptionId/pdf")
+  @ApiOperation({ summary: "Descarga el PDF de la receta (ambas rutas de firma)" })
+  async pdf(@Param("prescriptionId") prescriptionId: string, @Req() req: ClinicalRequest): Promise<StreamableFile> {
+    const { buffer, contentType } = await this.prescriptions.getPdf(prescriptionId);
+    await this.audit(req, "prescriptions.pdf.download", prescriptionId);
+    return new StreamableFile(buffer, { type: contentType });
+  }
+
+  // Corrección v2.1 §17.4/§25: declaración manual del médico, no una
+  // verificación criptográfica — ver el comentario en
+  // PrescriptionService.confirmHandwrittenDelivery().
+  @Post("prescriptions/:prescriptionId/confirm-handwritten-delivery")
+  @ApiOperation({ summary: "Marca 'firmada y entregada' — solo ruta HANDWRITTEN_AFTER_PRINT" })
+  async confirmHandwrittenDelivery(@Param("prescriptionId") prescriptionId: string, @Req() req: ClinicalRequest) {
+    const confirmation = await this.prescriptions.confirmHandwrittenDelivery(prescriptionId, req.user.sub);
+    await this.audit(req, "prescriptions.confirm_handwritten_delivery", prescriptionId);
+    return confirmation;
   }
 
   private async audit(req: ClinicalRequest, action: string, resourceId: string) {

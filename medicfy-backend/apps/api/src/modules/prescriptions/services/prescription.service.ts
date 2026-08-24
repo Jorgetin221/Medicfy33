@@ -1,4 +1,4 @@
-import { HttpStatus, Injectable } from "@nestjs/common";
+import { HttpStatus, Inject, Injectable } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import type { ExternalPhysicalPrescriptionCreateInput, PrescriptionCreateInput } from "@medicfy/contracts";
 import type { Doctor, Patient, PracticeLocation, Specialty } from "@prisma/client";
@@ -8,6 +8,9 @@ import { sha256Hex } from "../../../common/content-hash.util";
 import { nextPrescriptionFolio } from "../../../common/folio.util";
 import { omitUndefined } from "../../../common/omit-undefined";
 import { SignatureVerificationService } from "../../identity/services/signature-verification.service";
+import { FILE_STORAGE_PORT, type FileStoragePort } from "../../doctors/services/file-storage.port";
+import { PrescriptionPdfService } from "./prescription-pdf.service";
+import { derivePrescriptionStatus } from "../prescription-status.util";
 
 function ageInYears(birthDate: Date): number {
   const now = new Date();
@@ -33,7 +36,9 @@ function formatAddress(location: { addressStreet: string | null; addressExt: str
 export class PrescriptionService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly signatureVerification: SignatureVerificationService
+    private readonly signatureVerification: SignatureVerificationService,
+    private readonly pdfService: PrescriptionPdfService,
+    @Inject(FILE_STORAGE_PORT) private readonly fileStorage: FileStoragePort
   ) {}
 
   // M9-RN-004: snapshot inmutable de los datos legales al momento de
@@ -55,8 +60,16 @@ export class PrescriptionService {
     };
   }
 
+  // Corrección v2.1 de especificacion-plataforma-clinica-con-ia.md
+  // §1: "la firma digital no debe ser obligatoria para imprimir una
+  // receta". verify() (contraseña+TOTP, M9-RN-009) solo aplica a la
+  // ruta ELECTRONIC — el discriminated union de PrescriptionCreateInput
+  // ya garantiza que password/totpCode ni siquiera existen en el
+  // input cuando la ruta es HANDWRITTEN_AFTER_PRINT.
   async create(encounterId: string, doctorId: string, doctorUserId: string, patientId: string, input: PrescriptionCreateInput) {
-    await this.signatureVerification.verify(doctorUserId, input.password, input.totpCode);
+    if (input.signatureRoute === "ELECTRONIC") {
+      await this.signatureVerification.verify(doctorUserId, input.password, input.totpCode);
+    }
 
     const [doctor, patient] = await Promise.all([
       this.prisma.doctor.findUnique({ where: { id: doctorId }, include: { primarySpecialty: true, locations: { where: { isPrimary: true }, take: 1 } } }),
@@ -137,6 +150,25 @@ export class PrescriptionService {
     const contentHashSha256 = sha256Hex({ folio, snapshot, items, diagnosisSnapshot: input.diagnosisSnapshot, signatureTimestamp });
     const qrVerificationToken = randomUUID();
 
+    // Huella documental (§29 del documento nuevo) y PDF se generan
+    // ANTES del insert, con datos ya calculados localmente — nunca
+    // hay un segundo paso de UPDATE sobre la fila (R1). El PDF se
+    // genera para las dos rutas por igual; solo cambia qué pie de
+    // firma dibuja (ver PrescriptionPdfService).
+    const pdfBuffer = await this.pdfService.generate({
+      folio,
+      issuedAt: signatureTimestamp,
+      signatureRoute: input.signatureRoute,
+      signatureTimestamp: input.signatureRoute === "ELECTRONIC" ? signatureTimestamp : null,
+      ...snapshot,
+      diagnosisSnapshot: input.diagnosisSnapshot,
+      items,
+      qrVerificationToken,
+      ...omitUndefined({ generalInstructions: input.generalInstructions }),
+    });
+    const pdfFileKey = `prescriptions/${folio}/receta.pdf`;
+    await this.fileStorage.store({ fileKey: pdfFileKey, buffer: pdfBuffer, contentType: "application/pdf" });
+
     const prescription = await this.prisma.prescription.create({
       data: {
         encounterId,
@@ -145,17 +177,48 @@ export class PrescriptionService {
         folio,
         ...snapshot,
         diagnosisSnapshot: input.diagnosisSnapshot,
-        signatureMethod: "INTERNAL_SYSTEM",
-        signatureTimestamp,
+        signatureRoute: input.signatureRoute,
         contentHashSha256,
         qrVerificationToken,
-        ...omitUndefined({ generalInstructions: input.generalInstructions }),
+        pdfFileKey,
+        ...omitUndefined({
+          generalInstructions: input.generalInstructions,
+          signatureMethod: input.signatureRoute === "ELECTRONIC" ? ("INTERNAL_SYSTEM" as const) : undefined,
+          signatureTimestamp: input.signatureRoute === "ELECTRONIC" ? signatureTimestamp : undefined,
+        }),
         items: { create: items },
       },
       include: { items: true },
     });
 
     return { prescription, warnings: { therapeuticDuplicates: duplicates } };
+  }
+
+  // Corrección v2.1 §17.4: "Firmada y entregada" es una declaración
+  // manual del médico, nunca una verificación real de que la firma
+  // ocurrió — el propio documento lo pide explícito. Solo aplica a
+  // HANDWRITTEN_AFTER_PRINT; R1 impide un UPDATE sobre prescriptions,
+  // así que se modela igual que cancelar: una fila nueva en una
+  // tabla satélite, cuya sola existencia es el estado "confirmada".
+  async confirmHandwrittenDelivery(prescriptionId: string, confirmedByUserId: string) {
+    const prescription = await this.prisma.prescription.findUnique({
+      where: { id: prescriptionId },
+      include: { handwrittenDelivery: true },
+    });
+    if (!prescription) {
+      throw new ApiException("PRESCRIPTION_NOT_FOUND", "Receta no encontrada.", HttpStatus.NOT_FOUND);
+    }
+    if (prescription.signatureRoute !== "HANDWRITTEN_AFTER_PRINT") {
+      throw new ApiException(
+        "PRESCRIPTION_NOT_HANDWRITTEN_ROUTE",
+        "Esta receta no se emitió por la ruta de firma autógrafa.",
+        HttpStatus.CONFLICT
+      );
+    }
+    if (prescription.handwrittenDelivery) {
+      throw new ApiException("PRESCRIPTION_ALREADY_CONFIRMED", "Esta receta ya fue confirmada como firmada y entregada.", HttpStatus.CONFLICT);
+    }
+    return this.prisma.prescriptionHandwrittenDelivery.create({ data: { prescriptionId, confirmedByUserId } });
   }
 
   async cancel(prescriptionId: string, cancelledByUserId: string, reason: string) {
@@ -213,21 +276,33 @@ export class PrescriptionService {
   async getByVerificationToken(token: string) {
     const prescription = await this.prisma.prescription.findUnique({
       where: { qrVerificationToken: token },
-      include: { cancellation: true },
+      include: { cancellation: true, handwrittenDelivery: true },
     });
     if (!prescription) {
       throw new ApiException("PRESCRIPTION_NOT_FOUND", "Receta no encontrada.", HttpStatus.NOT_FOUND);
     }
     // M9-RN-010: nunca el contenido de la receta — solo folio, fecha,
     // médico y nombre del paciente parcialmente enmascarado.
+    // "PENDING_HANDWRITTEN_SIGNATURE" no es contenido clínico, es el
+    // mismo tipo de estado administrativo que ISSUED/CANCELLED ya
+    // exponía — corresponde al estado "Impresa – pendiente de firma
+    // autógrafa" del §19.3 del documento nuevo.
     return {
       folio: prescription.folio,
       issuedAt: prescription.issuedAt,
       doctorName: prescription.doctorNameSnapshot,
       doctorLicense: prescription.doctorLicenseSnapshot,
       patientNameMasked: maskPatientName(prescription.patientNameSnapshot),
-      status: prescription.cancellation ? "CANCELLED" : "ISSUED",
+      status: derivePrescriptionStatus(prescription),
     };
+  }
+
+  async getPdf(prescriptionId: string): Promise<{ buffer: Buffer; contentType: string }> {
+    const prescription = await this.prisma.prescription.findUnique({ where: { id: prescriptionId } });
+    if (!prescription?.pdfFileKey) {
+      throw new ApiException("PRESCRIPTION_PDF_NOT_FOUND", "No hay un PDF disponible para esta receta.", HttpStatus.NOT_FOUND);
+    }
+    return this.fileStorage.retrieve(prescription.pdfFileKey);
   }
 }
 

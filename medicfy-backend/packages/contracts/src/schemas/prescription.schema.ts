@@ -29,23 +29,45 @@ export type PrescriptionItemCreateInput = z.infer<typeof prescriptionItemCreateS
 // forzar sin este campo explícito.
 // encounterId va en la URL (POST /prescriptions/encounters/:encounterId),
 // no en el body — redundante mandarlo dos veces.
-export const prescriptionCreateSchema = z
-  .object({
-    // El diagnóstico que motiva ESTA receta — texto libre, no depende
-    // de que el encuentro ya tenga diagnósticos CIE-10 formales
-    // guardados (eso solo ocurre al firmar la nota, M8-RN-006); la
-    // receta puede emitirse antes de firmar (panel lateral, CLAUDE.md
-    // §6), así que necesita su propio dato aquí.
-    diagnosisSnapshot: z.string().min(1, "El diagnóstico es obligatorio."),
-    items: z.array(prescriptionItemCreateSchema).min(1, "Se requiere al menos un medicamento.").max(10),
-    generalInstructions: z.string().optional(),
-    allergyOverrideConfirmed: z.boolean().optional(),
+const prescriptionCreateBaseSchema = z.object({
+  // El diagnóstico que motiva ESTA receta — texto libre, no depende
+  // de que el encuentro ya tenga diagnósticos CIE-10 formales
+  // guardados (eso solo ocurre al firmar la nota, M8-RN-006); la
+  // receta puede emitirse antes de firmar (panel lateral, CLAUDE.md
+  // §6), así que necesita su propio dato aquí.
+  diagnosisSnapshot: z.string().min(1, "El diagnóstico es obligatorio."),
+  items: z.array(prescriptionItemCreateSchema).min(1, "Se requiere al menos un medicamento.").max(10),
+  generalInstructions: z.string().optional(),
+  allergyOverrideConfirmed: z.boolean().optional(),
+});
+
+// Corrección v2.1 de especificacion-plataforma-clinica-con-ia.md §1:
+// "la firma digital no debe ser obligatoria para imprimir una
+// receta". Union discriminada por signatureRoute en vez de campos
+// opcionales sueltos: la variante autógrafa estructuralmente NO
+// puede llevar password/totpCode (ni por error del cliente), no solo
+// "no los exige".
+export const prescriptionCreateHandwrittenSchema = prescriptionCreateBaseSchema
+  .extend({ signatureRoute: z.literal("HANDWRITTEN_AFTER_PRINT") })
+  .strict();
+export type PrescriptionCreateHandwrittenInput = z.infer<typeof prescriptionCreateHandwrittenSchema>;
+
+export const prescriptionCreateElectronicSchema = prescriptionCreateBaseSchema
+  .extend({
+    signatureRoute: z.literal("ELECTRONIC"),
     // M9-RN-009: contraseña + TOTP re-ingresados en el momento de
-    // firmar — no basta con la sesión abierta (M9-CA-007).
+    // firmar — no basta con la sesión abierta (M9-CA-007). Solo
+    // aplica a esta ruta.
     password: z.string().min(1, "Confirma tu contraseña para firmar."),
     totpCode: z.string().length(6, "El código de verificación debe tener 6 dígitos."),
   })
   .strict();
+export type PrescriptionCreateElectronicInput = z.infer<typeof prescriptionCreateElectronicSchema>;
+
+export const prescriptionCreateSchema = z.discriminatedUnion("signatureRoute", [
+  prescriptionCreateHandwrittenSchema,
+  prescriptionCreateElectronicSchema,
+]);
 export type PrescriptionCreateInput = z.infer<typeof prescriptionCreateSchema>;
 
 export const prescriptionCancelSchema = z

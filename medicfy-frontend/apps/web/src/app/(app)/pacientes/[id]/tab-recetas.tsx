@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { apiFetch } from "@/lib/api-client";
+import { apiFetch, apiFetchBlob } from "@/lib/api-client";
 import type { TimelinePrescription } from "@/lib/use-patient-clinical";
 import { Card, EmptyState, ErrorState } from "@/components/ui/states";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,17 @@ const MX_TIME_ZONE = "America/Mexico_City";
 function formatMxDate(iso: string): string {
   return new Intl.DateTimeFormat("es-MX", { timeZone: MX_TIME_ZONE, dateStyle: "long" }).format(new Date(iso));
 }
+
+const STATUS_LABEL: Record<TimelinePrescription["status"], string> = {
+  ISSUED: "Vigente",
+  CANCELLED: "Cancelada",
+  PENDING_HANDWRITTEN_SIGNATURE: "Pendiente de firma autógrafa",
+};
+const STATUS_CLASS: Record<TimelinePrescription["status"], string> = {
+  ISSUED: "border-success-600 text-success-600",
+  CANCELLED: "border-danger-600 text-danger-600",
+  PENDING_HANDWRITTEN_SIGNATURE: "border-warn-600 text-warn-600",
+};
 
 // M9-RN-006: cancelar nunca modifica la receta original — inserta
 // PrescriptionCancellation. El folio/contenido de la receta ya
@@ -24,6 +35,8 @@ export function TabRecetas({
   onChanged: () => void;
 }) {
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
 
   async function cancelPrescription(id: string) {
@@ -38,6 +51,37 @@ export function TabRecetas({
       setError(err);
     } finally {
       setCancellingId(null);
+    }
+  }
+
+  // Corrección v2.1 §17.4: declaración manual del médico de que ya
+  // firmó a mano y entregó la receta — nunca una verificación
+  // automática. Vive aquí (no en el panel de emisión) porque el
+  // médico puede cerrar ese panel antes de firmar físicamente.
+  async function confirmHandwrittenDelivery(id: string) {
+    if (!window.confirm("¿Confirmas que ya firmaste esta receta a mano y se la entregaste al paciente?")) return;
+    setError(null);
+    setConfirmingId(id);
+    try {
+      await apiFetch(`/prescriptions/${id}/confirm-handwritten-delivery`, { method: "POST", accessToken });
+      onChanged();
+    } catch (err) {
+      setError(err);
+    } finally {
+      setConfirmingId(null);
+    }
+  }
+
+  async function downloadPdf(id: string) {
+    setError(null);
+    setDownloadingId(id);
+    try {
+      const blob = await apiFetchBlob(`/prescriptions/${id}/pdf`, { accessToken });
+      if (blob) window.open(URL.createObjectURL(blob), "_blank");
+    } catch (err) {
+      setError(err);
+    } finally {
+      setDownloadingId(null);
     }
   }
 
@@ -59,12 +103,8 @@ export function TabRecetas({
                   </p>
                   <p className="text-sm text-gray-500">{p.diagnosisSnapshot}</p>
                 </div>
-                <span
-                  className={`whitespace-nowrap rounded-full border px-3 py-1 text-sm font-medium ${
-                    p.status === "CANCELLED" ? "border-danger-600 text-danger-600" : "border-success-600 text-success-600"
-                  }`}
-                >
-                  {p.status === "CANCELLED" ? "Cancelada" : "Vigente"}
+                <span className={`whitespace-nowrap rounded-full border px-3 py-1 text-sm font-medium ${STATUS_CLASS[p.status]}`}>
+                  {STATUS_LABEL[p.status]}
                 </span>
               </div>
               <ul className="mt-2 flex flex-col gap-1">
@@ -79,16 +119,39 @@ export function TabRecetas({
                   Verificación: <span className="font-mono">/verificar/{p.qrVerificationToken}</span>
                 </p>
               )}
-              {p.status === "ISSUED" && p.prescriptionType === "ELECTRONIC" && (
-                <Button
-                  type="button"
-                  variant="danger"
-                  isLoading={cancellingId === p.id}
-                  onClick={() => void cancelPrescription(p.id)}
-                  className="mt-3 min-h-11 px-3 text-sm"
-                >
-                  Cancelar receta
-                </Button>
+              {p.prescriptionType === "ELECTRONIC" && (
+                <div className="mt-3 flex flex-wrap gap-3">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    isLoading={downloadingId === p.id}
+                    onClick={() => void downloadPdf(p.id)}
+                    className="min-h-11 px-3 text-sm"
+                  >
+                    Descargar PDF
+                  </Button>
+                  {p.status === "PENDING_HANDWRITTEN_SIGNATURE" && (
+                    <Button
+                      type="button"
+                      isLoading={confirmingId === p.id}
+                      onClick={() => void confirmHandwrittenDelivery(p.id)}
+                      className="min-h-11 px-3 text-sm"
+                    >
+                      Marcar como firmada y entregada
+                    </Button>
+                  )}
+                  {p.status !== "CANCELLED" && (
+                    <Button
+                      type="button"
+                      variant="danger"
+                      isLoading={cancellingId === p.id}
+                      onClick={() => void cancelPrescription(p.id)}
+                      className="min-h-11 px-3 text-sm"
+                    >
+                      Cancelar receta
+                    </Button>
+                  )}
+                </div>
               )}
             </Card>
           </li>
