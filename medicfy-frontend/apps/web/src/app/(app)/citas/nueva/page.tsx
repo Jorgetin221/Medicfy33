@@ -1,11 +1,13 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
 import { FieldWrapper, SelectInput } from "@/components/ui/field";
 import { Card, LoadingState, EmptyState, ErrorState } from "@/components/ui/states";
+import { Button } from "@/components/ui/button";
 
 const MX_TIME_ZONE = "America/Mexico_City";
 
@@ -217,6 +219,17 @@ function NuevaCitaForm() {
             </FieldWrapper>
           </div>
         </Card>
+      ) : null}
+
+      {patientId ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-brand-700 bg-brand-100 p-6">
+          <p className="text-base text-brand-900">¿No necesitas agendar? Puedes atenderlo ahora mismo, sin reservar un horario.</p>
+          <Link href={`/consulta/paciente/${patientId}`}>
+            <Button type="button" variant="secondary" className="whitespace-nowrap">
+              Atender ahora sin cita
+            </Button>
+          </Link>
+        </div>
       ) : null}
 
       {bookingError ? <ErrorState error={bookingError} /> : null}
