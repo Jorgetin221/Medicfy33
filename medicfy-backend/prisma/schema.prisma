@@ -1013,8 +1013,11 @@ model PatientMedication {
 }
 
 // Estándar público fijo (no es una regla clínica de negocio) —
-// sembrado parcialmente, ver seed script. Ampliar el catálogo es
-// importar datos oficiales (DOF/OMS), no inventar contenido.
+// catálogo completo (~12,500 códigos vigentes) sembrado desde la
+// fuente oficial DGIS/CEMECE (datos.gob.mx, CC-BY-4.0), ver
+// prisma/data/cie10-dgis.json y seed.ts. Ampliar/actualizar el
+// catálogo es reemplazar ese archivo con datos oficiales, nunca
+// inventar contenido.
 model Icd10Code {
   code        String  @id
   description String

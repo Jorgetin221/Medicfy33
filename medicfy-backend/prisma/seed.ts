@@ -9,6 +9,7 @@
 //
 // Usage: pnpm db:seed
 import { PrismaClient } from "@prisma/client";
+import cie10Dgis from "./data/cie10-dgis.json" with { type: "json" };
 
 const prisma = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL });
 
@@ -20,28 +21,16 @@ const SPECIALTIES = [
   { code: "MEDICINA_INTERNA", nameEs: "Medicina Interna", cieGroup: null, requiresSpecialtyLicense: true },
 ];
 
-// Núcleo clínico (M8/M9): catálogo público fijo (OMS/DOF), no una
-// regla clínica de negocio — seguro de sembrar tal cual. Es un
-// subconjunto pequeño de motivos de consulta comunes, suficiente para
-// probar el flujo de punta a punta; importar el catálogo CIE-10
-// completo queda pendiente de una fuente oficial (ver el plan).
-const ICD10_CODES = [
-  { code: "J00", description: "Rinofaringitis aguda (resfriado común)" },
-  { code: "J02.9", description: "Faringitis aguda, no especificada" },
-  { code: "J03.9", description: "Amigdalitis aguda, no especificada" },
-  { code: "J06.9", description: "Infección aguda de las vías respiratorias superiores, no especificada" },
-  { code: "A09", description: "Diarrea y gastroenteritis de presunto origen infeccioso" },
-  { code: "K29.7", description: "Gastritis, no especificada" },
-  { code: "I10", description: "Hipertensión esencial (primaria)" },
-  { code: "E11", description: "Diabetes mellitus tipo 2" },
-  { code: "E66.9", description: "Obesidad, no especificada" },
-  { code: "M54.5", description: "Lumbago no especificado" },
-  { code: "N39.0", description: "Infección de vías urinarias, sitio no especificado" },
-  { code: "L23.9", description: "Dermatitis alérgica de contacto, de causa no especificada" },
-  { code: "R51", description: "Cefalea" },
-  { code: "R50.9", description: "Fiebre, no especificada" },
-  { code: "Z00.0", description: "Examen médico general" },
-];
+// Catálogo CIE-10 completo y vigente — Secretaría de Salud (DGIS/
+// CEMECE) vía datos.gob.mx, licencia CC-BY-4.0, descargado 2026-08-24:
+// https://www.datos.gob.mx/dataset/catalogo_cie_10
+// Estándar público fijo, no una regla clínica de negocio (ver
+// Icd10Code en schema.prisma). Filtrado a VALID="SI" del catálogo de
+// producción oficial (excluye rúbricas dadas de baja); reemplaza el
+// subconjunto de 15 ejemplos que vivía aquí antes — para refrescarlo,
+// sustituir data/cie10-dgis.json por una exportación más reciente de
+// la misma fuente.
+const ICD10_CODES: { code: string; description: string }[] = cie10Dgis;
 
 // Catálogo sintético mínimo para probar el flujo de punta a punta
 // (M9-RN-012 bloqueo de Grupo I/II incluido). Nombres genéricos y
@@ -74,14 +63,19 @@ async function main(): Promise<void> {
   }
   console.log(`Seeded ${SPECIALTIES.length} specialties.`);
 
-  for (const icd10 of ICD10_CODES) {
-    await prisma.icd10Code.upsert({
-      where: { code: icd10.code },
-      update: { description: icd10.description },
-      create: icd10,
-    });
+  // createMany en lotes en vez de upsert por fila: son ~12,500
+  // códigos y es un catálogo de referencia que casi nunca cambia —
+  // no vale la pena pagar 12,500 round-trips secuenciales para poder
+  // actualizar la descripción de un código que no cambió. Refrescar
+  // el catálogo es reemplazar data/cie10-dgis.json y volver a sembrar.
+  const ICD10_BATCH_SIZE = 2000;
+  let icd10Inserted = 0;
+  for (let i = 0; i < ICD10_CODES.length; i += ICD10_BATCH_SIZE) {
+    const batch = ICD10_CODES.slice(i, i + ICD10_BATCH_SIZE);
+    const result = await prisma.icd10Code.createMany({ data: batch, skipDuplicates: true });
+    icd10Inserted += result.count;
   }
-  console.log(`Seeded ${ICD10_CODES.length} ICD-10 codes.`);
+  console.log(`Seeded ${icd10Inserted} new ICD-10 codes (${ICD10_CODES.length} total in catalog).`);
 
   for (const medication of MEDICATIONS) {
     const existing = await prisma.medicationCatalog.findFirst({ where: { genericName: medication.genericName } });
