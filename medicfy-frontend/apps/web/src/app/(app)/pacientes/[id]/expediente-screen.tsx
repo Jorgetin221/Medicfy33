@@ -1,9 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { usePatientClinical } from "@/lib/use-patient-clinical";
 import { LoadingState, ErrorState } from "@/components/ui/states";
 import { Aviso } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { AllergySummary } from "@/components/clinical/allergy-summary";
 import { patientAgeYears, patientFullName } from "../../consulta/[appointmentId]/types";
@@ -66,11 +68,18 @@ export function ExpedienteScreen({ patientId, accessToken }: { patientId: string
     <main className="mx-auto flex max-w-4xl flex-col gap-4 p-6">
       {justSigned && <Aviso variant="exito" title="Consulta firmada correctamente." />}
 
-      <div>
-        <h1 className="font-heading text-2xl text-brand-900">{patientFullName(patient)}</h1>
-        <p className="text-base text-gray-500">
-          {patient.medicfyId} · {patientAgeYears(patient.birthDate)} años · {patient.sexAtBirth === "F" ? "Mujer" : "Hombre"}
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="font-heading text-2xl text-brand-900">{patientFullName(patient)}</h1>
+          <p className="text-base text-gray-500">
+            {patient.medicfyId} · {patientAgeYears(patient.birthDate)} años · {patient.sexAtBirth === "F" ? "Mujer" : "Hombre"}
+          </p>
+        </div>
+        {/* Pedido explícito: atender a un paciente que ya existe sin
+            necesidad de reservarle una cita primero. */}
+        <Link href={`/consulta/paciente/${patientId}`}>
+          <Button type="button">Iniciar consulta sin cita</Button>
+        </Link>
       </div>
 
       {activeAllergyCount > 0 && <AllergySummary allergies={allergies} />}

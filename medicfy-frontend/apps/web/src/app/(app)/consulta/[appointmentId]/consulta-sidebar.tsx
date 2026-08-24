@@ -9,17 +9,24 @@ function formatMxDate(iso: string): string {
   return new Intl.DateTimeFormat("es-MX", { timeZone: MX_TIME_ZONE, day: "numeric", month: "short", year: "numeric" }).format(new Date(iso));
 }
 
+type SidebarPatient = AppointmentDetail["patient"];
+
 // CLAUDE.md §6: "antecedentes, alergias y últimas 3 consultas visibles
 // SIN SCROLL NI CLIC en 1280×800" — columna fija, siempre visible,
-// nunca detrás de una pestaña/acordeón.
+// nunca detrás de una pestaña/acordeón. Toma patientId/patient sueltos
+// (no un AppointmentDetail completo) para poder reusarse tal cual en
+// la consulta sin cita (/consulta/paciente/[patientId]), que no tiene
+// ninguna cita de la que leer estos datos.
 export function ConsultaSidebar({
-  appointment,
+  patientId,
+  patient,
   allergies,
   medications,
   timeline,
   isLoadingClinical,
 }: {
-  appointment: AppointmentDetail;
+  patientId: string;
+  patient: SidebarPatient;
   allergies: PatientAllergy[];
   medications: PatientMedication[];
   timeline: PatientTimeline | null;
@@ -31,11 +38,11 @@ export function ConsultaSidebar({
   return (
     <aside className="flex w-full flex-col gap-4 lg:sticky lg:top-4 lg:h-[calc(100vh-2rem)] lg:w-72 lg:shrink-0 lg:overflow-y-auto">
       <div>
-        <Link href={`/pacientes/${appointment.patientId}`} className="text-base font-semibold text-brand-900 underline">
-          {patientFullName(appointment.patient)}
+        <Link href={`/pacientes/${patientId}`} className="text-base font-semibold text-brand-900 underline">
+          {patientFullName(patient)}
         </Link>
         <p className="text-sm text-gray-500">
-          {appointment.patient.medicfyId} · {patientAgeYears(appointment.patient.birthDate)} años · {appointment.patient.sexAtBirth === "F" ? "Mujer" : "Hombre"}
+          {patient.medicfyId} · {patientAgeYears(patient.birthDate)} años · {patient.sexAtBirth === "F" ? "Mujer" : "Hombre"}
         </p>
       </div>
 

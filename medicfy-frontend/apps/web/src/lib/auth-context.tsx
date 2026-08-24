@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { apiFetch } from "./api-client";
+import { apiFetch, setAuthRefreshHandlers } from "./api-client";
 
 interface AuthState {
   accessToken: string | null;
@@ -29,6 +29,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .then((res) => setAccessToken(res.accessToken))
       .catch(() => setAccessToken(null))
       .finally(() => setIsLoading(false));
+  }, []);
+
+  // api-client.ts no es un componente de React — no puede leer ni
+  // escribir este estado directamente. Se registra una sola vez: si
+  // cualquier apiFetch/apiUpload/apiFetchBlob recibe un 401 por token
+  // vencido (TTL 15 min), refresca en silencio y actualiza este
+  // estado; si el refresh token también expiró, limpia la sesión y
+  // cada pantalla redirige sola a /login (mismo guard que ya usan
+  // todas cuando accessToken es null).
+  useEffect(() => {
+    setAuthRefreshHandlers({
+      onTokenRefreshed: (token) => setAccessToken(token),
+      onSessionExpired: () => setAccessToken(null),
+    });
+    return () => setAuthRefreshHandlers({ onTokenRefreshed: () => {}, onSessionExpired: () => {} });
   }, []);
 
   const login = (token: string): void => setAccessToken(token);

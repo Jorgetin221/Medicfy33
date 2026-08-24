@@ -163,7 +163,8 @@ export function ConsultaScreen({ appointmentId, accessToken }: { appointmentId: 
   return (
     <main className="mx-auto flex max-w-6xl flex-col gap-6 p-6 lg:flex-row">
       <ConsultaSidebar
-        appointment={appointment}
+        patientId={appointment.patientId}
+        patient={appointment.patient}
         allergies={allergies}
         medications={medications}
         timeline={timeline}
