@@ -1,14 +1,17 @@
-import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import {
   patientAllergyCreateSchema,
   patientAllergyUpdateSchema,
   patientMedicationCreateSchema,
   patientMedicationUpdateSchema,
+  patientHistoryItemUpsertSchema,
+  patientHistoryListQuerySchema,
   type PatientAllergyCreateInput,
   type PatientAllergyUpdateInput,
   type PatientMedicationCreateInput,
   type PatientMedicationUpdateInput,
+  type PatientHistoryItemUpsertInput,
 } from "@medicfy/contracts";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { JwtAuthGuard } from "../identity/guards/jwt-auth.guard";
@@ -16,6 +19,8 @@ import { CareRelationshipGuard, type ClinicalRequest } from "../../common/guards
 import { AuditService } from "../identity/services/audit.service";
 import { getRequestMeta } from "../identity/request-meta";
 import { PatientClinicalService } from "./services/patient-clinical.service";
+
+const historyQueryPipe = new ZodValidationPipe(patientHistoryListQuerySchema);
 
 // M8: antecedentes/alergias/medicamentos y línea de tiempo del
 // paciente. Toda la clase pasa por CareRelationshipGuard — ningún
@@ -85,6 +90,25 @@ export class PatientClinicalController {
   ) {
     await this.auditWrite(req, patientId, "records.medications.update");
     return this.patientClinical.updateMedication(patientId, medicationId, body);
+  }
+
+  @Get("history")
+  @ApiOperation({ summary: "M8-RN-012/§10: antecedentes heredofamiliares/personales — se capturan una vez y se arrastran" })
+  async listHistory(@Param("patientId") patientId: string, @Query("category") category: string | undefined, @Req() req: ClinicalRequest) {
+    await this.auditRead(req, patientId, "records.history.list");
+    const query = historyQueryPipe.transform({ category });
+    return this.patientClinical.listHistoryItems(patientId, query.category);
+  }
+
+  @Post("history")
+  @ApiOperation({ summary: "Crea o actualiza un antecedente — versiona el valor anterior antes de sobrescribir (§10.4)" })
+  async upsertHistory(
+    @Param("patientId") patientId: string,
+    @Body(new ZodValidationPipe(patientHistoryItemUpsertSchema)) body: PatientHistoryItemUpsertInput,
+    @Req() req: ClinicalRequest
+  ) {
+    await this.auditWrite(req, patientId, "records.history.upsert");
+    return this.patientClinical.upsertHistoryItem(patientId, req.user.sub, body);
   }
 
   @Get("timeline")

@@ -24,7 +24,7 @@ import { TabOrdenes } from "./tab-ordenes";
 export function ExpedienteScreen({ patientId, accessToken }: { patientId: string; accessToken: string }) {
   const searchParams = useSearchParams();
   const justSigned = searchParams.get("justSigned") === "1";
-  const { patient, allergies, medications, timeline, isLoading, error, reload } = usePatientClinical(patientId, accessToken);
+  const { patient, allergies, medications, historyItems, timeline, isLoading, error, reload } = usePatientClinical(patientId, accessToken);
 
   if (isLoading && !patient) {
     return (
@@ -49,7 +49,16 @@ export function ExpedienteScreen({ patientId, accessToken }: { patientId: string
     {
       id: "antecedentes",
       label: "Antecedentes",
-      content: <TabAntecedentes patientId={patientId} accessToken={accessToken} allergies={allergies} medications={medications} onChanged={reload} />,
+      content: (
+        <TabAntecedentes
+          patientId={patientId}
+          accessToken={accessToken}
+          allergies={allergies}
+          medications={medications}
+          historyItems={historyItems}
+          onChanged={reload}
+        />
+      ),
     },
     { id: "notas", label: "Notas", content: <TabNotas accessToken={accessToken} encounters={timeline?.encounters ?? []} /> },
     {

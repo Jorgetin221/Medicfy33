@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { AllergySummary } from "@/components/clinical/allergy-summary";
+import { AntecedentesSummary } from "@/components/clinical/antecedentes-editor";
 import { LoadingState } from "@/components/ui/states";
-import type { PatientAllergy, PatientMedication, PatientTimeline } from "@/lib/use-patient-clinical";
+import type { PatientAllergy, PatientMedication, PatientHistoryItem, PatientTimeline } from "@/lib/use-patient-clinical";
 import { patientAgeYears, patientFullName, type AppointmentDetail } from "./types";
 
 const MX_TIME_ZONE = "America/Mexico_City";
@@ -22,6 +23,7 @@ export function ConsultaSidebar({
   patient,
   allergies,
   medications,
+  historyItems,
   timeline,
   isLoadingClinical,
 }: {
@@ -29,6 +31,7 @@ export function ConsultaSidebar({
   patient: SidebarPatient;
   allergies: PatientAllergy[];
   medications: PatientMedication[];
+  historyItems: PatientHistoryItem[];
   timeline: PatientTimeline | null;
   isLoadingClinical: boolean;
 }) {
@@ -50,6 +53,11 @@ export function ConsultaSidebar({
         <LoadingState label="Cargando antecedentes…" />
       ) : (
         <>
+          <section>
+            <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-gray-500">Antecedentes</h2>
+            <AntecedentesSummary historyItems={historyItems} />
+          </section>
+
           <section>
             <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-gray-500">Alergias</h2>
             <AllergySummary allergies={allergies} compact />

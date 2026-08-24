@@ -108,16 +108,35 @@ export interface PatientTimeline {
   labOrders: TimelineLabOrder[];
 }
 
+// M8-RN-012/§10: antecedentes heredofamiliares/personales — viven en
+// el paciente, se capturan una vez y se arrastran a cada consulta,
+// igual que PatientAllergy/PatientMedication arriba.
+export interface PatientHistoryItem {
+  id: string;
+  patientId: string;
+  category: "HEREDOFAMILIAR" | "PERSONAL_NO_PATOLOGICO" | "PERSONAL_PATOLOGICO";
+  subtype: string;
+  familyRelationship: string;
+  familyRelationshipDetail: string | null;
+  status: "PRESENTE" | "NEGADO" | "DESCONOCIDO" | "NO_INVESTIGADO";
+  structuredValue: Record<string, unknown> | null;
+  freeText: string | null;
+  updatedByUserId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 interface State {
   patient: PatientSummary | null;
   allergies: PatientAllergy[];
   medications: PatientMedication[];
+  historyItems: PatientHistoryItem[];
   timeline: PatientTimeline | null;
   isLoading: boolean;
   error: unknown;
 }
 
-const EMPTY_STATE: State = { patient: null, allergies: [], medications: [], timeline: null, isLoading: true, error: null };
+const EMPTY_STATE: State = { patient: null, allergies: [], medications: [], historyItems: [], timeline: null, isLoading: true, error: null };
 
 // Compartido por /consulta/[appointmentId] (antecedentes visibles sin
 // scroll/clic — CLAUDE.md §6) y /pacientes/[id] (expediente completo)
@@ -136,10 +155,11 @@ export function usePatientClinical(patientId: string | null, accessToken: string
       apiFetch<PatientSummary>(`/patients/${patientId}`, { accessToken }),
       apiFetch<PatientAllergy[]>(`/records/patients/${patientId}/allergies`, { accessToken }),
       apiFetch<PatientMedication[]>(`/records/patients/${patientId}/medications`, { accessToken }),
+      apiFetch<PatientHistoryItem[]>(`/records/patients/${patientId}/history`, { accessToken }),
       apiFetch<PatientTimeline>(`/records/patients/${patientId}/timeline`, { accessToken }),
     ])
-      .then(([patient, allergies, medications, timeline]) => {
-        if (!cancelled) setState({ patient, allergies, medications, timeline, isLoading: false, error: null });
+      .then(([patient, allergies, medications, historyItems, timeline]) => {
+        if (!cancelled) setState({ patient, allergies, medications, historyItems, timeline, isLoading: false, error: null });
       })
       .catch((error: unknown) => {
         if (!cancelled) setState((prev) => ({ ...prev, isLoading: false, error }));

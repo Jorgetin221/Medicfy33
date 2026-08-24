@@ -10,11 +10,12 @@ import {
   type PatientMedicationCreateInput,
 } from "@medicfy/contracts";
 import { apiFetch } from "@/lib/api-client";
-import type { PatientAllergy, PatientMedication } from "@/lib/use-patient-clinical";
+import type { PatientAllergy, PatientMedication, PatientHistoryItem } from "@/lib/use-patient-clinical";
 import { Card, ErrorState } from "@/components/ui/states";
 import { Button } from "@/components/ui/button";
 import { FieldWrapper, TextInput, SelectInput } from "@/components/ui/field";
 import { AllergySummary } from "@/components/clinical/allergy-summary";
+import { AntecedentesEditor } from "@/components/clinical/antecedentes-editor";
 
 // M8-RN-012: "los antecedentes se capturan una vez y se arrastran; no
 // se recapturan nunca" — este tab es el único lugar donde se
@@ -25,12 +26,14 @@ export function TabAntecedentes({
   accessToken,
   allergies,
   medications,
+  historyItems,
   onChanged,
 }: {
   patientId: string;
   accessToken: string;
   allergies: PatientAllergy[];
   medications: PatientMedication[];
+  historyItems: PatientHistoryItem[];
   onChanged: () => void;
 }) {
   return (
@@ -76,6 +79,8 @@ export function TabAntecedentes({
         )}
         <AddMedicationForm patientId={patientId} accessToken={accessToken} onCreated={onChanged} />
       </Card>
+
+      <AntecedentesEditor patientId={patientId} accessToken={accessToken} historyItems={historyItems} onChanged={onChanged} />
     </div>
   );
 }

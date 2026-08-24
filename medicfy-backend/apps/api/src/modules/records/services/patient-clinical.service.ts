@@ -1,9 +1,12 @@
 import { HttpStatus, Injectable } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
 import type {
   PatientAllergyCreateInput,
   PatientAllergyUpdateInput,
   PatientMedicationCreateInput,
   PatientMedicationUpdateInput,
+  PatientHistoryCategory,
+  PatientHistoryItemUpsertInput,
 } from "@medicfy/contracts";
 import { ApiException } from "../../../common/api-exception";
 import { PrismaService } from "../../../prisma/prisma.service";
@@ -65,6 +68,68 @@ export class PatientClinicalService {
         startedAt: patch.startedAt ? new Date(patch.startedAt) : undefined,
         suspendedAt: patch.suspendedAt ? new Date(patch.suspendedAt) : undefined,
       }),
+    });
+  }
+
+  listHistoryItems(patientId: string, category?: PatientHistoryCategory) {
+    return this.prisma.patientHistoryItem.findMany({
+      where: { patientId, ...(category ? { category } : {}) },
+      orderBy: [{ category: "asc" }, { subtype: "asc" }],
+    });
+  }
+
+  // M8-RN-012/§10.4 de especificacion-plataforma-clinica-con-ia.md:
+  // "toda modificación queda versionada" y "no borrar el valor
+  // histórico al actualizar" — antes de sobrescribir una fila
+  // existente se inserta una foto de sus valores viejos en
+  // PatientHistoryItemChange (append-only vía GRANT). El input
+  // representa el estado completo deseado del ítem (como un PUT): si
+  // structuredValue/freeText no vienen, se limpian explícitamente, no
+  // se dejan con el valor viejo por accidente. La clave (patientId,
+  // category, subtype, familyRelationship) es lo que define "una fila
+  // vigente" por antecedente.
+  async upsertHistoryItem(patientId: string, userId: string, input: PatientHistoryItemUpsertInput) {
+    const familyRelationship = input.familyRelationship ?? "NONE";
+    // input.structuredValue ya está validado por Zod (patientHistoryItemUpsertSchema)
+    // como un record de valores JSON-serializables — el cast es solo
+    // para el tipo de Prisma.InputJsonValue, más estricto de lo que
+    // TS puede verificar estructuralmente contra un Record genérico.
+    const data = {
+      status: input.status,
+      structuredValue: input.structuredValue ? (input.structuredValue as Prisma.InputJsonValue) : Prisma.DbNull,
+      freeText: input.freeText ?? null,
+      familyRelationshipDetail: input.familyRelationshipDetail ?? null,
+    };
+
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.patientHistoryItem.findUnique({
+        where: {
+          patientId_category_subtype_familyRelationship: {
+            patientId,
+            category: input.category,
+            subtype: input.subtype,
+            familyRelationship,
+          },
+        },
+      });
+
+      if (!existing) {
+        return tx.patientHistoryItem.create({
+          data: { patientId, category: input.category, subtype: input.subtype, familyRelationship, updatedByUserId: userId, ...data },
+        });
+      }
+
+      await tx.patientHistoryItemChange.create({
+        data: {
+          historyItemId: existing.id,
+          previousStatus: existing.status,
+          previousStructuredValue: existing.structuredValue ?? Prisma.DbNull,
+          previousFreeText: existing.freeText,
+          changedByUserId: userId,
+        },
+      });
+
+      return tx.patientHistoryItem.update({ where: { id: existing.id }, data: { updatedByUserId: userId, ...data } });
     });
   }
 

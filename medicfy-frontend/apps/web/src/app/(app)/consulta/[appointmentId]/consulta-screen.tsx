@@ -92,7 +92,14 @@ export function ConsultaScreen({ appointmentId, accessToken }: { appointmentId: 
     void bootstrap();
   }, [bootstrap]);
 
-  const { allergies, medications, timeline, isLoading: isLoadingClinical } = usePatientClinical(appointment?.patientId ?? null, accessToken);
+  const {
+    allergies,
+    medications,
+    historyItems,
+    timeline,
+    isLoading: isLoadingClinical,
+    reload: reloadClinical,
+  } = usePatientClinical(appointment?.patientId ?? null, accessToken);
 
   if (phase === "loading") {
     return (
@@ -167,15 +174,18 @@ export function ConsultaScreen({ appointmentId, accessToken }: { appointmentId: 
         patient={appointment.patient}
         allergies={allergies}
         medications={medications}
+        historyItems={historyItems}
         timeline={timeline}
         isLoadingClinical={isLoadingClinical}
       />
       {phase === "readonly" ? (
-        <ConsultaReadonly encounter={encounter} patientId={appointment.patientId} />
+        <ConsultaReadonly encounter={encounter} patientId={appointment.patientId} historyItems={historyItems} />
       ) : (
         <ConsultaForm
           accessToken={accessToken}
           encounter={encounter}
+          historyItems={historyItems}
+          onHistoryChanged={reloadClinical}
           onSigned={() => router.push(`/pacientes/${appointment.patientId}?justSigned=1`)}
           onAbandoned={() => setPhase("abandoned")}
         />

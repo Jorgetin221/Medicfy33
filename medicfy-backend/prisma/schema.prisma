@@ -493,6 +493,7 @@ model Patient {
   appointments      Appointment[]
   allergies         PatientAllergy[]
   medications       PatientMedication[]
+  historyItems      PatientHistoryItem[]
   encounters        ClinicalEncounter[]
   attachments       ClinicalAttachment[]
   prescriptions     Prescription[]
@@ -1010,6 +1011,79 @@ model PatientMedication {
   patient Patient @relation(fields: [patientId], references: [id])
 
   @@map("patient_medications")
+}
+
+enum PatientHistoryCategory {
+  HEREDOFAMILIAR
+  PERSONAL_NO_PATOLOGICO
+  PERSONAL_PATOLOGICO
+
+  @@map("patient_history_category")
+}
+
+enum PatientHistoryStatus {
+  PRESENTE
+  NEGADO
+  DESCONOCIDO
+  NO_INVESTIGADO
+
+  @@map("patient_history_status")
+}
+
+// M8-RN-012 / §10 de especificacion-plataforma-clinica-con-ia.md:
+// antecedentes heredofamiliares/personales no patológicos/personales
+// patológicos — viven en el paciente, se capturan una vez y se
+// arrastran a cada consulta, igual que PatientAllergy/PatientMedication
+// arriba. Modelo genérico (categoría+subtipo, no una columna por
+// dato) porque así lo define el §24 del documento nuevo — subtipo es
+// vocabulario fijo validado por Zod en los contratos, no en el schema.
+// Alergias y medicamentos actuales NO se duplican aquí: ya viven en
+// los dos modelos de arriba.
+model PatientHistoryItem {
+  id                       String                 @id @default(uuid())
+  patientId                String
+  category                 PatientHistoryCategory
+  subtype                  String
+  // "NONE" (no null) para PERSONAL_NO_PATOLOGICO/PERSONAL_PATOLOGICO
+  // — Postgres no compara NULL=NULL en el índice único de abajo, así
+  // que un valor centinela no nulo es lo que hace que "una fila
+  // vigente por (paciente, categoría, subtipo, familiar)" sea
+  // realmente único también fuera de HEREDOFAMILIAR.
+  familyRelationship       String                 @default("NONE")
+  familyRelationshipDetail String?
+  status                   PatientHistoryStatus   @default(NO_INVESTIGADO)
+  structuredValue          Json?
+  freeText                 String?
+  updatedByUserId          String
+  createdAt                DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt                DateTime               @updatedAt @db.Timestamptz(3)
+
+  patient   Patient                    @relation(fields: [patientId], references: [id])
+  changeLog PatientHistoryItemChange[]
+
+  @@unique([patientId, category, subtype, familyRelationship])
+  @@map("patient_history_items")
+}
+
+// Append-only real vía GRANT (mismo tratamiento que
+// PrescriptionCancellation/AppointmentStatusHistory): "toda
+// modificación queda versionada" y "no borrar el valor histórico al
+// actualizar" (§10.4 del documento nuevo). Cada UPDATE a
+// PatientHistoryItem inserta aquí una foto del valor ANTERIOR antes
+// de sobrescribir — nunca se actualiza ni se borra una fila de esta
+// tabla.
+model PatientHistoryItemChange {
+  id                      String                @id @default(uuid())
+  historyItemId           String
+  previousStatus          PatientHistoryStatus?
+  previousStructuredValue Json?
+  previousFreeText        String?
+  changedByUserId         String
+  changedAt               DateTime              @default(now()) @db.Timestamptz(3)
+
+  historyItem PatientHistoryItem @relation(fields: [historyItemId], references: [id])
+
+  @@map("patient_history_item_changes")
 }
 
 // Estándar público fijo (no es una regla clínica de negocio) —

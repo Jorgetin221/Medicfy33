@@ -21,6 +21,8 @@ import { Icd10Picker } from "@/components/clinical/icd10-picker";
 import { NoteTemplateBar } from "@/components/clinical/note-template-bar";
 import { PrescriptionPanel } from "@/components/clinical/prescription-panel";
 import { LabOrderPanel } from "@/components/clinical/lab-order-panel";
+import { AntecedentesEditor, AntecedentesSummary } from "@/components/clinical/antecedentes-editor";
+import type { PatientHistoryItem } from "@/lib/use-patient-clinical";
 import { ENCOUNTER_TYPE_LABEL, type EncounterDetail } from "./types";
 
 type FreeTextField = "chiefComplaint" | "currentIllness" | "physicalExam" | "assessment" | "plan" | "prognosis";
@@ -37,15 +39,20 @@ function formatElapsed(totalSeconds: number): string {
 export function ConsultaForm({
   accessToken,
   encounter,
+  historyItems,
+  onHistoryChanged,
   onSigned,
   onAbandoned,
 }: {
   accessToken: string;
   encounter: EncounterDetail;
+  historyItems: PatientHistoryItem[];
+  onHistoryChanged: () => void;
   onSigned: () => void;
   onAbandoned: () => void;
 }) {
   const [isHydrated, setIsHydrated] = useState(false);
+  const [showAntecedentesEditor, setShowAntecedentesEditor] = useState(false);
   const [activeField, setActiveField] = useState<FreeTextField>("plan");
   const [rxPanelOpen, setRxPanelOpen] = useState(false);
   const [labPanelOpen, setLabPanelOpen] = useState(false);
@@ -270,6 +277,31 @@ export function ConsultaForm({
             onFocus={() => setActiveField("currentIllness")}
           />
         </FieldWrapper>
+
+        <section>
+          <h2 className="mb-2 text-base font-semibold text-gray-900">Antecedentes</h2>
+          {encounter.encounterType === "FIRST_VISIT" ? (
+            // M8-RN-012 "Modo Historia Clínica (primera vez)": los
+            // antecedentes se capturan aquí — viven en el paciente, no
+            // en este encuentro, así que se guardan de inmediato por
+            // ítem (AntecedentesEditor), no como parte del draft/firma.
+            <AntecedentesEditor patientId={encounter.patientId} accessToken={accessToken} historyItems={historyItems} onChanged={onHistoryChanged} />
+          ) : (
+            // M8-RN-012 "Modo Nota de Evolución": "se muestran de la
+            // consulta anterior, editables, no se recapturan" — resumen
+            // colapsado por default, el mismo editor queda un clic
+            // atrás si algo cambió.
+            <div className="flex flex-col gap-2">
+              <AntecedentesSummary historyItems={historyItems} />
+              <Button type="button" variant="secondary" className="w-fit" onClick={() => setShowAntecedentesEditor((v) => !v)}>
+                {showAntecedentesEditor ? "Ocultar antecedentes" : "Actualizar antecedentes"}
+              </Button>
+              {showAntecedentesEditor && (
+                <AntecedentesEditor patientId={encounter.patientId} accessToken={accessToken} historyItems={historyItems} onChanged={onHistoryChanged} />
+              )}
+            </div>
+          )}
+        </section>
 
         <section>
           <h2 className="mb-2 text-base font-semibold text-gray-900">Signos vitales</h2>

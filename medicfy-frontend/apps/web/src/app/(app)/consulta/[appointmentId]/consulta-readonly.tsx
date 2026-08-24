@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { Aviso } from "@/components/ui/alert";
 import { Card } from "@/components/ui/states";
+import { AntecedentesSummary } from "@/components/clinical/antecedentes-editor";
+import type { PatientHistoryItem } from "@/lib/use-patient-clinical";
 import { ENCOUNTER_TYPE_LABEL, type EncounterDetail } from "./types";
 
 const MX_TIME_ZONE = "America/Mexico_City";
@@ -12,7 +14,15 @@ function formatMxDateTime(iso: string): string {
 // de "abrir" una consulta ya firmada (p. ej. el médico da doble clic
 // en "Iniciar", o vuelve después). Mostrar el formulario editable
 // aquí sería mentir sobre qué se puede hacer con estos datos.
-export function ConsultaReadonly({ encounter, patientId }: { encounter: EncounterDetail; patientId: string }) {
+export function ConsultaReadonly({
+  encounter,
+  patientId,
+  historyItems,
+}: {
+  encounter: EncounterDetail;
+  patientId: string;
+  historyItems: PatientHistoryItem[];
+}) {
   const note = encounter.notes[0];
 
   return (
@@ -20,6 +30,13 @@ export function ConsultaReadonly({ encounter, patientId }: { encounter: Encounte
       <Aviso variant="info" title={`Consulta firmada${encounter.signedAt ? ` el ${formatMxDateTime(encounter.signedAt)}` : ""}`}>
         Esta nota ya fue firmada y no se puede editar. Para corregirla, agrega una nota nueva desde el expediente del paciente.
       </Aviso>
+
+      <Card>
+        <p className="text-sm font-medium text-gray-500">Antecedentes (§10 — vive en el paciente, no en esta nota)</p>
+        <div className="mt-2">
+          <AntecedentesSummary historyItems={historyItems} />
+        </div>
+      </Card>
 
       {!note ? (
         <p className="text-base text-gray-500">No se encontró el contenido de la nota.</p>

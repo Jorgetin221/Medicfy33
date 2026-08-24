@@ -118,6 +118,88 @@ export type PatientMedicationCreateInput = z.infer<typeof patientMedicationCreat
 export const patientMedicationUpdateSchema = patientMedicationCreateSchema.partial().strict();
 export type PatientMedicationUpdateInput = z.infer<typeof patientMedicationUpdateSchema>;
 
+// M8-RN-012 / §10 de especificacion-plataforma-clinica-con-ia.md:
+// antecedentes heredofamiliares (AHF), personales no patológicos
+// (APNP) y personales patológicos (APP) — viven en el paciente, se
+// capturan una vez y se arrastran (mismo principio que alergias y
+// medicamentos arriba). Vocabulario de subtipo transcrito literal de
+// §10.1-10.3, sin agregar nada; alergias y medicamentos actuales se
+// excluyen porque ya viven en los schemas de arriba.
+export const patientHistoryCategorySchema = z.enum(["HEREDOFAMILIAR", "PERSONAL_NO_PATOLOGICO", "PERSONAL_PATOLOGICO"]);
+export type PatientHistoryCategory = z.infer<typeof patientHistoryCategorySchema>;
+
+export const patientHistoryStatusSchema = z.enum(["PRESENTE", "NEGADO", "DESCONOCIDO", "NO_INVESTIGADO"]);
+export type PatientHistoryStatus = z.infer<typeof patientHistoryStatusSchema>;
+
+export const HEREDOFAMILIAR_SUBTYPES = [
+  "estado_vital",
+  "diabetes",
+  "hipertension",
+  "cardiopatia_evento_vascular",
+  "cancer",
+  "enfermedad_renal",
+  "enfermedad_hereditaria_congenita",
+  "trastorno_neurologico_psiquiatrico",
+  "enfermedad_autoinmune",
+  "otro",
+] as const;
+
+export const PERSONAL_NO_PATOLOGICO_SUBTYPES = [
+  "vivienda_servicios",
+  "alimentacion_hidratacion",
+  "higiene",
+  "actividad_fisica",
+  "sueno",
+  "ocupacion_exposiciones",
+  "viajes_relevantes",
+  "tabaquismo",
+  "alcohol",
+  "otras_sustancias",
+  "vacunacion",
+  "animales_vectores_riesgos",
+] as const;
+
+export const PERSONAL_PATOLOGICO_SUBTYPES = [
+  "enfermedades_previas_activas",
+  "hospitalizaciones",
+  "cirugias",
+  "traumatismos",
+  "transfusiones",
+  "enfermedades_infecciosas_relevantes",
+  "discapacidad_apoyos",
+  "salud_mental",
+] as const;
+
+export const FAMILY_RELATIONSHIPS = ["MADRE", "PADRE", "HERMANOS", "HIJOS", "ABUELOS", "OTRO"] as const;
+
+export const patientHistoryItemUpsertSchema = z
+  .object({
+    category: patientHistoryCategorySchema,
+    subtype: z.enum([...HEREDOFAMILIAR_SUBTYPES, ...PERSONAL_NO_PATOLOGICO_SUBTYPES, ...PERSONAL_PATOLOGICO_SUBTYPES]),
+    familyRelationship: z.enum(FAMILY_RELATIONSHIPS).optional(),
+    familyRelationshipDetail: z.string().max(200).optional(),
+    status: patientHistoryStatusSchema,
+    structuredValue: z.record(z.string(), z.unknown()).optional(),
+    freeText: z.string().max(1000).optional(),
+  })
+  .strict()
+  .refine((data) => data.category !== "HEREDOFAMILIAR" || data.familyRelationship !== undefined, {
+    message: "familyRelationship es obligatorio para category=HEREDOFAMILIAR.",
+    path: ["familyRelationship"],
+  })
+  .refine((data) => data.category === "HEREDOFAMILIAR" || data.familyRelationship === undefined, {
+    message: "familyRelationship solo aplica a category=HEREDOFAMILIAR.",
+    path: ["familyRelationship"],
+  });
+export type PatientHistoryItemUpsertInput = z.infer<typeof patientHistoryItemUpsertSchema>;
+
+export const patientHistoryListQuerySchema = z
+  .object({
+    category: patientHistoryCategorySchema.optional(),
+  })
+  .strict();
+export type PatientHistoryListQueryInput = z.infer<typeof patientHistoryListQuerySchema>;
+
 export const clinicalAttachmentUploadMetadataSchema = z
   .object({
     encounterId: z.string().uuid().optional(),
