@@ -123,6 +123,37 @@ export class PrescriptionService {
       .filter((catalog) => catalog && activeMedications.some((m) => m.genericName.toLowerCase() === catalog.genericName.toLowerCase()))
       .map((catalog) => catalog?.genericName);
 
+    // M9-RN-008c extendida (2026-08-24, a petición explícita del
+    // usuario — Fase 2 "alertas de interacciones y alergias"): misma
+    // subclase farmacológica por prefijo ATC (OMS ATC/DDD; los
+    // primeros 4 caracteres son el grupo farmacológico, p. ej. N02A
+    // = opioides), para detectar dos medicamentos de la misma clase
+    // con nombre distinto (dos AINEs, dos opioides). No es una
+    // interacción fármaco-fármaco real (eso exige una fuente de
+    // datos clínicos que hoy no existe en el proyecto — se preguntó
+    // y se deferió explícitamente) — solo agrupa por la clasificación
+    // pública de la OMS ya presente en el catálogo, nunca una
+    // afirmación clínica inventada.
+    const classDuplicates: { prescribedMedication: string; existingMedication: string }[] = [];
+    if (activeMedications.length > 0) {
+      const activeCatalogEntries = await this.prisma.medicationCatalog.findMany({ where: { isActive: true } });
+      const atcPrefixByActiveName = new Map(
+        activeCatalogEntries.flatMap((c) => (c.atcCode ? [[c.genericName.toLowerCase(), c.atcCode.slice(0, 4)] as const] : []))
+      );
+      for (const item of input.items) {
+        const catalog = catalogById.get(item.medicationCatalogId);
+        if (!catalog || !catalog.atcCode) continue;
+        const prefix = catalog.atcCode.slice(0, 4);
+        for (const active of activeMedications) {
+          const isSameName = active.genericName.toLowerCase() === catalog.genericName.toLowerCase();
+          const isSameClass = atcPrefixByActiveName.get(active.genericName.toLowerCase()) === prefix;
+          if (!isSameName && isSameClass) {
+            classDuplicates.push({ prescribedMedication: catalog.genericName, existingMedication: active.genericName });
+          }
+        }
+      }
+    }
+
     const folio = await nextPrescriptionFolio(this.prisma);
     const signatureTimestamp = new Date();
     const snapshot = this.buildLegalSnapshot(doctor, patient);
@@ -191,7 +222,7 @@ export class PrescriptionService {
       include: { items: true },
     });
 
-    return { prescription, warnings: { therapeuticDuplicates: duplicates } };
+    return { prescription, warnings: { therapeuticDuplicates: duplicates, therapeuticClassDuplicates: classDuplicates } };
   }
 
   // Corrección v2.1 §17.4: "Firmada y entregada" es una declaración

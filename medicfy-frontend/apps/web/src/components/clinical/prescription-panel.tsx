@@ -9,12 +9,18 @@ import { FieldWrapper, TextInput } from "@/components/ui/field";
 import { Aviso } from "@/components/ui/alert";
 import { MedicationPicker, type MedicationCatalogEntry, type PrescriptionDraftItem } from "@/components/clinical/medication-picker";
 
+interface TherapeuticClassDuplicate {
+  prescribedMedication: string;
+  existingMedication: string;
+}
+
 interface IssuedPrescription {
   id: string;
   folio: string;
   qrVerificationToken: string | null;
   signatureRoute: "HANDWRITTEN_AFTER_PRINT" | "ELECTRONIC";
   therapeuticDuplicates: string[];
+  therapeuticClassDuplicates: TherapeuticClassDuplicate[];
 }
 
 type SignatureRoute = "HANDWRITTEN_AFTER_PRINT" | "ELECTRONIC";
@@ -120,7 +126,7 @@ export function PrescriptionPanel({
           : { ...base, signatureRoute: "ELECTRONIC", password, totpCode };
       const result = await apiFetch<{
         prescription: { id: string; folio: string; qrVerificationToken: string | null; signatureRoute: SignatureRoute };
-        warnings: { therapeuticDuplicates: string[] };
+        warnings: { therapeuticDuplicates: string[]; therapeuticClassDuplicates: TherapeuticClassDuplicate[] };
       }>(`/prescriptions/encounters/${encounterId}`, { method: "POST", accessToken, body });
       setIssued({
         id: result.prescription.id,
@@ -128,6 +134,7 @@ export function PrescriptionPanel({
         qrVerificationToken: result.prescription.qrVerificationToken,
         signatureRoute: result.prescription.signatureRoute,
         therapeuticDuplicates: result.warnings.therapeuticDuplicates,
+        therapeuticClassDuplicates: result.warnings.therapeuticClassDuplicates,
       });
       onIssued();
     } catch (error) {
@@ -217,6 +224,18 @@ export function PrescriptionPanel({
           {issued.therapeuticDuplicates.length > 0 && (
             <Aviso variant="advertencia" title="Posible duplicidad terapéutica">
               El paciente ya toma: {issued.therapeuticDuplicates.join(", ")}. Revisa antes de continuar.
+            </Aviso>
+          )}
+          {issued.therapeuticClassDuplicates.length > 0 && (
+            <Aviso variant="advertencia" title="Misma clase terapéutica que un medicamento ya activo">
+              <ul className="list-disc pl-5">
+                {issued.therapeuticClassDuplicates.map((d, i) => (
+                  <li key={i}>
+                    {d.prescribedMedication} es de la misma clase que {d.existingMedication}, que el paciente ya toma.
+                  </li>
+                ))}
+              </ul>
+              Revisa antes de continuar.
             </Aviso>
           )}
           <Button type="button" variant="secondary" isLoading={isDownloadingPdf} onClick={() => void downloadPdf()} className="w-fit">
