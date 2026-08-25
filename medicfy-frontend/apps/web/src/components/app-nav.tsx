@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/auth-context";
 const LINKS = [
   { href: "/agenda", label: "Agenda" },
   { href: "/citas/nueva", label: "Nueva cita" },
+  { href: "/pacientes", label: "Pacientes" },
   { href: "/pacientes/nuevo", label: "Nuevo paciente" },
   { href: "/disponibilidad", label: "Disponibilidad" },
   { href: "/perfil", label: "Perfil" },
