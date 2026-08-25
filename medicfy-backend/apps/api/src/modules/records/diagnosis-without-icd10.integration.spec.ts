@@ -79,6 +79,8 @@ describe("Diagnóstico sin código CIE-10 (segunda ruta de M8-RN-006)", () => {
     });
     expect(res.status).toBe(201);
     const userId = res.body.userId as string;
+    // DoctorVerifiedGuard (M1-RN-002) ahora protege encounters.sign.
+    await prisma.doctor.update({ where: { userId }, data: { verificationStatus: "VERIFIED" } });
     const accessToken = tokenService.signAccessToken({ sub: userId, primaryRole: "DOCTOR" });
     return { userId, accessToken };
   }

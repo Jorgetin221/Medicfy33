@@ -74,6 +74,8 @@ describe("Receta — duplicidad terapéutica (nombre exacto y clase ATC)", () =>
     });
     expect(res.status).toBe(201);
     const userId = res.body.userId as string;
+    // DoctorVerifiedGuard (M1-RN-002) ahora protege prescriptions.create.
+    await prisma.doctor.update({ where: { userId }, data: { verificationStatus: "VERIFIED" } });
     const accessToken = tokenService.signAccessToken({ sub: userId, primaryRole: "DOCTOR" });
     return { userId, email, accessToken };
   }

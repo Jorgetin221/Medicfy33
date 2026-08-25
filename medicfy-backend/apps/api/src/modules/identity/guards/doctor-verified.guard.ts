@@ -3,10 +3,12 @@ import { AuthService } from "../services/auth.service";
 import type { AuthenticatedRequest } from "./jwt-auth.guard";
 
 // M1-RN-002 / M1-CA-003: a doctor whose verification_status isn't
-// VERIFIED cannot perform a clinical action. Meant to be applied
-// alongside JwtAuthGuard on M9 (prescriptions) and M10 (lab orders)
-// controllers once they exist; exercised directly by an M1 test today
-// since neither module exists yet.
+// VERIFIED cannot perform a clinical action. Applied on the routes
+// that actually emit a legal/clinical document — prescriptions.create
+// and .createExternalPhysical (M9), encounters.sign (M8), lab
+// orders.create (M10) — not on drafting/reading/cancelling routes,
+// which the spec's own wording ("no puede emitir... hasta estar
+// verified") doesn't restrict.
 @Injectable()
 export class DoctorVerifiedGuard implements CanActivate {
   constructor(private readonly authService: AuthService) {}

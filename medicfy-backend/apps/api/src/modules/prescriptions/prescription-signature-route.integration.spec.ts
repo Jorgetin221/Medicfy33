@@ -79,6 +79,11 @@ describe("Receta — rutas de firma (autógrafa post-impresión vs. electrónica
     });
     expect(res.status).toBe(201);
     const userId = res.body.userId as string;
+    // DoctorVerifiedGuard (M1-RN-002) ahora protege prescriptions.create
+    // — un médico SUBMITTED (el default tras registrarse) recibiría
+    // 403 DOCTOR_NOT_VERIFIED antes de llegar a la lógica que este
+    // archivo prueba.
+    await prisma.doctor.update({ where: { userId }, data: { verificationStatus: "VERIFIED" } });
     const accessToken = tokenService.signAccessToken({ sub: userId, primaryRole: "DOCTOR" });
     return { userId, email, accessToken };
   }

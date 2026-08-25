@@ -10,6 +10,7 @@ import {
 } from "@medicfy/contracts";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { JwtAuthGuard } from "../identity/guards/jwt-auth.guard";
+import { DoctorVerifiedGuard } from "../identity/guards/doctor-verified.guard";
 import { CareRelationshipGuard, type ClinicalRequest } from "../../common/guards/care-relationship.guard";
 import { AuditService } from "../identity/services/audit.service";
 import { getRequestMeta } from "../identity/request-meta";
@@ -66,6 +67,7 @@ export class EncountersController {
   }
 
   @Post("records/encounters/:encounterId/sign")
+  @UseGuards(DoctorVerifiedGuard)
   @ApiOperation({ summary: "Firma el encuentro: congela la nota, calcula y encadena el hash, completa la cita ligada (M8-RN-001/002, M8-CA-004)" })
   async sign(
     @Param("encounterId") encounterId: string,

@@ -10,6 +10,7 @@ import {
 } from "@medicfy/contracts";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { JwtAuthGuard } from "../identity/guards/jwt-auth.guard";
+import { DoctorVerifiedGuard } from "../identity/guards/doctor-verified.guard";
 import { CareRelationshipGuard, type ClinicalRequest } from "../../common/guards/care-relationship.guard";
 import { AuditService } from "../identity/services/audit.service";
 import { getRequestMeta } from "../identity/request-meta";
@@ -28,6 +29,7 @@ export class PrescriptionsController {
   ) {}
 
   @Post("prescriptions/encounters/:encounterId")
+  @UseGuards(DoctorVerifiedGuard)
   @ApiOperation({ summary: "M9-RN-001/002: emite receta ligada al encuentro; M9-CA-007 firma con contraseña+TOTP" })
   async create(
     @Param("encounterId") encounterId: string,
@@ -46,6 +48,7 @@ export class PrescriptionsController {
   }
 
   @Post("prescriptions/encounters/:encounterId/external-physical")
+  @UseGuards(DoctorVerifiedGuard)
   @ApiOperation({ summary: "M9-RN-014: registra receta ya emitida en recetario físico (Grupos I/II)" })
   async createExternalPhysical(
     @Param("encounterId") encounterId: string,
