@@ -64,12 +64,20 @@ export function ExpedienteScreen({ patientId, accessToken }: { patientId: string
     {
       id: "recetas",
       label: "Recetas",
-      content: <TabRecetas accessToken={accessToken} prescriptions={timeline?.prescriptions ?? []} onChanged={reload} />,
+      content: <TabRecetas accessToken={accessToken} patientId={patientId} prescriptions={timeline?.prescriptions ?? []} onChanged={reload} />,
     },
     {
       id: "ordenes",
       label: "Órdenes y resultados",
-      content: <TabOrdenes accessToken={accessToken} patientId={patientId} labOrders={timeline?.labOrders ?? []} onChanged={reload} />,
+      content: (
+        <TabOrdenes
+          accessToken={accessToken}
+          patientId={patientId}
+          labOrders={timeline?.labOrders ?? []}
+          standaloneResults={timeline?.standaloneResults ?? []}
+          onChanged={reload}
+        />
+      ),
     },
   ];
 

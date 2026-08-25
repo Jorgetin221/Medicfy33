@@ -85,6 +85,7 @@ function NuevaCitaForm() {
   const [slotsError, setSlotsError] = useState<unknown>(null);
   const [bookingError, setBookingError] = useState<unknown>(null);
   const [bookingSlot, setBookingSlot] = useState<string | null>(null);
+  const [booked, setBooked] = useState<{ patientId: string; startAt: string } | null>(null);
 
   const loadBase = useCallback(async () => {
     if (!accessToken) return;
@@ -132,7 +133,11 @@ function NuevaCitaForm() {
         accessToken,
         body: { patientId, serviceId, startsAt: slot.startAt },
       });
-      router.push("/agenda");
+      // Antes esto mandaba directo a /agenda sin ningún link al
+      // paciente — y si la cita no era para hoy, /agenda ni siquiera
+      // la mostraba (solo lista el día de hoy). Mismo patrón de
+      // pantalla de éxito que ya usa pacientes/nuevo.
+      setBooked({ patientId, startAt: slot.startAt });
     } catch (error) {
       setBookingError(error);
       if (error instanceof ApiError && error.code === "SLOT_TAKEN") {
@@ -162,6 +167,27 @@ function NuevaCitaForm() {
     return (
       <main className="mx-auto max-w-2xl p-6">
         <LoadingState />
+      </main>
+    );
+  }
+
+  if (booked) {
+    const bookedPatient = patients?.find((p) => p.id === booked.patientId);
+    return (
+      <main className="mx-auto flex min-h-screen max-w-xl flex-col items-center justify-center gap-4 p-6 text-center">
+        <h1 className="font-heading text-2xl text-brand-900">Cita agendada</h1>
+        <p className="text-base text-gray-700">
+          {bookedPatient ? `${bookedPatient.firstName} ${bookedPatient.lastNamePaternal}` : "El paciente"} — {mxDateLabel(mxDateKey(booked.startAt))} a
+          las {mxTime(booked.startAt)}.
+        </p>
+        <div className="flex gap-3">
+          <Link href={`/pacientes/${booked.patientId}`}>
+            <Button type="button">Ver perfil del paciente</Button>
+          </Link>
+          <Button variant="secondary" onClick={() => router.push("/agenda")}>
+            Ir a la agenda
+          </Button>
+        </div>
       </main>
     );
   }

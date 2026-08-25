@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { apiFetch, apiFetchBlob } from "@/lib/api-client";
 import type { TimelinePrescription } from "@/lib/use-patient-clinical";
 import { Card, EmptyState, ErrorState } from "@/components/ui/states";
@@ -27,10 +28,12 @@ const STATUS_CLASS: Record<TimelinePrescription["status"], string> = {
 // emitida es inmutable siempre (R1).
 export function TabRecetas({
   accessToken,
+  patientId,
   prescriptions,
   onChanged,
 }: {
   accessToken: string;
+  patientId: string;
   prescriptions: TimelinePrescription[];
   onChanged: () => void;
 }) {
@@ -85,12 +88,30 @@ export function TabRecetas({
     }
   }
 
+  // M9-RN-002: "toda receta pertenece a un encuentro — no hay recetas
+  // sin consulta documentada". No se puede emitir una desde aquí
+  // directamente; el botón abre (o continúa) una consulta, que es
+  // donde vive el panel real de emisión.
+  const nuevaRecetaButton = (
+    <Link href={`/consulta/paciente/${patientId}`}>
+      <Button type="button" variant="secondary" className="min-h-11 px-3 text-sm">
+        + Emitir receta
+      </Button>
+    </Link>
+  );
+
   if (prescriptions.length === 0) {
-    return <EmptyState title="Sin recetas emitidas" description="Las recetas que emitas desde una consulta aparecerán aquí." />;
+    return (
+      <div className="flex flex-col gap-3">
+        <div>{nuevaRecetaButton}</div>
+        <EmptyState title="Sin recetas emitidas" description="Las recetas que emitas desde una consulta aparecerán aquí." />
+      </div>
+    );
   }
 
   return (
     <div className="flex flex-col gap-3">
+      <div>{nuevaRecetaButton}</div>
       {error ? <ErrorState error={error} /> : null}
       <ul className="flex flex-col gap-3">
         {prescriptions.map((p) => (

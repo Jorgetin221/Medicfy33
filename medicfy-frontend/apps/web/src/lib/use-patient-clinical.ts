@@ -102,10 +102,23 @@ export interface TimelineLabOrder {
   items: { studyName: string; loincCode: string | null; notes: string | null }[];
 }
 
+// §6.7: labOrderId nullable — un resultado que el paciente ya trae de
+// otro lado, subido sin pasar por una orden emitida en Medicfy.
+export interface TimelineStandaloneResult {
+  type: "standalone_result";
+  id: string;
+  labName: string | null;
+  resultDate: string | null;
+  uploadedAt: string;
+  uploadedByRole: "DOCTOR" | "PATIENT";
+  status: "PENDING_REVIEW" | "REVIEWED";
+}
+
 export interface PatientTimeline {
   encounters: TimelineEncounter[];
   prescriptions: TimelinePrescription[];
   labOrders: TimelineLabOrder[];
+  standaloneResults: TimelineStandaloneResult[];
 }
 
 // M8-RN-012/§10: antecedentes heredofamiliares/personales — viven en

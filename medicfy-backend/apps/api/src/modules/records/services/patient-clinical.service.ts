@@ -136,7 +136,7 @@ export class PatientClinicalService {
   // §6.5.8: expediente cronológico — encuentros, recetas y órdenes en
   // una sola línea de tiempo, cada uno con tipo/fecha/autor/estado.
   async timeline(patientId: string) {
-    const [encounters, prescriptions, labOrders] = await Promise.all([
+    const [encounters, prescriptions, labOrders, standaloneResults] = await Promise.all([
       this.prisma.clinicalEncounter.findMany({
         where: { patientId },
         orderBy: { startedAt: "desc" },
@@ -152,6 +152,14 @@ export class PatientClinicalService {
         orderBy: { issuedAt: "desc" },
         include: { cancellation: true, results: true, items: true },
       }),
+      // §6.7: labOrderId es nullable — un resultado puede subirse sin
+      // estar ligado a una orden emitida por Medicfy (estudios que el
+      // paciente ya trae de otro lado). Sin esto, esos resultados
+      // quedaban subidos pero invisibles: ninguna pantalla los leía.
+      this.prisma.labResult.findMany({
+        where: { patientId, labOrderId: null },
+        orderBy: { uploadedAt: "desc" },
+      }),
     ]);
 
     return {
@@ -165,6 +173,11 @@ export class PatientClinicalService {
         type: "lab_order" as const,
         ...o,
         status: o.cancellation ? ("CANCELLED" as const) : o.results.length > 0 ? ("RESULTS_UPLOADED" as const) : ("ISSUED" as const),
+      })),
+      standaloneResults: standaloneResults.map((r) => ({
+        type: "standalone_result" as const,
+        ...r,
+        status: r.reviewedAt ? ("REVIEWED" as const) : ("PENDING_REVIEW" as const),
       })),
     };
   }
