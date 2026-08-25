@@ -20,6 +20,14 @@ export function Panel({
 }) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
+  // Ref de "última versión" — un caller como ConsultaForm re-renderiza
+  // cada segundo (el cronómetro) y pasa un onClose con identidad nueva
+  // en cada render. Si onClose estuviera en el arreglo de deps de abajo,
+  // este efecto se repetiría cada segundo y robaría el foco de vuelta
+  // al botón de cerrar mientras el médico está escribiendo — justo el
+  // bug reportado ("solo puedo escribir una letra y me saca").
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open) return;
@@ -27,14 +35,14 @@ export function Panel({
     closeButtonRef.current?.focus();
 
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") onCloseRef.current();
     }
     document.addEventListener("keydown", handleKeyDown);
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
       previouslyFocused.current?.focus();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 

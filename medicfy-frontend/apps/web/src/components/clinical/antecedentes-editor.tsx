@@ -15,11 +15,20 @@ const STATUS_OPTIONS: { value: Status; label: string }[] = [
   { value: "NO_INVESTIGADO", label: "No investigado" },
 ];
 
+// bg-warn-100/text-warn-700 no existen en el sistema de diseño (solo
+// warn-600/warn-50 — ver tailwind.config.ts) y Tailwind los descarta en
+// silencio, así que "Presente" solo mostraba el borde. Niega/Desconoce
+// además usaban el mismo border-gray-300 que el estado sin seleccionar,
+// con fondo/texto casi idénticos — nada distinguía visualmente lo
+// seleccionado. brand-* (mismo color que ya usan los anillos de foco)
+// marca una elección neutra ya revisada; gray-500 para "no investigado"
+// se mantiene neutro mientras es claramente más oscuro que el estado
+// vacío (border-gray-300/bg-white).
 const STATUS_CLASS: Record<Status, string> = {
-  PRESENTE: "border-warn-600 bg-warn-100 text-warn-700",
-  NEGADO: "border-gray-300 bg-gray-100 text-gray-700",
-  DESCONOCIDO: "border-gray-300 bg-gray-100 text-gray-700",
-  NO_INVESTIGADO: "border-gray-300 bg-white text-gray-500",
+  PRESENTE: "border-warn-600 bg-warn-50 text-warn-600",
+  NEGADO: "border-brand-700 bg-brand-100 text-brand-900",
+  DESCONOCIDO: "border-brand-700 bg-brand-100 text-brand-900",
+  NO_INVESTIGADO: "border-gray-500 bg-gray-100 text-gray-900",
 };
 
 // §10.1-10.3 de especificacion-plataforma-clinica-con-ia.md: vocabulario
@@ -237,7 +246,7 @@ function FamilyCard({
         </span>
       </button>
       {isOpen && (
-        <div className="border-t border-gray-200 px-4">
+        <div className="border-t border-gray-300 px-4">
           {Object.entries(HEREDOFAMILIAR_LABELS).map(([subtype, label2]) => (
             <HistoryRow
               key={subtype}

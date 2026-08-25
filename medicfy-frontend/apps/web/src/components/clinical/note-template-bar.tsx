@@ -81,13 +81,13 @@ export function NoteTemplateBar({
         <span key={t.id} className="inline-flex items-center gap-1 rounded-full border border-gray-300 pl-3 pr-1 text-sm">
           <button type="button" onClick={() => onInsert(t.content)} className="min-h-11 py-1 font-medium text-gray-700 hover:text-brand-700">
             {t.label}
-            {t.shortcutKey && <span className="ml-1 text-gray-400">Alt+{t.shortcutKey}</span>}
+            {t.shortcutKey && <span className="ml-1 text-gray-500">Alt+{t.shortcutKey}</span>}
           </button>
           <button
             type="button"
             onClick={() => removeTemplate(t.id)}
             aria-label={`Eliminar plantilla ${t.label}`}
-            className="flex min-h-11 min-w-11 items-center justify-center text-gray-400 hover:text-danger-600"
+            className="flex min-h-11 min-w-11 items-center justify-center text-gray-500 hover:text-danger-600"
           >
             ✕
           </button>

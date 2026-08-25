@@ -178,7 +178,7 @@ function AgendaList({ accessToken }: { accessToken: string }) {
                 </div>
 
                 {appt.status === "IN_PROGRESS" && completingId === appt.id ? (
-                  <div className="mt-3 flex flex-col gap-2 border-t border-gray-200 pt-3">
+                  <div className="mt-3 flex flex-col gap-2 border-t border-gray-300 pt-3">
                     <label htmlFor={`justification-${appt.id}`} className="text-sm font-medium text-gray-700">
                       Justificación — excepción M5-RN-006: cierra la cita sin nota clínica firmada. La ruta normal es firmar la
                       consulta desde &quot;Continuar consulta&quot;.

@@ -200,7 +200,7 @@ function LocationsSection({
         ) : null}
       </div>
 
-      <form onSubmit={form.handleSubmit(onSubmit)} className="mt-6 flex flex-col gap-4 border-t border-gray-200 pt-6" noValidate>
+      <form onSubmit={form.handleSubmit(onSubmit)} className="mt-6 flex flex-col gap-4 border-t border-gray-300 pt-6" noValidate>
         <FieldWrapper label="Nombre del consultorio" htmlFor="loc-name" error={form.formState.errors.name?.message}>
           <TextInput id="loc-name" placeholder="Consultorio Providencia" error={!!form.formState.errors.name} {...form.register("name")} />
         </FieldWrapper>
@@ -304,7 +304,7 @@ function ServicesSection({ accessToken, locations }: { accessToken: string; loca
         ) : null}
       </div>
 
-      <form onSubmit={form.handleSubmit(onSubmit)} className="mt-6 flex flex-col gap-4 border-t border-gray-200 pt-6" noValidate>
+      <form onSubmit={form.handleSubmit(onSubmit)} className="mt-6 flex flex-col gap-4 border-t border-gray-300 pt-6" noValidate>
         <FieldWrapper label="Nombre" htmlFor="svc-name" error={form.formState.errors.name?.message}>
           <TextInput id="svc-name" placeholder="Consulta general" error={!!form.formState.errors.name} {...form.register("name")} />
         </FieldWrapper>
@@ -432,7 +432,7 @@ function RulesSection({ accessToken }: { accessToken: string }) {
         ) : null}
       </div>
 
-      <form onSubmit={form.handleSubmit(onSubmit)} className="mt-6 flex flex-col gap-4 border-t border-gray-200 pt-6" noValidate>
+      <form onSubmit={form.handleSubmit(onSubmit)} className="mt-6 flex flex-col gap-4 border-t border-gray-300 pt-6" noValidate>
         <div className="grid grid-cols-2 gap-4">
           <FieldWrapper label="Día" htmlFor="weekday" error={form.formState.errors.weekday?.message}>
             <SelectInput id="weekday" error={!!form.formState.errors.weekday} {...form.register("weekday", { valueAsNumber: true })}>
@@ -591,7 +591,7 @@ function ExceptionsSection({ accessToken }: { accessToken: string }) {
         ) : null}
       </div>
 
-      <form onSubmit={form.handleSubmit(onSubmit)} className="mt-6 flex flex-col gap-4 border-t border-gray-200 pt-6" noValidate>
+      <form onSubmit={form.handleSubmit(onSubmit)} className="mt-6 flex flex-col gap-4 border-t border-gray-300 pt-6" noValidate>
         <div className="grid grid-cols-2 gap-4">
           <FieldWrapper label="Desde" htmlFor="startDate" error={form.formState.errors.startDate?.message}>
             <TextInput

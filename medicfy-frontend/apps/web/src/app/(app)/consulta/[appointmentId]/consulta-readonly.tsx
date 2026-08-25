@@ -85,7 +85,7 @@ export function ConsultaReadonly({
                     <>{d.icd10Code} — {d.description}</>
                   ) : (
                     <>
-                      <span className="text-warn-700">Sin código CIE-10</span> — {d.description}
+                      <span className="text-warn-600">Sin código CIE-10</span> — {d.description}
                       <span className="block text-sm text-gray-500">Razón: {d.codeAbsentReason}</span>
                     </>
                   )}{" "}

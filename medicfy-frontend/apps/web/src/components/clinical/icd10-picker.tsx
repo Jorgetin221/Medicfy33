@@ -181,7 +181,7 @@ export function Icd10Picker({
                   </p>
                 ) : (
                   <>
-                    <p className="text-base font-medium text-warn-700">Sin código CIE-10 — {d.description}</p>
+                    <p className="text-base font-medium text-warn-600">Sin código CIE-10 — {d.description}</p>
                     <p className="text-sm text-gray-500">Razón: {d.codeAbsentReason}</p>
                   </>
                 )}

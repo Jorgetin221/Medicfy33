@@ -239,10 +239,10 @@ export function ConsultaForm({
         <div className="flex flex-wrap items-center gap-3">
           <IndicadorGuardado state={saveState} />
           <Button type="button" variant="secondary" onClick={() => setLabPanelOpen(true)} className="min-h-11 px-3 text-sm">
-            Ordenar laboratorio <span className="ml-1 text-gray-400">Alt+L</span>
+            Ordenar laboratorio <span className="ml-1 text-gray-500">Alt+L</span>
           </Button>
           <Button type="button" variant="secondary" onClick={() => setRxPanelOpen(true)} className="min-h-11 px-3 text-sm">
-            Emitir receta <span className="ml-1 text-gray-400">Alt+R</span>
+            Emitir receta <span className="ml-1 text-gray-500">Alt+R</span>
           </Button>
         </div>
       </div>

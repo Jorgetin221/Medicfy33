@@ -34,7 +34,7 @@ export function TabNotas({ accessToken, encounters }: { accessToken: string; enc
                   {formatMxDateTime(e.signedAt ?? e.startedAt)} · {e.status === "SIGNED" ? "Firmada" : "Borrador"}
                 </span>
               </span>
-              <span aria-hidden="true" className="text-gray-400">
+              <span aria-hidden="true" className="text-gray-500">
                 {expandedId === e.id ? "▲" : "▼"}
               </span>
             </button>
@@ -103,7 +103,7 @@ function EncounterDetailInline({ accessToken, encounterId }: { accessToken: stri
                     <>{d.icd10Code} — {d.description}</>
                   ) : (
                     <>
-                      <span className="text-warn-700">Sin código CIE-10</span> — {d.description}
+                      <span className="text-warn-600">Sin código CIE-10</span> — {d.description}
                       <span className="block text-sm text-gray-500">Razón: {d.codeAbsentReason}</span>
                     </>
                   )}

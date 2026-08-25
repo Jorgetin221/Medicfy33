@@ -268,7 +268,7 @@ function LocationsSection({
         ) : null}
       </div>
 
-      <form onSubmit={form.handleSubmit(onSubmit)} className="mt-6 flex flex-col gap-4 border-t border-gray-200 pt-6" noValidate>
+      <form onSubmit={form.handleSubmit(onSubmit)} className="mt-6 flex flex-col gap-4 border-t border-gray-300 pt-6" noValidate>
         <FieldWrapper label="Nombre del consultorio" htmlFor="loc-name" error={form.formState.errors.name?.message}>
           <TextInput id="loc-name" error={!!form.formState.errors.name} {...form.register("name")} />
         </FieldWrapper>
@@ -445,12 +445,12 @@ function BrandingSection({
         </Button>
       </form>
 
-      <div className="mt-6 grid grid-cols-2 gap-6 border-t border-gray-200 pt-6">
+      <div className="mt-6 grid grid-cols-2 gap-6 border-t border-gray-300 pt-6">
         <FileUpload label="Logo" accept="image/png,image/jpeg" previewSrc={logoSrc} onUpload={uploadLogo} />
         <FileUpload label="Firma visual" accept="image/png,image/jpeg" previewSrc={signatureSrc} onUpload={uploadSignature} />
       </div>
 
-      <div className="mt-6 border-t border-gray-200 pt-6">
+      <div className="mt-6 border-t border-gray-300 pt-6">
         <p className="text-sm font-medium text-gray-700">Vista previa del encabezado</p>
         <div className="mt-2 flex items-center gap-4 rounded-md border border-gray-300 p-4">
           {logoSrc ? (
