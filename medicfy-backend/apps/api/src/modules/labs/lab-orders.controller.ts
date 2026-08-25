@@ -1,4 +1,4 @@
-import { Body, Controller, Param, Post, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, Req, StreamableFile, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import {
   labOrderCreateSchema,
@@ -8,6 +8,7 @@ import {
 } from "@medicfy/contracts";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { JwtAuthGuard } from "../identity/guards/jwt-auth.guard";
+import { DoctorVerifiedGuard } from "../identity/guards/doctor-verified.guard";
 import { CareRelationshipGuard, type ClinicalRequest } from "../../common/guards/care-relationship.guard";
 import { AuditService } from "../identity/services/audit.service";
 import { getRequestMeta } from "../identity/request-meta";
@@ -26,6 +27,7 @@ export class LabOrdersController {
   ) {}
 
   @Post("lab-orders/encounters/:encounterId")
+  @UseGuards(DoctorVerifiedGuard)
   @ApiOperation({ summary: "Emite orden de laboratorio ligada al encuentro; firma con contraseña+TOTP" })
   async create(
     @Param("encounterId") encounterId: string,
@@ -41,6 +43,14 @@ export class LabOrdersController {
     );
     await this.audit(req, "lab_orders.create", labOrder.id);
     return labOrder;
+  }
+
+  @Get("lab-orders/:labOrderId/pdf")
+  @ApiOperation({ summary: "Descarga el PDF de la orden (ambas rutas de firma)" })
+  async pdf(@Param("labOrderId") labOrderId: string, @Req() req: ClinicalRequest): Promise<StreamableFile> {
+    const { buffer, contentType } = await this.labOrders.getPdf(labOrderId);
+    await this.audit(req, "lab_orders.pdf.download", labOrderId);
+    return new StreamableFile(buffer, { type: contentType });
   }
 
   @Post("lab-orders/:labOrderId/cancel")

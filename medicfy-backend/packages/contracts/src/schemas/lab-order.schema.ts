@@ -10,15 +10,33 @@ export const labOrderItemCreateSchema = z
 export type LabOrderItemCreateInput = z.infer<typeof labOrderItemCreateSchema>;
 
 // encounterId va en la URL (POST /lab-orders/encounters/:encounterId).
-export const labOrderCreateSchema = z
-  .object({
-    items: z.array(labOrderItemCreateSchema).min(1, "Se requiere al menos un estudio."),
-    clinicalIndication: z.string().min(1, "La indicación clínica es obligatoria."),
-    fastingRequired: z.boolean().optional(),
+const labOrderCreateBaseSchema = z.object({
+  items: z.array(labOrderItemCreateSchema).min(1, "Se requiere al menos un estudio."),
+  clinicalIndication: z.string().min(1, "La indicación clínica es obligatoria."),
+  fastingRequired: z.boolean().optional(),
+});
+
+// A diferencia de recetas (M9-RN-009), ninguna regla M10 exige
+// contraseña+TOTP — la firma electrónica es opcional. Misma forma de
+// dos rutas ya usada en prescriptionCreateSchema.
+export const labOrderCreateHandwrittenSchema = labOrderCreateBaseSchema
+  .extend({ signatureRoute: z.literal("HANDWRITTEN_AFTER_PRINT") })
+  .strict();
+export type LabOrderCreateHandwrittenInput = z.infer<typeof labOrderCreateHandwrittenSchema>;
+
+export const labOrderCreateElectronicSchema = labOrderCreateBaseSchema
+  .extend({
+    signatureRoute: z.literal("ELECTRONIC"),
     password: z.string().min(1, "Confirma tu contraseña para firmar."),
     totpCode: z.string().length(6, "El código de verificación debe tener 6 dígitos."),
   })
   .strict();
+export type LabOrderCreateElectronicInput = z.infer<typeof labOrderCreateElectronicSchema>;
+
+export const labOrderCreateSchema = z.discriminatedUnion("signatureRoute", [
+  labOrderCreateHandwrittenSchema,
+  labOrderCreateElectronicSchema,
+]);
 export type LabOrderCreateInput = z.infer<typeof labOrderCreateSchema>;
 
 export const labOrderCancelSchema = z

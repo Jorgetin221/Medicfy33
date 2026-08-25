@@ -1,33 +1,16 @@
 import { HttpStatus, Inject, Injectable } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import type { ExternalPhysicalPrescriptionCreateInput, PrescriptionCreateInput } from "@medicfy/contracts";
-import type { Doctor, Patient, PracticeLocation, Specialty } from "@prisma/client";
 import { ApiException } from "../../../common/api-exception";
 import { PrismaService } from "../../../prisma/prisma.service";
 import { sha256Hex } from "../../../common/content-hash.util";
 import { nextPrescriptionFolio } from "../../../common/folio.util";
 import { omitUndefined } from "../../../common/omit-undefined";
+import { buildLegalSnapshot } from "../../../common/legal-snapshot.util";
 import { SignatureVerificationService } from "../../identity/services/signature-verification.service";
 import { FILE_STORAGE_PORT, type FileStoragePort } from "../../doctors/services/file-storage.port";
 import { PrescriptionPdfService } from "./prescription-pdf.service";
 import { derivePrescriptionStatus } from "../prescription-status.util";
-
-function ageInYears(birthDate: Date): number {
-  const now = new Date();
-  let age = now.getUTCFullYear() - birthDate.getUTCFullYear();
-  const hasHadBirthdayThisYear =
-    now.getUTCMonth() > birthDate.getUTCMonth() ||
-    (now.getUTCMonth() === birthDate.getUTCMonth() && now.getUTCDate() >= birthDate.getUTCDate());
-  if (!hasHadBirthdayThisYear) age -= 1;
-  return age;
-}
-
-function formatAddress(location: { addressStreet: string | null; addressExt: string | null; addressColonia: string | null; addressMunicipality: string | null; addressState: string | null } | null): string {
-  if (!location) return "Domicilio profesional no registrado.";
-  return [location.addressStreet, location.addressExt, location.addressColonia, location.addressMunicipality, location.addressState]
-    .filter(Boolean)
-    .join(", ");
-}
 
 // M9 — RECETA ELECTRÓNICA (Grupos III-VI). R5/M9-RN-012: Grupos I/II
 // bloqueados, bloqueo duro. M9-RN-006: nunca UPDATE, "cancelar" y
@@ -40,25 +23,6 @@ export class PrescriptionService {
     private readonly pdfService: PrescriptionPdfService,
     @Inject(FILE_STORAGE_PORT) private readonly fileStorage: FileStoragePort
   ) {}
-
-  // M9-RN-004: snapshot inmutable de los datos legales al momento de
-  // emitir — compartido entre create() y createExternalPhysical(),
-  // nunca resuelto por join después.
-  private buildLegalSnapshot(doctor: Doctor & { primarySpecialty: Specialty | null; locations: PracticeLocation[] }, patient: Patient) {
-    const location = doctor.locations[0] ?? null;
-    return {
-      doctorNameSnapshot: doctor.displayName ?? `${doctor.legalFirstName} ${doctor.legalLastName}`,
-      doctorLicenseSnapshot: doctor.professionalLicense,
-      practiceAddressSnapshot: formatAddress(location),
-      patientNameSnapshot: `${patient.firstName} ${patient.lastNamePaternal} ${patient.lastNameMaternal ?? ""}`.trim(),
-      patientAgeSnapshot: ageInYears(patient.birthDate),
-      patientSexSnapshot: patient.sexAtBirth,
-      ...omitUndefined({
-        doctorSpecialtySnapshot: doctor.primarySpecialty?.nameEs,
-        doctorInstitutionSnapshot: doctor.university ?? undefined,
-      }),
-    };
-  }
 
   // Corrección v2.1 de especificacion-plataforma-clinica-con-ia.md
   // §1: "la firma digital no debe ser obligatoria para imprimir una
@@ -156,7 +120,7 @@ export class PrescriptionService {
 
     const folio = await nextPrescriptionFolio(this.prisma);
     const signatureTimestamp = new Date();
-    const snapshot = this.buildLegalSnapshot(doctor, patient);
+    const snapshot = buildLegalSnapshot(doctor, patient);
 
     const items = input.items.map((item) => {
       const catalog = catalogById.get(item.medicationCatalogId);
@@ -274,7 +238,7 @@ export class PrescriptionService {
       throw new ApiException("PRESCRIPTION_MISSING_LEGAL_FIELD", "No se pudo resolver médico o paciente para el registro.", HttpStatus.UNPROCESSABLE_ENTITY);
     }
     const folio = await nextPrescriptionFolio(this.prisma);
-    const snapshot = this.buildLegalSnapshot(doctor, patient);
+    const snapshot = buildLegalSnapshot(doctor, patient);
 
     return this.prisma.prescription.create({
       data: {

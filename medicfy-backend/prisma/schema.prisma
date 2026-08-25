@@ -270,7 +270,7 @@ model Specialty {
   requiresSpecialtyLicense Boolean  @default(true)
   createdAt                DateTime @default(now()) @db.Timestamptz(3)
 
-  doctors Doctor[]
+  doctors      Doctor[]
   fieldSchemas SpecialtyFieldSchema[]
 
   @@map("specialties")
@@ -487,7 +487,7 @@ model Patient {
   createdAt                DateTime      @default(now()) @db.Timestamptz(3)
   updatedAt                DateTime      @updatedAt @db.Timestamptz(3)
 
-  user              User?              @relation(fields: [userId], references: [id])
+  user              User?                @relation(fields: [userId], references: [id])
   guardians         PatientGuardian[]
   careRelationships CareRelationship[]
   appointments      Appointment[]
@@ -885,14 +885,14 @@ enum DiagnosisCertainty {
 // (icd10Code o codeAbsentReason), nunca ambos ni ninguno — validado
 // en encounterDiagnosisSchema (contracts), no aquí.
 model EncounterDiagnosis {
-  id                String             @id @default(uuid())
-  encounterId       String
-  icd10Code         String?
-  codeAbsentReason  String?
-  description       String
-  diagnosisType     DiagnosisType
-  certainty         DiagnosisCertainty
-  createdAt         DateTime           @default(now()) @db.Timestamptz(3)
+  id               String             @id @default(uuid())
+  encounterId      String
+  icd10Code        String?
+  codeAbsentReason String?
+  description      String
+  diagnosisType    DiagnosisType
+  certainty        DiagnosisCertainty
+  createdAt        DateTime           @default(now()) @db.Timestamptz(3)
 
   encounter ClinicalEncounter @relation(fields: [encounterId], references: [id])
 
@@ -1246,13 +1246,13 @@ enum PrescriptionSignatureRoute {
 // replacesPrescriptionId apuntando hacia atrás, fijado al crearse — no
 // requiere tocar la fila original en absoluto.
 model Prescription {
-  id                        String   @id @default(uuid())
+  id                        String                      @id @default(uuid())
   encounterId               String
   patientId                 String
   doctorId                  String
-  folio                     String   @unique
-  prescriptionType          PrescriptionType @default(ELECTRONIC)
-  issuedAt                  DateTime @default(now()) @db.Timestamptz(3)
+  folio                     String                      @unique
+  prescriptionType          PrescriptionType            @default(ELECTRONIC)
+  issuedAt                  DateTime                    @default(now()) @db.Timestamptz(3)
   doctorNameSnapshot        String
   doctorLicenseSnapshot     String
   doctorSpecialtySnapshot   String?
@@ -1263,7 +1263,7 @@ model Prescription {
   patientSexSnapshot        String
   diagnosisSnapshot         String
   generalInstructions       String?
-  replacesPrescriptionId    String?  @unique
+  replacesPrescriptionId    String?                     @unique
   // NULL para prescriptionType=EXTERNAL_PHYSICAL (M9-RN-014): "sin
   // PDF, sin QR, sin pretensión de validez electrónica" — Medicfy no
   // firma nada, solo registra lo que el médico ya emitió en su
@@ -1279,22 +1279,22 @@ model Prescription {
   // contenido, no sobre el mecanismo de firma.
   signatureRoute            PrescriptionSignatureRoute?
   signatureMethod           SignatureMethod?
-  signatureTimestamp        DateTime? @db.Timestamptz(3)
+  signatureTimestamp        DateTime?                   @db.Timestamptz(3)
   contentHashSha256         String?
   pdfFileKey                String?
-  qrVerificationToken       String?  @unique
-  deliveredVia              String[] @default([])
-  deliveredAt               DateTime? @db.Timestamptz(3)
-  createdAt                 DateTime @default(now()) @db.Timestamptz(3)
+  qrVerificationToken       String?                     @unique
+  deliveredVia              String[]                    @default([])
+  deliveredAt               DateTime?                   @db.Timestamptz(3)
+  createdAt                 DateTime                    @default(now()) @db.Timestamptz(3)
 
-  encounter            ClinicalEncounter        @relation(fields: [encounterId], references: [id])
-  patient              Patient                  @relation(fields: [patientId], references: [id])
-  doctor               Doctor                   @relation(fields: [doctorId], references: [id])
-  replacesPrescription Prescription?            @relation("PrescriptionReplacement", fields: [replacesPrescriptionId], references: [id])
-  replacedByPrescription Prescription?          @relation("PrescriptionReplacement")
-  items                PrescriptionItem[]
-  cancellation         PrescriptionCancellation?
-  handwrittenDelivery  PrescriptionHandwrittenDelivery?
+  encounter              ClinicalEncounter                @relation(fields: [encounterId], references: [id])
+  patient                Patient                          @relation(fields: [patientId], references: [id])
+  doctor                 Doctor                           @relation(fields: [doctorId], references: [id])
+  replacesPrescription   Prescription?                    @relation("PrescriptionReplacement", fields: [replacesPrescriptionId], references: [id])
+  replacedByPrescription Prescription?                    @relation("PrescriptionReplacement")
+  items                  PrescriptionItem[]
+  cancellation           PrescriptionCancellation?
+  handwrittenDelivery    PrescriptionHandwrittenDelivery?
 
   @@map("prescriptions")
 }
@@ -1336,19 +1336,19 @@ model PrescriptionHandwrittenDelivery {
 // opcional. controlGroup se copia del catálogo al prescribir (mismo
 // principio de snapshot que los datos legales del médico).
 model PrescriptionItem {
-  id                   String       @id @default(uuid())
-  prescriptionId       String
-  genericName          String
-  brandName            String?
-  presentation         String
-  dose                 String
-  route                String
-  frequency            String
-  duration             String
-  quantity             String?
-  specialInstructions  String?
-  medicationCatalogId  String?
-  controlGroup         ControlGroup
+  id                  String       @id @default(uuid())
+  prescriptionId      String
+  genericName         String
+  brandName           String?
+  presentation        String
+  dose                String
+  route               String
+  frequency           String
+  duration            String
+  quantity            String?
+  specialInstructions String?
+  medicationCatalogId String?
+  controlGroup        ControlGroup
 
   prescription      Prescription       @relation(fields: [prescriptionId], references: [id])
   medicationCatalog MedicationCatalog? @relation(fields: [medicationCatalogId], references: [id])
@@ -1365,26 +1365,52 @@ model PrescriptionItem {
 // de insertarse. "Estado" se deriva, no se guarda: issued por
 // defecto, results_uploaded si existe una fila en LabResult para esta
 // orden, cancelled si existe una fila en LabOrderCancellation.
-model LabOrder {
-  id                  String          @id @default(uuid())
-  encounterId         String
-  patientId           String
-  doctorId            String
-  folio               String          @unique
-  issuedAt            DateTime        @default(now()) @db.Timestamptz(3)
-  clinicalIndication  String
-  fastingRequired     Boolean         @default(false)
-  assignedLabId       String?
-  pdfFileKey          String?
-  qrVerificationToken String          @unique
-  contentHashSha256   String
-  signatureMethod     SignatureMethod
-  signedAt            DateTime        @db.Timestamptz(3)
-  createdAt           DateTime        @default(now()) @db.Timestamptz(3)
+enum LabOrderSignatureRoute {
+  HANDWRITTEN_AFTER_PRINT
+  ELECTRONIC
 
-  encounter    ClinicalEncounter    @relation(fields: [encounterId], references: [id])
-  patient      Patient              @relation(fields: [patientId], references: [id])
-  doctor       Doctor               @relation(fields: [doctorId], references: [id])
+  @@map("lab_order_signature_route")
+}
+
+// A petición explícita del usuario (2026-08-24): M10 nunca exigió
+// contraseña+TOTP para órdenes de laboratorio (a diferencia de
+// M9-RN-009 para recetas) — ese requisito se había copiado del
+// patrón de recetas sin que la especificación lo pidiera. Mismas dos
+// rutas que Prescription: signatureMethod/signedAt quedan null en
+// HANDWRITTEN_AFTER_PRINT (no hubo mecanismo digital que registrar).
+// Snapshots nullable (a diferencia de Prescription) porque esta
+// tabla ya tenía filas de prueba antes de agregar estas columnas —
+// la aplicación siempre las llena en create(), nunca quedan null
+// para una orden nueva.
+model LabOrder {
+  id                        String                  @id @default(uuid())
+  encounterId               String
+  patientId                 String
+  doctorId                  String
+  folio                     String                  @unique
+  issuedAt                  DateTime                @default(now()) @db.Timestamptz(3)
+  clinicalIndication        String
+  fastingRequired           Boolean                 @default(false)
+  assignedLabId             String?
+  doctorNameSnapshot        String?
+  doctorLicenseSnapshot     String?
+  doctorSpecialtySnapshot   String?
+  doctorInstitutionSnapshot String?
+  practiceAddressSnapshot   String?
+  patientNameSnapshot       String?
+  patientAgeSnapshot        Int?
+  patientSexSnapshot        String?
+  signatureRoute            LabOrderSignatureRoute?
+  pdfFileKey                String?
+  qrVerificationToken       String                  @unique
+  contentHashSha256         String
+  signatureMethod           SignatureMethod?
+  signedAt                  DateTime?               @db.Timestamptz(3)
+  createdAt                 DateTime                @default(now()) @db.Timestamptz(3)
+
+  encounter    ClinicalEncounter     @relation(fields: [encounterId], references: [id])
+  patient      Patient               @relation(fields: [patientId], references: [id])
+  doctor       Doctor                @relation(fields: [doctorId], references: [id])
   items        LabOrderItem[]
   results      LabResult[]
   cancellation LabOrderCancellation?

@@ -6,6 +6,7 @@ import { CareRelationshipGuard } from "../../common/guards/care-relationship.gua
 import { FILE_STORAGE_PORT } from "../doctors/services/file-storage.port";
 import { LocalDiskFileStorageAdapter } from "../doctors/services/local-disk-file-storage.adapter";
 import { LabOrderService } from "./services/lab-order.service";
+import { LabOrderPdfService } from "./services/lab-order-pdf.service";
 import { LabOrdersController } from "./lab-orders.controller";
 import { LabResultsController } from "./lab-results.controller";
 
@@ -16,7 +17,12 @@ import { LabResultsController } from "./lab-results.controller";
 @Module({
   imports: [IdentityModule, DoctorsModule, SchedulingModule],
   controllers: [LabOrdersController, LabResultsController],
-  providers: [LabOrderService, CareRelationshipGuard, { provide: FILE_STORAGE_PORT, useClass: LocalDiskFileStorageAdapter }],
+  providers: [
+    LabOrderService,
+    LabOrderPdfService,
+    CareRelationshipGuard,
+    { provide: FILE_STORAGE_PORT, useClass: LocalDiskFileStorageAdapter },
+  ],
   exports: [LabOrderService],
 })
 export class LabsModule {}
