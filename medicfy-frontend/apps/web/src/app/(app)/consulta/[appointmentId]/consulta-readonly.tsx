@@ -81,8 +81,15 @@ export function ConsultaReadonly({
             <ul className="mt-2 flex flex-col gap-1">
               {encounter.diagnoses.map((d) => (
                 <li key={d.id} className="text-base text-gray-900">
-                  {d.icd10Code} — {d.description} ({d.diagnosisType === "PRINCIPAL" ? "Principal" : "Secundario"},{" "}
-                  {d.certainty === "CONFIRMED" ? "confirmado" : "sospechado"})
+                  {d.icd10Code ? (
+                    <>{d.icd10Code} — {d.description}</>
+                  ) : (
+                    <>
+                      <span className="text-warn-700">Sin código CIE-10</span> — {d.description}
+                      <span className="block text-sm text-gray-500">Razón: {d.codeAbsentReason}</span>
+                    </>
+                  )}{" "}
+                  ({d.diagnosisType === "PRINCIPAL" ? "Principal" : "Secundario"}, {d.certainty === "CONFIRMED" ? "confirmado" : "sospechado"})
                 </li>
               ))}
             </ul>

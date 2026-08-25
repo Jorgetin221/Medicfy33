@@ -37,7 +37,8 @@ export interface ClinicalNoteRecord {
 
 export interface EncounterDiagnosisRecord {
   id: string;
-  icd10Code: string;
+  icd10Code: string | null;
+  codeAbsentReason: string | null;
   description: string;
   diagnosisType: "PRINCIPAL" | "SECONDARY";
   certainty: "SUSPECTED" | "CONFIRMED";

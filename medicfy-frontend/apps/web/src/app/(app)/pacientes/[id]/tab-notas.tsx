@@ -99,7 +99,14 @@ function EncounterDetailInline({ accessToken, encounterId }: { accessToken: stri
             <ul className="mt-1 flex flex-col gap-0.5">
               {detail.diagnoses.map((d) => (
                 <li key={d.id} className="text-base text-gray-900">
-                  {d.icd10Code} — {d.description}
+                  {d.icd10Code ? (
+                    <>{d.icd10Code} — {d.description}</>
+                  ) : (
+                    <>
+                      <span className="text-warn-700">Sin código CIE-10</span> — {d.description}
+                      <span className="block text-sm text-gray-500">Razón: {d.codeAbsentReason}</span>
+                    </>
+                  )}
                 </li>
               ))}
             </ul>

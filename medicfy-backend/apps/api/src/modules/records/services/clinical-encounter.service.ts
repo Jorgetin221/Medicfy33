@@ -120,8 +120,16 @@ export class ClinicalEncounterService {
         data: { encounterId, ...requiredNote, ...omitUndefined({ physicalExam, prognosis }) },
       });
       if (diagnoses.length > 0) {
+        // omitUndefined: icd10Code/codeAbsentReason son mutuamente
+        // opcionales (segunda ruta de M8-RN-006, ver
+        // encounterDiagnosisSchema) — el que no venga debe omitirse,
+        // no mandarse como `undefined` explícito.
         await tx.encounterDiagnosis.createMany({
-          data: diagnoses.map((d) => ({ encounterId, ...d })),
+          data: diagnoses.map(({ icd10Code, codeAbsentReason, ...required }) => ({
+            encounterId,
+            ...required,
+            ...omitUndefined({ icd10Code, codeAbsentReason }),
+          })),
         });
       }
       const updated = await tx.clinicalEncounter.update({

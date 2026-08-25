@@ -46,14 +46,27 @@ export const clinicalNoteDraftUpdateSchema = z
   .strict();
 export type ClinicalNoteDraftUpdateInput = z.infer<typeof clinicalNoteDraftUpdateSchema>;
 
+// M8-RN-006 exige código CIE-10 para el diagnóstico principal; "texto
+// libre permitido como complemento, nunca como sustituto". A petición
+// explícita del usuario (2026-08-24, confirmó apartarse de la regla a
+// sabiendas tras ofrecerle la alternativa que sí la cumple —
+// códigos CIE-10 de síntoma/causa no especificada, capítulo R00-R99),
+// existe una segunda ruta: sin icd10Code, pero con codeAbsentReason
+// obligatorio como justificación auditable. Exactamente uno de los
+// dos, nunca ambos ni ninguno.
 export const encounterDiagnosisSchema = z
   .object({
-    icd10Code: z.string().min(1).max(10),
+    icd10Code: z.string().min(1).max(10).optional(),
+    codeAbsentReason: z.string().min(10, "Explica en al menos 10 caracteres por qué no hay código CIE-10.").max(500).optional(),
     description: z.string().min(1),
     diagnosisType: z.enum(["PRINCIPAL", "SECONDARY"]),
     certainty: z.enum(["SUSPECTED", "CONFIRMED"]),
   })
-  .strict();
+  .strict()
+  .refine((d) => (d.icd10Code !== undefined) !== (d.codeAbsentReason !== undefined), {
+    message: "Cada diagnóstico necesita exactamente uno: un código CIE-10 o una razón de por qué no lo tiene.",
+    path: ["icd10Code"],
+  });
 export type EncounterDiagnosisInput = z.infer<typeof encounterDiagnosisSchema>;
 
 // M8 "Validaciones": motivo 3-500 caracteres obligatorio, padecimiento

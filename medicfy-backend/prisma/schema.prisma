@@ -875,14 +875,24 @@ enum DiagnosisCertainty {
 }
 
 // M8-RN-006: diagnóstico principal obligatorio con CIE-10 para firmar.
+// icd10Code es nullable a propósito: M8-RN-006 exige código CIE-10
+// para el diagnóstico principal, y "texto libre permitido como
+// complemento, nunca como sustituto" — pero a petición explícita del
+// usuario (2026-08-24), que confirmó apartarse de esa regla a
+// sabiendas, existe una segunda ruta cuando de verdad no hay código
+// aplicable: codeAbsentReason queda como la justificación auditable
+// de esa decisión. Exactamente uno de los dos siempre está presente
+// (icd10Code o codeAbsentReason), nunca ambos ni ninguno — validado
+// en encounterDiagnosisSchema (contracts), no aquí.
 model EncounterDiagnosis {
-  id            String             @id @default(uuid())
-  encounterId   String
-  icd10Code     String
-  description   String
-  diagnosisType DiagnosisType
-  certainty     DiagnosisCertainty
-  createdAt     DateTime           @default(now()) @db.Timestamptz(3)
+  id                String             @id @default(uuid())
+  encounterId       String
+  icd10Code         String?
+  codeAbsentReason  String?
+  description       String
+  diagnosisType     DiagnosisType
+  certainty         DiagnosisCertainty
+  createdAt         DateTime           @default(now()) @db.Timestamptz(3)
 
   encounter ClinicalEncounter @relation(fields: [encounterId], references: [id])
 

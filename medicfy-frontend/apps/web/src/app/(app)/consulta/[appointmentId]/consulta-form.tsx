@@ -87,10 +87,10 @@ export function ConsultaForm({
         plan: base.plan ?? "",
         prognosis: base.prognosis ?? "",
         diagnoses: encounter.diagnoses.map((d) => ({
-          icd10Code: d.icd10Code,
           description: d.description,
           diagnosisType: d.diagnosisType,
           certainty: d.certainty,
+          ...(d.icd10Code ? { icd10Code: d.icd10Code } : { codeAbsentReason: d.codeAbsentReason ?? "" }),
         })),
       });
       setIsHydrated(true);
