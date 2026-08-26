@@ -21,6 +21,10 @@ export interface DoctorProfile {
   primarySpecialtyId: string | null;
   displayName: string | null;
   photoUrl: string | null;
+  biography: string | null;
+  yearsExperience: number | null;
+  languages: string[];
+  university: string | null;
   professionalPhone: string | null;
   professionalEmail: string | null;
   letterheadPhrase: string | null;

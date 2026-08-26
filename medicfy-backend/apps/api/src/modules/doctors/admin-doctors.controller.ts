@@ -65,7 +65,7 @@ export class AdminDoctorsController {
 
   @Post(":id/suspend")
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: "M2-RN-005: suspende; reagenda/reembolsos son M5/M6, no implementados aún" })
+  @ApiOperation({ summary: "M2-RN-005: suspende, cancela citas futuras pagadas y notifica reembolso de 100%; el cobro real espera a M6" })
   @ApiResponse({ status: 200 })
   async suspend(@Param("id") id: string, @Req() req: Request) {
     const { user } = req as AuthenticatedRequest;

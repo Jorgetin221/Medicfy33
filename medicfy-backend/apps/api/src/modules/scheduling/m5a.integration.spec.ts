@@ -20,6 +20,7 @@ class TestNotificationAdapter implements NotificationPort {
   async sendPhoneVerificationCode(): Promise<void> {}
   async sendPasswordResetLink(): Promise<void> {}
   async sendAssistantInvitation(): Promise<void> {}
+  async sendAppointmentCancelledDoctorSuspended(): Promise<void> {}
 }
 
 function uniqueEmail(prefix: string): string {
@@ -92,6 +93,11 @@ describe("M5a — Pacientes y citas (núcleo)", () => {
     });
     expect(res.status).toBe(201);
     const userId = res.body.userId as string;
+    // M2-RN-004: sin esto, ningún test de este archivo podría agendar
+    // — un médico recién registrado no tiene consultorio activo ni
+    // teleconsulta habilitada. No es lo que estos tests verifican,
+    // así que se resuelve aquí, no en cada `it`.
+    await prisma.doctor.update({ where: { userId }, data: { acceptsTeleconsultation: true } });
     const accessToken = tokenService.signAccessToken({ sub: userId, primaryRole: "DOCTOR" });
     return { userId, accessToken };
   }
@@ -600,6 +606,43 @@ describe("M5a — Pacientes y citas (núcleo)", () => {
         .send({ patientId: patient.id, serviceId: service.id, startsAt: isoDaysFromNow(120) });
       expect(res.status).toBe(422);
       expect(res.body.error.code).toBe("OUTSIDE_BOOKING_WINDOW");
+    });
+
+    it("rejects booking a doctor with no active location and no teleconsultation (403 DOCTOR_NOT_ACCEPTING_PATIENTS), and allows it once either is set", async () => {
+      const doctor = await registerDoctor();
+      // registerDoctor() habilita teleconsulta por defecto (ver su
+      // propio comentario) — se apaga aquí a propósito para probar
+      // exactamente el caso que M2-RN-004 bloquea.
+      await prisma.doctor.update({ where: { userId: doctor.userId }, data: { acceptsTeleconsultation: false } });
+      const service = await createService(doctor.accessToken);
+      const patient = await createAdultPatient(doctor.accessToken);
+
+      const blocked = await request(app.getHttpServer())
+        .post("/appointments")
+        .set("Authorization", `Bearer ${doctor.accessToken}`)
+        .send({ patientId: patient.id, serviceId: service.id, startsAt: isoDaysFromNow(2) });
+      expect(blocked.status).toBe(403);
+      expect(blocked.body.error.code).toBe("DOCTOR_NOT_ACCEPTING_PATIENTS");
+
+      await prisma.doctor.update({ where: { userId: doctor.userId }, data: { acceptsTeleconsultation: true } });
+      const allowedViaTeleconsult = await request(app.getHttpServer())
+        .post("/appointments")
+        .set("Authorization", `Bearer ${doctor.accessToken}`)
+        .send({ patientId: patient.id, serviceId: service.id, startsAt: isoDaysFromNow(2) });
+      expect(allowedViaTeleconsult.status).toBe(201);
+
+      // Confirma la otra mitad de la regla ("O"): un consultorio
+      // activo también basta, sin teleconsulta.
+      await prisma.doctor.update({ where: { userId: doctor.userId }, data: { acceptsTeleconsultation: false } });
+      await request(app.getHttpServer())
+        .post("/doctors/me/locations")
+        .set("Authorization", `Bearer ${doctor.accessToken}`)
+        .send({ name: "Consultorio Centro", addressStreet: "Av. Vallarta 123", addressMunicipality: "Guadalajara", addressState: "Jalisco", addressPostalCode: "44100" });
+      const allowedViaLocation = await request(app.getHttpServer())
+        .post("/appointments")
+        .set("Authorization", `Bearer ${doctor.accessToken}`)
+        .send({ patientId: patient.id, serviceId: service.id, startsAt: isoDaysFromNow(3) });
+      expect(allowedViaLocation.status).toBe(201);
     });
   });
 

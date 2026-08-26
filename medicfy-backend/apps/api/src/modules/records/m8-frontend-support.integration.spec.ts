@@ -16,6 +16,7 @@ class TestNotificationAdapter implements NotificationPort {
   async sendPhoneVerificationCode(): Promise<void> {}
   async sendPasswordResetLink(): Promise<void> {}
   async sendAssistantInvitation(): Promise<void> {}
+  async sendAppointmentCancelledDoctorSuspended(): Promise<void> {}
 }
 
 function uniqueEmail(prefix: string): string {
@@ -81,7 +82,10 @@ describe("Soporte de frontend M8 — catálogos, plantillas, firma completa la c
     expect(res.status).toBe(201);
     const userId = res.body.userId as string;
     // DoctorVerifiedGuard (M1-RN-002) ahora protege encounters.sign.
-    await prisma.doctor.update({ where: { userId }, data: { verificationStatus: "VERIFIED" } });
+    // acceptsTeleconsultation: M2-RN-004 ahora exige consultorio activo
+    // o teleconsulta para poder agendar — este archivo agenda citas
+    // reales y no es lo que sus tests verifican.
+    await prisma.doctor.update({ where: { userId }, data: { verificationStatus: "VERIFIED", acceptsTeleconsultation: true } });
     const accessToken = tokenService.signAccessToken({ sub: userId, primaryRole: "DOCTOR" });
     return { userId, accessToken };
   }

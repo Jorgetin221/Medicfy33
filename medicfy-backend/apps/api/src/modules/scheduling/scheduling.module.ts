@@ -1,4 +1,4 @@
-import { Module } from "@nestjs/common";
+import { forwardRef, Module } from "@nestjs/common";
 import { IdentityModule } from "../identity/identity.module";
 import { DoctorsModule } from "../doctors/doctors.module";
 import { SchedulingAuthService } from "./services/scheduling-auth.service";
@@ -19,7 +19,10 @@ import { AppointmentsController } from "./appointments.controller";
 // M5b (notificaciones, pantallas públicas de agendamiento, resto de
 // M12) queda para otra sesión — ver docs/CRITERIOS_DIFERIDOS.md.
 @Module({
-  imports: [IdentityModule, DoctorsModule],
+  // forwardRef: DoctorsModule ahora importa SchedulingModule también
+  // (AppointmentCancellationSuspensionAdapter, M2-RN-005) — ver el
+  // comentario simétrico en doctors.module.ts.
+  imports: [IdentityModule, forwardRef(() => DoctorsModule)],
   controllers: [
     AvailabilityController,
     AvailabilityRulesController,

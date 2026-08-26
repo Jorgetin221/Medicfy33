@@ -42,6 +42,10 @@ const doctor = await prisma.doctor.create({
     primarySpecialtyId: specialty.id,
     verificationStatus: "VERIFIED",
     minBookingNoticeMinutes: 0,
+    // M2-RN-004: sin esto, las 50 solicitudes concurrentes reciben
+    // 403 DOCTOR_NOT_ACCEPTING_PATIENTS antes de tocar la restricción
+    // de exclusión que este fixture existe para probar.
+    acceptsTeleconsultation: true,
   },
 });
 

@@ -4,9 +4,12 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import {
   practiceLocationSchema,
   doctorProfileUpdateSchema,
+  assistantInviteSchema,
+  containsContactInfo,
   type PracticeLocationInput,
 } from "@medicfy/contracts";
 import { apiFetch, apiUpload, apiFetchBlob } from "@/lib/api-client";
@@ -14,7 +17,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useDoctorProfile, type DoctorProfile, type DoctorVerificationStatus } from "@/lib/use-doctor-profile";
 import { useSpecialties } from "@/lib/use-specialties";
 import { Button } from "@/components/ui/button";
-import { FieldWrapper, TextInput } from "@/components/ui/field";
+import { FieldWrapper, TextInput, Textarea } from "@/components/ui/field";
 import { Card, LoadingState, EmptyState, ErrorState } from "@/components/ui/states";
 import { Aviso } from "@/components/ui/alert";
 import { FileUpload } from "@/components/ui/file-upload";
@@ -102,9 +105,11 @@ function PerfilContent({ accessToken }: { accessToken: string }) {
 
       <VerificationSection doctor={doctor} accessToken={accessToken} />
       <LockedFieldsSection doctor={doctor} specialtyName={specialtyName} />
+      <ProfessionalInfoSection doctor={doctor} accessToken={accessToken} onSaved={reload} />
       <LocationsSection accessToken={accessToken} locations={locations} error={locationsError} onReload={loadLocations} />
       <ContactSection doctor={doctor} accessToken={accessToken} onSaved={reload} />
       <BrandingSection doctor={doctor} accessToken={accessToken} onSaved={reload} specialtyName={specialtyName} primaryLocation={primaryLocation} />
+      <AssistantsSection accessToken={accessToken} />
     </main>
   );
 }
@@ -193,6 +198,157 @@ function LockedFieldsSection({ doctor, specialtyName }: { doctor: DoctorProfile;
       <p className="mt-4 text-sm text-gray-500">
         Estos campos no se pueden modificar una vez verificada la cuenta. Contacta a soporte.
       </p>
+    </Card>
+  );
+}
+
+// DOC-11: photoUrl viaja como URL de texto (doctorProfileUpdateSchema
+// ya lo define como z.string().url(), no como un fileKey subido) — a
+// diferencia de logo/firma (BrandingSection, abajo), que sí pasan por
+// FileStoragePort porque esos nunca se muestran fuera de un PDF ya
+// generado. Un médico verificado necesita que su foto sea una URL de
+// verdad para cuando exista el directorio público (Hallazgo #4 de la
+// auditoría) — enrutarla por el mismo mecanismo privado de
+// logo/firma la dejaría inservible para eso.
+const professionalInfoFormSchema = z.object({
+  photoUrl: z.string().trim(),
+  biography: z.string().trim(),
+  yearsExperience: z.string().trim(),
+  languages: z.string().trim(),
+  university: z.string().trim(),
+});
+type ProfessionalInfoFormValues = z.infer<typeof professionalInfoFormSchema>;
+
+function ProfessionalInfoSection({
+  doctor,
+  accessToken,
+  onSaved,
+}: {
+  doctor: DoctorProfile;
+  accessToken: string;
+  onSaved: () => void;
+}) {
+  const [error, setError] = useState<unknown>(null);
+  const [saved, setSaved] = useState(false);
+  const form = useForm<ProfessionalInfoFormValues>({
+    resolver: zodResolver(professionalInfoFormSchema),
+    defaultValues: {
+      photoUrl: doctor.photoUrl ?? "",
+      biography: doctor.biography ?? "",
+      yearsExperience: doctor.yearsExperience !== null ? String(doctor.yearsExperience) : "",
+      languages: doctor.languages.join(", "),
+      university: doctor.university ?? "",
+    },
+  });
+
+  async function onSubmit(values: ProfessionalInfoFormValues) {
+    setError(null);
+    setSaved(false);
+
+    if (values.photoUrl && !/^https?:\/\//.test(values.photoUrl)) {
+      form.setError("photoUrl", { message: "Debe ser una URL completa (https://...)." });
+      return;
+    }
+    if (values.biography && containsContactInfo(values.biography)) {
+      form.setError("biography", { message: "La biografía no puede incluir teléfono ni correo de contacto." });
+      return;
+    }
+    let yearsExperience: number | undefined;
+    if (values.yearsExperience) {
+      const n = Number(values.yearsExperience);
+      if (!Number.isInteger(n) || n < 0 || n > 70) {
+        form.setError("yearsExperience", { message: "Debe ser un número entero entre 0 y 70." });
+        return;
+      }
+      yearsExperience = n;
+    }
+
+    // Omitir un campo (undefined) dentro de PATCH /doctors/me lo deja
+    // sin cambios — no hay forma de "borrar" biography/university una
+    // vez guardados, misma limitación que ya tiene doctorProfileUpdateSchema
+    // (M2-RN-001 style: .optional() significa "no lo toques", no
+    // ".nullable()"). Vaciar el campo y guardar no lo borra.
+    const payload = {
+      photoUrl: values.photoUrl || undefined,
+      biography: values.biography || undefined,
+      yearsExperience,
+      university: values.university || undefined,
+      languages: values.languages
+        .split(",")
+        .map((l) => l.trim())
+        .filter(Boolean),
+    };
+    const parsed = doctorProfileUpdateSchema
+      .pick({ photoUrl: true, biography: true, yearsExperience: true, university: true, languages: true })
+      .safeParse(payload);
+    if (!parsed.success) {
+      setError(parsed.error);
+      return;
+    }
+
+    try {
+      await apiFetch("/doctors/me", { method: "PATCH", body: parsed.data, accessToken });
+      setSaved(true);
+      onSaved();
+    } catch (err) {
+      setError(err);
+    }
+  }
+
+  return (
+    <Card>
+      <h2 className="font-heading text-xl text-brand-900">Perfil profesional</h2>
+      <p className="text-sm text-gray-500">Así te ven tus pacientes cuando buscan un médico verificado.</p>
+      <form onSubmit={form.handleSubmit(onSubmit)} className="mt-4 flex flex-col gap-4" noValidate>
+        <FieldWrapper
+          label="Foto de perfil (URL)"
+          htmlFor="photoUrl"
+          hint="Enlace a una foto tuya de rostro, no un logotipo."
+          error={form.formState.errors.photoUrl?.message}
+        >
+          <TextInput id="photoUrl" type="url" placeholder="https://..." error={!!form.formState.errors.photoUrl} {...form.register("photoUrl")} />
+        </FieldWrapper>
+        <FieldWrapper
+          label="Biografía"
+          htmlFor="biography"
+          hint="Entre 50 y 2,000 caracteres. Sin teléfono ni correo — eso ya vive en tus datos de contacto."
+          error={form.formState.errors.biography?.message}
+        >
+          <Textarea id="biography" rows={5} error={!!form.formState.errors.biography} {...form.register("biography")} />
+        </FieldWrapper>
+        <div className="grid grid-cols-2 gap-4">
+          <FieldWrapper
+            label="Años de experiencia"
+            htmlFor="yearsExperience"
+            error={form.formState.errors.yearsExperience?.message}
+          >
+            <TextInput
+              id="yearsExperience"
+              type="number"
+              min={0}
+              max={70}
+              error={!!form.formState.errors.yearsExperience}
+              {...form.register("yearsExperience")}
+            />
+          </FieldWrapper>
+          <FieldWrapper label="Universidad" htmlFor="university" error={form.formState.errors.university?.message}>
+            <TextInput id="university" error={!!form.formState.errors.university} {...form.register("university")} />
+          </FieldWrapper>
+        </div>
+        <FieldWrapper
+          label="Idiomas"
+          htmlFor="languages"
+          hint="Sepáralos con comas — por ejemplo: Español, Inglés"
+          error={form.formState.errors.languages?.message}
+        >
+          <TextInput id="languages" error={!!form.formState.errors.languages} {...form.register("languages")} />
+        </FieldWrapper>
+        {error ? <ErrorState error={error} /> : null}
+        {saved && !error ? <Aviso variant="exito" title="Guardado" /> : null}
+        <Button type="submit" isLoading={form.formState.isSubmitting} className="w-fit">
+          Guardar
+        </Button>
+      </form>
     </Card>
   );
 }
@@ -475,6 +631,137 @@ function BrandingSection({
             <img src={signatureSrc} alt="Firma" className="ml-auto h-12 w-24 object-contain" />
           ) : null}
         </div>
+      </div>
+    </Card>
+  );
+}
+
+interface PendingAssistantInvitation {
+  id: string;
+  email: string;
+  expiresAt: string;
+}
+interface AcceptedAssistant {
+  id: string;
+  email: string;
+  acceptedAt: string;
+}
+interface AssistantsList {
+  pending: PendingAssistantInvitation[];
+  accepted: AcceptedAssistant[];
+}
+type InviteFormValues = { email: string };
+
+// DOC-16: invite()/accept() ya existían (M1-RN-008) pero no había
+// dónde verlos — la auditoría de M2 los dio por "backend completo"
+// sin notar que faltaba list(). GET /doctors/me/assistants es nuevo
+// (ver assistant-invitation.service.ts).
+function AssistantsSection({ accessToken }: { accessToken: string }) {
+  const [list, setList] = useState<AssistantsList | null>(null);
+  const [listError, setListError] = useState<unknown>(null);
+  const [inviteError, setInviteError] = useState<unknown>(null);
+  const [invited, setInvited] = useState<string | null>(null);
+
+  const form = useForm<InviteFormValues>({
+    resolver: zodResolver(assistantInviteSchema),
+    defaultValues: { email: "" },
+  });
+
+  const load = useCallback(() => {
+    setListError(null);
+    apiFetch<AssistantsList>("/doctors/me/assistants", { accessToken })
+      .then(setList)
+      .catch((err: unknown) => setListError(err));
+  }, [accessToken]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function onInvite(values: InviteFormValues) {
+    setInviteError(null);
+    setInvited(null);
+    try {
+      await apiFetch("/doctors/me/assistants/invite", { method: "POST", body: values, accessToken });
+      setInvited(values.email);
+      form.reset({ email: "" });
+      load();
+    } catch (err) {
+      setInviteError(err);
+    }
+  }
+
+  return (
+    <Card>
+      <h2 className="font-heading text-xl text-brand-900">Asistentes</h2>
+      <p className="text-sm text-gray-500">
+        Un asistente puede ver a tus pacientes y gestionar tu agenda y consultorios, pero nunca tu perfil profesional.
+      </p>
+
+      <form onSubmit={form.handleSubmit(onInvite)} className="mt-4 flex flex-wrap items-end gap-3" noValidate>
+        <FieldWrapper
+          label="Invitar por correo"
+          htmlFor="assistant-email"
+          hint="La invitación expira en 72 horas. Máximo 3 pendientes a la vez."
+          error={form.formState.errors.email?.message}
+        >
+          <TextInput
+            id="assistant-email"
+            type="email"
+            className="min-w-[280px]"
+            error={!!form.formState.errors.email}
+            {...form.register("email")}
+          />
+        </FieldWrapper>
+        <Button type="submit" isLoading={form.formState.isSubmitting}>
+          Invitar
+        </Button>
+      </form>
+      {inviteError ? (
+        <div className="mt-3">
+          <ErrorState error={inviteError} />
+        </div>
+      ) : null}
+      {invited && !inviteError ? (
+        <div className="mt-3">
+          <Aviso variant="exito" title={`Invitación enviada a ${invited}`} />
+        </div>
+      ) : null}
+
+      <div className="mt-6 border-t border-gray-300 pt-6">
+        {list === null && !listError ? <LoadingState /> : null}
+        {listError ? <ErrorState error={listError} onRetry={load} /> : null}
+        {list && list.pending.length === 0 && list.accepted.length === 0 ? (
+          <EmptyState title="Sin asistentes" description="Invita a tu primer asistente arriba." />
+        ) : null}
+
+        {list && list.accepted.length > 0 ? (
+          <div>
+            <p className="text-sm font-medium text-gray-700">Asistentes activos</p>
+            <ul className="mt-2 flex flex-col gap-2">
+              {list.accepted.map((a) => (
+                <li key={a.id} className="flex items-center justify-between rounded-md border border-gray-300 p-3 text-base text-gray-900">
+                  {a.email}
+                  <span className="text-sm text-gray-500">Desde {new Date(a.acceptedAt).toLocaleDateString("es-MX")}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {list && list.pending.length > 0 ? (
+          <div className="mt-4">
+            <p className="text-sm font-medium text-gray-700">Invitaciones pendientes</p>
+            <ul className="mt-2 flex flex-col gap-2">
+              {list.pending.map((p) => (
+                <li key={p.id} className="flex items-center justify-between rounded-md border border-gray-300 p-3 text-base text-gray-900">
+                  {p.email}
+                  <span className="text-sm text-gray-500">Expira {new Date(p.expiresAt).toLocaleDateString("es-MX")}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
       </div>
     </Card>
   );

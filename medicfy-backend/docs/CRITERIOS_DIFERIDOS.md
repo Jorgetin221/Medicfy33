@@ -20,6 +20,15 @@
 | `verified` es `false` en cualquier estado distinto de `VERIFIED` | **Verificable hoy.** Ya implementado en `apps/api/src/modules/doctors/doctor-public-view.ts` (`verified: doctor.verificationStatus === "VERIFIED"`). |
 | Recordatorio a 60 días antes del vencimiento, y degradación del sello al vencer | **Diferido.** Depende de una columna de vencimiento en `doctor_documents` que hoy no existe en `prisma/schema.prisma` (ver `ESPECIFICACION_TECNICA_MEDICFY_MVP.md` §17, entrada v2.1.1, "Pendiente, no resuelto"), y de un job programado (Redis + BullMQ, §3 del `CLAUDE.md`) que tampoco está construido. |
 
+## M2-CA-004 — efectos de suspender a un médico
+
+**Texto del criterio (spec, módulo M2):** "Al suspender un médico, todos sus pacientes con cita futura reciben notificación en ≤5 min y se generan los reembolsos."
+
+| Mitad | Estado |
+|---|---|
+| Citas futuras pagadas (`SCHEDULED`/`CONFIRMED`) del médico se cancelan y sus pacientes reciben notificación citando su derecho a 100% de reembolso | **Verificable hoy.** Resuelto al cerrar el pase de M2 (ver auditoría de 11 módulos, hallazgo M2-RN-005), una vez que M5a ya existía. `AppointmentCancellationSuspensionAdapter` (`apps/api/src/modules/doctors/services/appointment-cancellation-suspension.adapter.ts`) llama `AppointmentStateMachineService.cancel(..., "DOCTOR", ...)` — que ya calcula `refundPercent: 100` — y notifica por `NOTIFICATION_PORT`. Las citas `PENDING_PAYMENT` no entran (la máquina de estados no admite `PENDING_PAYMENT → CANCELLED_BY_DOCTOR`); se liberan solas a los 30 minutos por M5-CA-002, y no había nada que reembolsar en ellas de todas formas. |
+| El reembolso se **emite** de verdad (dinero se mueve) | **Diferido.** No hay pasarela de pago — `confirmPayment()` solo cambia un `status`, nunca ha cobrado nada real. `refundsIssued` se queda en `0`, con log explícito de por qué, hasta que M6 (pagos) exista. |
+
 ## M2-CA-009 — paciente creado por médico — RESUELTO
 
 **Texto del criterio (spec, módulo M2, reasignado a M5):** "Un médico crea un paciente sin cuenta de usuario, queda con `medicfy_id` legible y `source = created_by_doctor`, y se genera automáticamente el `care_relationship` correspondiente. Se verifica al cerrar M5."

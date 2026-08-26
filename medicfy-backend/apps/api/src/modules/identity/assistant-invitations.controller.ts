@@ -1,4 +1,4 @@
-import { Body, Controller, ForbiddenException, HttpCode, HttpStatus, Post, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, ForbiddenException, Get, HttpCode, HttpStatus, Post, Req, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
 import type { Request } from "express";
 import {
@@ -21,6 +21,18 @@ import type { AuthenticatedRequest } from "./guards/jwt-auth.guard";
 @UseGuards(JwtAuthGuard)
 export class AssistantInvitationsController {
   constructor(private readonly invitationService: AssistantInvitationService) {}
+
+  @Get()
+  @ApiOperation({ summary: "DOC-16: lista invitaciones pendientes y asistentes aceptados de este médico" })
+  @ApiResponse({ status: 200 })
+  @ApiResponse({ status: 403, description: "Solo DOCTOR puede ver sus asistentes" })
+  async list(@Req() req: Request) {
+    const { user } = req as AuthenticatedRequest;
+    if (user.primaryRole !== "DOCTOR") {
+      throw new ForbiddenException("Solo un médico puede ver sus asistentes.");
+    }
+    return this.invitationService.list(user.sub);
+  }
 
   @Post("invite")
   @HttpCode(HttpStatus.OK)

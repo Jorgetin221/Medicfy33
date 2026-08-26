@@ -16,6 +16,7 @@ class TestNotificationAdapter implements NotificationPort {
   async sendPhoneVerificationCode(): Promise<void> {}
   async sendPasswordResetLink(): Promise<void> {}
   async sendAssistantInvitation(): Promise<void> {}
+  async sendAppointmentCancelledDoctorSuspended(): Promise<void> {}
 }
 
 function uniqueEmail(prefix: string): string {

@@ -22,6 +22,7 @@ class TestNotificationAdapter implements NotificationPort {
   async sendAssistantInvitation(to: string, url: string): Promise<void> {
     this.invitationUrls.set(to, url);
   }
+  async sendAppointmentCancelledDoctorSuspended(): Promise<void> {}
 }
 
 function uniqueEmail(prefix: string): string {

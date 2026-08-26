@@ -35,4 +35,14 @@ export class ConsoleNotificationAdapter implements NotificationPort {
     this.assertNotProduction();
     this.logger.log(`[dev-only] assistant invitation for ${to}: ${inviteUrl}`);
   }
+
+  async sendAppointmentCancelledDoctorSuspended(
+    to: string,
+    details: { appointmentStartsAt: Date; refundPercent: number }
+  ): Promise<void> {
+    this.assertNotProduction();
+    this.logger.log(
+      `[dev-only] appointment cancelled (doctor suspended) for ${to}: was ${details.appointmentStartsAt.toISOString()}, ${details.refundPercent}% refund entitlement`
+    );
+  }
 }

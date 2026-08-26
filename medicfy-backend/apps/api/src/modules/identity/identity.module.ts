@@ -57,6 +57,7 @@ import { AssistantInvitationsController } from "./assistant-invitations.controll
     JwtAuthGuard,
     DoctorVerifiedGuard,
     AdminGuard,
+    NOTIFICATION_PORT,
   ],
 })
 export class IdentityModule {}

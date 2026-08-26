@@ -30,6 +30,7 @@ class TestNotificationAdapter implements NotificationPort {
   async sendAssistantInvitation(to: string, url: string): Promise<void> {
     this.invitations.set(to, url);
   }
+  async sendAppointmentCancelledDoctorSuspended(): Promise<void> {}
 }
 
 function uniqueEmail(prefix: string): string {
@@ -382,6 +383,57 @@ describe("M1 — Identidad, cuentas y sesión", () => {
         .send({ token });
       expect(secondAccept.status).toBe(400);
       expect(secondAccept.body.error.code).toBe("ASSISTANT_INVITATION_INVALID");
+    });
+
+    it("DOC-16: GET /doctors/me/assistants lists pending and accepted separately, scoped to the caller, DOCTOR-only", async () => {
+      const doctor = await registerAndVerifyDoctor();
+      const doctorAccessToken = await loginFor(doctor.email);
+      const otherDoctor = await registerAndVerifyDoctor();
+      const otherDoctorAccessToken = await loginFor(otherDoctor.email);
+      const pendingAssistantEmail = uniqueEmail("pending-assistant");
+      const acceptedAssistant = await registerAndVerifyPatient();
+      const acceptedAssistantAccessToken = await loginFor(acceptedAssistant.email);
+
+      await request(app.getHttpServer())
+        .post("/doctors/me/assistants/invite")
+        .set("Authorization", `Bearer ${doctorAccessToken}`)
+        .send({ email: pendingAssistantEmail });
+
+      const invite = await request(app.getHttpServer())
+        .post("/doctors/me/assistants/invite")
+        .set("Authorization", `Bearer ${doctorAccessToken}`)
+        .send({ email: acceptedAssistant.email });
+      expect(invite.status).toBe(200);
+      const invitationUrl = mustGet(notifications.invitations, acceptedAssistant.email);
+      const token = new URL(invitationUrl).searchParams.get("token");
+      if (!token) {
+        throw new Error("expected the invitation URL to carry a token query param");
+      }
+      await request(app.getHttpServer())
+        .post("/doctors/me/assistants/accept")
+        .set("Authorization", `Bearer ${acceptedAssistantAccessToken}`)
+        .send({ token });
+
+      const list = await request(app.getHttpServer())
+        .get("/doctors/me/assistants")
+        .set("Authorization", `Bearer ${doctorAccessToken}`);
+      expect(list.status).toBe(200);
+      expect(list.body.pending).toHaveLength(1);
+      expect(list.body.pending[0].email).toBe(pendingAssistantEmail);
+      expect(list.body.accepted).toHaveLength(1);
+      expect(list.body.accepted[0].email).toBe(acceptedAssistant.email);
+
+      const otherDoctorList = await request(app.getHttpServer())
+        .get("/doctors/me/assistants")
+        .set("Authorization", `Bearer ${otherDoctorAccessToken}`);
+      expect(otherDoctorList.status).toBe(200);
+      expect(otherDoctorList.body.pending).toHaveLength(0);
+      expect(otherDoctorList.body.accepted).toHaveLength(0);
+
+      const asAssistant = await request(app.getHttpServer())
+        .get("/doctors/me/assistants")
+        .set("Authorization", `Bearer ${acceptedAssistantAccessToken}`);
+      expect(asAssistant.status).toBe(403);
     });
   });
 });

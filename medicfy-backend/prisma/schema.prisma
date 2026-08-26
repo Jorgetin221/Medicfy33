@@ -221,7 +221,7 @@ model Doctor {
   verifiedByUserId        String?
   verifiedAt              DateTime?                @db.Timestamptz(3)
   // M2-RN-004: needs >=1 active location OR teleconsultation to
-  // receive appointments (enforced when M5 books one, not here).
+  // receive appointments — enforced in AppointmentStateMachineService.create().
   acceptsTeleconsultation Boolean                  @default(false)
   acceptsNewPatients      Boolean                  @default(true)
   // M4-RN-005: antelación mínima y ventana máxima de agenda,

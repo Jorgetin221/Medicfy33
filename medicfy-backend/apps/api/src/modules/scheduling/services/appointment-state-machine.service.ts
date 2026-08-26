@@ -74,6 +74,23 @@ export class AppointmentStateMachineService {
 
     const doctor = await this.prisma.doctor.findUniqueOrThrow({ where: { id: actingDoctorId } });
 
+    // M2-RN-004/M2-CA-006: "necesita >=1 consultorio activo o
+    // teleconsulta habilitada para recibir citas." DOCTOR_NOT_ACCEPTING_PATIENTS
+    // es el código que la spec ya nombra para esto en la tabla de
+    // errores de M5 (§7) — no es un código inventado aquí.
+    if (!doctor.acceptsTeleconsultation) {
+      const activeLocationCount = await this.prisma.practiceLocation.count({
+        where: { doctorId: actingDoctorId, isActive: true },
+      });
+      if (activeLocationCount === 0) {
+        throw new ApiException(
+          "DOCTOR_NOT_ACCEPTING_PATIENTS",
+          "Este médico no tiene consultorio activo ni teleconsulta habilitada.",
+          HttpStatus.FORBIDDEN
+        );
+      }
+    }
+
     const startsAt = new Date(input.startsAt);
     const endsAt = new Date(startsAt.getTime() + service.durationMinutes * 60_000);
     const earliestAllowed = new Date(Date.now() + doctor.minBookingNoticeMinutes * 60_000);

@@ -9,9 +9,40 @@
 //
 // Usage: pnpm db:seed
 import { PrismaClient } from "@prisma/client";
+import * as argon2 from "argon2";
 import cie10Dgis from "./data/cie10-dgis.json" with { type: "json" };
 
 const prisma = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL });
+
+// ADM-01/02: sin esto no había ninguna forma de llegar a
+// /admin/verificacion por /login real — AdminGuard existía y
+// admin-doctors.controller.ts funcionaba, pero solo era alcanzable
+// firmando un JWT a mano en pruebas (hallazgo del pase de M2). R7:
+// dato sintético, nunca producción — por eso el guard de abajo.
+const SEED_ADMIN_EMAIL = "admin@medicfy.dev";
+const SEED_ADMIN_PASSWORD = "Correcto-Caballo-Bateria-47!Grafito";
+
+async function seedAdmin(): Promise<void> {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("seedAdmin() must not run in production — it creates an account with a known password.");
+  }
+  const passwordHash = await argon2.hash(SEED_ADMIN_PASSWORD, { type: argon2.argon2id });
+  const admin = await prisma.user.upsert({
+    where: { email: SEED_ADMIN_EMAIL },
+    update: {},
+    create: { email: SEED_ADMIN_EMAIL, passwordHash, primaryRole: "ADMIN", status: "ACTIVE", emailVerifiedAt: new Date() },
+  });
+  // upsert por la unique compuesta (userId, role, scopeId) rechaza un
+  // scopeId explícito en null (limitación conocida de Prisma con
+  // claves compuestas que incluyen una columna nullable) — findFirst
+  // + create condicional lo evita, y un seed no necesita atomicidad
+  // real aquí (no hay escritura concurrente).
+  const existingRole = await prisma.userRole.findFirst({ where: { userId: admin.id, role: "ADMIN" } });
+  if (!existingRole) {
+    await prisma.userRole.create({ data: { userId: admin.id, role: "ADMIN" } });
+  }
+  console.log(`Seeded ADMIN account: ${SEED_ADMIN_EMAIL} / ${SEED_ADMIN_PASSWORD} (dev only, R7 — no reutilizar en producción).`);
+}
 
 // M8-RN-014: "publica schemas para exactly these four en v1.0".
 const SPECIALTIES = [
@@ -86,6 +117,8 @@ async function main(): Promise<void> {
     }
   }
   console.log(`Seeded ${MEDICATIONS.length} medications.`);
+
+  await seedAdmin();
 }
 
 main()

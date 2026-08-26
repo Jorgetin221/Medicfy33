@@ -10,16 +10,21 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { NOTIFICATION_PORT, type NotificationPort } from "../identity/services/notification.port";
 import { TokenService } from "../identity/services/token.service";
 import { PasswordService } from "../identity/services/password.service";
+import { AppointmentStateMachineService } from "../scheduling/services/appointment-state-machine.service";
 import { toPublicDoctorView } from "./doctor-public-view";
 
 class TestNotificationAdapter implements NotificationPort {
   public readonly emailCodes = new Map<string, string>();
+  public readonly suspensionCancellations: { to: string; appointmentStartsAt: Date; refundPercent: number }[] = [];
   async sendEmailVerificationCode(to: string, code: string): Promise<void> {
     this.emailCodes.set(to, code);
   }
   async sendPhoneVerificationCode(): Promise<void> {}
   async sendPasswordResetLink(): Promise<void> {}
   async sendAssistantInvitation(): Promise<void> {}
+  async sendAppointmentCancelledDoctorSuspended(to: string, details: { appointmentStartsAt: Date; refundPercent: number }): Promise<void> {
+    this.suspensionCancellations.push({ to, ...details });
+  }
 }
 
 function uniqueEmail(prefix: string): string {
@@ -42,6 +47,7 @@ describe("M2 — Perfil médico y verificación", () => {
   let prisma: PrismaService;
   let tokenService: TokenService;
   let passwordService: PasswordService;
+  let appointmentService: AppointmentStateMachineService;
   let notifications: TestNotificationAdapter;
 
   beforeAll(async () => {
@@ -59,6 +65,7 @@ describe("M2 — Perfil médico y verificación", () => {
     prisma = moduleRef.get(PrismaService);
     tokenService = moduleRef.get(TokenService);
     passwordService = moduleRef.get(PasswordService);
+    appointmentService = moduleRef.get(AppointmentStateMachineService);
     notifications = notificationAdapter;
   });
 
@@ -349,9 +356,109 @@ describe("M2 — Perfil médico y verificación", () => {
       expect(auditEntry).not.toBeNull();
     });
 
-    it.todo(
-      "notifying patients with future appointments and issuing 100% refunds requires Appointment (M5) and Payment (M6), neither of which exist yet — DoctorSuspensionEffects is the seam for when they do"
-    );
+    it("cancels the doctor's future paid appointments, notifies each patient with their 100% refund entitlement, and reports the real counts", async () => {
+      const doctor = await registerAndVerifyDoctor();
+      // M2-RN-004: sin esto no podría agendar — no es lo que este test
+      // verifica.
+      await prisma.doctor.update({ where: { userId: doctor.userId }, data: { acceptsTeleconsultation: true } });
+
+      const serviceRes = await request(app.getHttpServer())
+        .post("/doctors/me/services")
+        .set("Authorization", `Bearer ${doctor.accessToken}`)
+        .send({ serviceType: "FIRST_VISIT", name: "Consulta", durationMinutes: 30, priceMxn: 500 });
+      expect(serviceRes.status).toBe(201);
+
+      const patientEmail = uniqueEmail("patient");
+      const patientRes = await request(app.getHttpServer())
+        .post("/patients")
+        .set("Authorization", `Bearer ${doctor.accessToken}`)
+        .send({
+          firstName: "Karla",
+          lastNamePaternal: "Núñez",
+          birthDate: "1988-02-10",
+          sexAtBirth: "F",
+          phoneE164: uniquePhone(),
+          email: patientEmail,
+        });
+      expect(patientRes.status).toBe(201);
+
+      const apptRes = await request(app.getHttpServer())
+        .post("/appointments")
+        .set("Authorization", `Bearer ${doctor.accessToken}`)
+        .send({
+          patientId: patientRes.body.id,
+          serviceId: serviceRes.body.id,
+          startsAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+        });
+      expect(apptRes.status).toBe(201);
+      expect(apptRes.body.status).toBe("PENDING_PAYMENT");
+      // Solo citas pagadas (SCHEDULED/CONFIRMED) admiten
+      // CANCELLED_BY_DOCTOR en la máquina de estados — confirmar el
+      // pago es lo que las vuelve elegibles para este flujo.
+      await appointmentService.confirmPayment(apptRes.body.id, doctor.userId);
+
+      const doctorRecord = await prisma.doctor.findUniqueOrThrow({ where: { userId: doctor.userId } });
+      const admin = await createAdmin();
+      const suspendRes = await request(app.getHttpServer())
+        .post(`/admin/doctors/${doctorRecord.id}/suspend`)
+        .set("Authorization", `Bearer ${admin.accessToken}`);
+      expect(suspendRes.status).toBe(200);
+      expect(suspendRes.body.notifiedPatients).toBe(1);
+      // El reembolso real (dinero) sigue diferido — no hay pasarela de
+      // pago (M6). Ver CRITERIOS_DIFERIDOS.md, M2-CA-004.
+      expect(suspendRes.body.refundsIssued).toBe(0);
+
+      const cancelled = await prisma.appointment.findUniqueOrThrow({ where: { id: apptRes.body.id } });
+      expect(cancelled.status).toBe("CANCELLED_BY_DOCTOR");
+      expect(cancelled.cancellationReason).toBe("Médico suspendido — cuenta suspendida por administración");
+
+      const sent = notifications.suspensionCancellations.find((n) => n.to === patientEmail);
+      expect(sent).toBeDefined();
+      expect(sent?.refundPercent).toBe(100);
+    });
+
+    it("does not touch a still-unpaid (PENDING_PAYMENT) appointment when suspending — it expires on its own via M5-CA-002", async () => {
+      const doctor = await registerAndVerifyDoctor();
+      await prisma.doctor.update({ where: { userId: doctor.userId }, data: { acceptsTeleconsultation: true } });
+
+      const serviceRes = await request(app.getHttpServer())
+        .post("/doctors/me/services")
+        .set("Authorization", `Bearer ${doctor.accessToken}`)
+        .send({ serviceType: "FIRST_VISIT", name: "Consulta", durationMinutes: 30, priceMxn: 500 });
+
+      const patientRes = await request(app.getHttpServer())
+        .post("/patients")
+        .set("Authorization", `Bearer ${doctor.accessToken}`)
+        .send({
+          firstName: "Iván",
+          lastNamePaternal: "Torres",
+          birthDate: "1995-09-01",
+          sexAtBirth: "M",
+          phoneE164: uniquePhone(),
+          email: uniqueEmail("patient"),
+        });
+
+      const apptRes = await request(app.getHttpServer())
+        .post("/appointments")
+        .set("Authorization", `Bearer ${doctor.accessToken}`)
+        .send({
+          patientId: patientRes.body.id,
+          serviceId: serviceRes.body.id,
+          startsAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+        });
+      expect(apptRes.body.status).toBe("PENDING_PAYMENT");
+
+      const doctorRecord = await prisma.doctor.findUniqueOrThrow({ where: { userId: doctor.userId } });
+      const admin = await createAdmin();
+      const suspendRes = await request(app.getHttpServer())
+        .post(`/admin/doctors/${doctorRecord.id}/suspend`)
+        .set("Authorization", `Bearer ${admin.accessToken}`);
+      expect(suspendRes.status).toBe(200);
+      expect(suspendRes.body.notifiedPatients).toBe(0);
+
+      const untouched = await prisma.appointment.findUniqueOrThrow({ where: { id: apptRes.body.id } });
+      expect(untouched.status).toBe("PENDING_PAYMENT");
+    });
   });
 
   // CRITERIOS_DIFERIDOS.md: solo la mitad verificable hoy de M2-CA-007

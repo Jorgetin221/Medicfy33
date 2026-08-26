@@ -91,11 +91,11 @@ export class DoctorVerificationService {
     return doctor;
   }
 
-  // M2-RN-005: status transition + audit here; appointment reschedule,
-  // patient notification and refunds go through DoctorSuspensionEffects
-  // (M5/M6, not built — see that port for why). Records are never
-  // deleted or hidden, matching "Sus expedientes no se borran ni se
-  // ocultan a los pacientes."
+  // M2-RN-005: status transition + audit here; cancelling future
+  // appointments and notifying patients goes through
+  // DoctorSuspensionEffects (see that port — refund issuance itself
+  // still waits on M6). Records are never deleted or hidden, matching
+  // "Sus expedientes no se borran ni se ocultan a los pacientes."
   async suspend(
     doctorId: string,
     adminUserId: string,
@@ -105,7 +105,7 @@ export class DoctorVerificationService {
       where: { id: doctorId },
       data: { verificationStatus: "SUSPENDED" },
     });
-    const effects = await this.suspensionEffects.handleDoctorSuspended(doctor.userId);
+    const effects = await this.suspensionEffects.handleDoctorSuspended(doctor.userId, adminUserId);
     await this.auditService.log({
       actorUserId: adminUserId,
       actorRole: "ADMIN",
