@@ -431,6 +431,16 @@ describe("M5a — Pacientes y citas (núcleo)", () => {
       expect(confirm.status).toBe(201);
       expect(confirm.body.status).toBe("CONFIRMED");
 
+      // Prompt 12 / prueba 17.5 (Fase 1): SOLO el médico asignado a la
+      // cita puede abrir la consulta — otro médico recibe error de
+      // autorización, no un 404 casual.
+      const intruso = await registerDoctor();
+      const intrusoStart = await request(app.getHttpServer())
+        .post(`/appointments/${created.id}/start`)
+        .set("Authorization", `Bearer ${intruso.accessToken}`);
+      expect([403, 404]).toContain(intrusoStart.status);
+      expect(intrusoStart.status).not.toBe(201);
+
       const start = await request(app.getHttpServer()).post(`/appointments/${created.id}/start`).set("Authorization", `Bearer ${doctor.accessToken}`);
       expect(start.status).toBe(201);
       expect(start.body.status).toBe("IN_PROGRESS");

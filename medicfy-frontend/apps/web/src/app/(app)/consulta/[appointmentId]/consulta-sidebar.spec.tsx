@@ -85,12 +85,18 @@ function renderSidebar(overrides: Partial<Parameters<typeof ConsultaSidebar>[0]>
 }
 
 describe("ConsultaSidebar — Zona 1 de DOC-06", () => {
-  it("muestra las cuatro secciones fijas del contexto del paciente", () => {
+  it("muestra las secciones del contexto en el orden de prominencia del prompt 13, con alergias PRIMERO y explícitas cuando no hay", () => {
     renderSidebar();
+    // 1) Alergias arriba — sin alergias lo DICE, no deja un hueco.
+    expect(screen.getByText("Sin alergias activas registradas")).toBeInTheDocument();
     expect(screen.getByText("Diagnósticos vigentes")).toBeInTheDocument();
+    expect(screen.getByText(/Medicación crónica \(0\)/)).toBeInTheDocument();
     expect(screen.getByText("Antecedentes")).toBeInTheDocument();
-    expect(screen.getByText("Alergias")).toBeInTheDocument();
     expect(screen.getByText("Últimas consultas")).toBeInTheDocument();
+    // El bloque de alergias aparece ANTES que el nombre en el DOM.
+    const aside = screen.getByRole("complementary");
+    const html = aside.innerHTML;
+    expect(html.indexOf("Sin alergias activas")).toBeLessThan(html.indexOf("María López"));
   });
 
   it("#18: pinta el banner de embarazo con SDG y FPP calculadas por el servidor — y no lo pinta cuando no hay embarazo activo", () => {

@@ -3,10 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api-client";
+import { tokenSubject } from "@/lib/jwt-claims";
 import { usePatientClinical } from "@/lib/use-patient-clinical";
 import { LoadingState, ErrorState, Card } from "@/components/ui/states";
 import { Button } from "@/components/ui/button";
 import { ConsultaSidebar } from "./consulta-sidebar";
+import { ConsultaZona3 } from "./consulta-zona3";
 import { ConsultaForm } from "./consulta-form";
 import { ConsultaReadonly } from "./consulta-readonly";
 import { patientFullName, type AppointmentDetail, type EncounterDetail } from "./types";
@@ -169,6 +171,26 @@ export function ConsultaScreen({ appointmentId, accessToken }: { appointmentId: 
     );
   }
 
+  // Prompt 16 — encadenar consultas: al firmar, salta directo a la
+  // siguiente cita CONFIRMADA del día del mismo médico (la
+  // autorización R4 se revalúa al abrir la siguiente: /start vuelve a
+  // verificar al médico asignado); sin siguiente, regresa a la agenda.
+  async function goToNextPatient() {
+    if (!appointment) {
+      router.push("/agenda");
+      return;
+    }
+    try {
+      const todays = await apiFetch<{ id: string; startsAt: string; status: string }[]>("/appointments", { accessToken: accessToken ?? undefined });
+      const next = todays
+        .filter((a) => a.id !== appointmentId && a.status === "CONFIRMED" && new Date(a.startsAt) >= new Date(appointment.startsAt))
+        .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime())[0];
+      router.push(next ? `/consulta/${next.id}` : "/agenda");
+    } catch {
+      router.push("/agenda");
+    }
+  }
+
   return (
     <main className="mx-auto flex max-w-6xl flex-col gap-6 p-6 lg:flex-row">
       <ConsultaSidebar
@@ -190,10 +212,11 @@ export function ConsultaScreen({ appointmentId, accessToken }: { appointmentId: 
           encounter={encounter}
           historyItems={historyItems}
           onHistoryChanged={reloadClinical}
-          onSigned={() => router.push(`/pacientes/${appointment.patientId}?justSigned=1`)}
+          onSigned={() => void goToNextPatient()}
           onAbandoned={() => setPhase("abandoned")}
         />
       )}
+      <ConsultaZona3 doctorKey={tokenSubject(accessToken)} />
     </main>
   );
 }

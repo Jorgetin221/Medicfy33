@@ -236,6 +236,91 @@ describe("CatalogController — Prompts 10-11: API de curación", () => {
     expect(auditRow?.actorUserId).toBe(curatorUserId);
   });
 
+  describe("Prompt 10 — solicitudes de término (bandeja del curador)", () => {
+    it("el médico solicita; el curador aprueba y el término nace por el flujo normal de curación (curatedBy = curador)", async () => {
+      const proposedTerm = testTerm("Propuesto");
+      const created = await request(app.getHttpServer())
+        .post("/catalogs/ALERGIA_AGENTE/term-requests")
+        .set("Authorization", `Bearer ${doctorToken}`)
+        .send({ proposedTerm, justification: "Lo necesito para un caso real de mi consulta." })
+        .expect(201);
+      expect(created.body.status).toBe("PENDING");
+
+      // La bandeja del curador la ve; el médico NO puede resolverla.
+      const inbox = await request(app.getHttpServer())
+        .get("/catalogs/term-requests")
+        .set("Authorization", `Bearer ${curatorToken}`)
+        .expect(200);
+      expect(inbox.body.map((r: { id: string }) => r.id)).toContain(created.body.id);
+
+      await request(app.getHttpServer())
+        .post(`/catalogs/term-requests/${created.body.id}/approve`)
+        .set("Authorization", `Bearer ${doctorToken}`)
+        .send({ key: testKey("nope"), codingSystem: "PROPIETARIO" })
+        .expect(403);
+
+      const approved = await request(app.getHttpServer())
+        .post(`/catalogs/term-requests/${created.body.id}/approve`)
+        .set("Authorization", `Bearer ${curatorToken}`)
+        .send({ key: testKey("aprobado"), codingSystem: "PROPIETARIO" })
+        .expect(201);
+      expect(approved.body.status).toBe("APPROVED");
+
+      const term = await prisma.clinicalCatalogTerm.findUniqueOrThrow({ where: { id: approved.body.resultingTermId } });
+      expect(term.preferredTerm).toBe(proposedTerm);
+      expect(term.curatedBy).toBe(curatorUserId);
+    });
+
+    it("solicitar un término que ya existe (o es sinónimo) regresa 409 señalando cuál usar; fusionar mapea sin crear nada", async () => {
+      const base = testTerm("Existente");
+      const variant = `ZZTEST Variante ${randomUUID().slice(0, 8)}`;
+      const term = await request(app.getHttpServer())
+        .post("/catalogs/ALERGIA_AGENTE/terms")
+        .set("Authorization", `Bearer ${curatorToken}`)
+        .send({ key: testKey("base"), preferredTerm: base, codingSystem: "PROPIETARIO", synonyms: [variant] })
+        .expect(201);
+
+      // Ya existe como sinónimo → 409 con el término a usar.
+      const dupe = await request(app.getHttpServer())
+        .post("/catalogs/ALERGIA_AGENTE/term-requests")
+        .set("Authorization", `Bearer ${doctorToken}`)
+        .send({ proposedTerm: variant.toUpperCase() })
+        .expect(409);
+      expect(dupe.body.error.details.existingTermId).toBe(term.body.id);
+
+      // Un término distinto que el curador decide fusionar.
+      const req2 = await request(app.getHttpServer())
+        .post("/catalogs/ALERGIA_AGENTE/term-requests")
+        .set("Authorization", `Bearer ${doctorToken}`)
+        .send({ proposedTerm: testTerm("Fusionable") })
+        .expect(201);
+      const merged = await request(app.getHttpServer())
+        .post(`/catalogs/term-requests/${req2.body.id}/merge`)
+        .set("Authorization", `Bearer ${curatorToken}`)
+        .send({ mergeIntoTermId: term.body.id, resolutionNote: "Es la misma cosa con otro nombre." })
+        .expect(201);
+      expect(merged.body.status).toBe("MERGED");
+      expect(merged.body.resultingTermId).toBe(term.body.id);
+
+      // Resolver dos veces: 409.
+      await request(app.getHttpServer())
+        .post(`/catalogs/term-requests/${req2.body.id}/reject`)
+        .set("Authorization", `Bearer ${curatorToken}`)
+        .send({})
+        .expect(409);
+    });
+  });
+
+  it("Prompt 11.4 — el reporte de duplicados sobre los catálogos poblados por el seed devuelve cero", async () => {
+    for (const domain of ["ANTECEDENTE", "SUSTANCIA_PSICOACTIVA", "VIA_ADMINISTRACION", "ENTIDAD_FEDERATIVA", "ESTADO_CIVIL", "TIPO_NOTA", "TIPO_DOCUMENTO"]) {
+      const res = await request(app.getHttpServer())
+        .get(`/catalogs/${domain}/duplicates`)
+        .set("Authorization", `Bearer ${curatorToken}`)
+        .expect(200);
+      expect(res.body, `duplicados en ${domain}`).toEqual([]);
+    }
+  });
+
   it("los informes del curador agregan texto libre con umbral mínimo y registran el acceso en audit_log", async () => {
     const res = await request(app.getHttpServer())
       .get("/catalogs/reports/antecedentes-otro")

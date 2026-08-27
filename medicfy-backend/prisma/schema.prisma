@@ -128,6 +128,7 @@ model User {
   verificationCodes VerificationCode[]
   passwordResets    PasswordResetToken[]
   curatedTerms      ClinicalCatalogTerm[] @relation("CatalogTermCurator")
+  termRequests      CatalogTermRequest[]  @relation("TermRequestRequester")
 
   @@map("users")
 }
@@ -1542,6 +1543,41 @@ model LabResult {
 // resolviendo sin error — la fila nunca desaparece; solo una consulta
 // NUEVA que pida "el vigente" necesita caminar mergedIntoId
 // (ClinicalCatalogService.resolveCurrent).
+// Prompt 10: el flujo "solicitar término nuevo" — el médico pide desde
+// la captura, el curador aprueba/rechaza/fusiona desde su bandeja. La
+// captura NUNCA inserta en el catálogo (R2 imposible por diseño): lo
+// único que un médico puede crear es esta solicitud.
+enum CatalogTermRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  MERGED
+
+  @@map("catalog_term_request_status")
+}
+
+model CatalogTermRequest {
+  id              String                   @id @default(uuid())
+  domain          String
+  proposedTerm    String
+  justification   String?
+  status          CatalogTermRequestStatus @default(PENDING)
+  requestedBy     String
+  resolvedBy      String?
+  // Al aprobar: el término creado. Al fusionar: el término existente
+  // al que el curador mapeó la solicitud.
+  resultingTermId String?
+  resolutionNote  String?
+  createdAt       DateTime                 @default(now()) @db.Timestamptz(3)
+  resolvedAt      DateTime?                @db.Timestamptz(3)
+
+  requester User                 @relation("TermRequestRequester", fields: [requestedBy], references: [id])
+  resulting ClinicalCatalogTerm? @relation(fields: [resultingTermId], references: [id])
+
+  @@index([status, domain])
+  @@map("catalog_term_requests")
+}
+
 enum ClinicalCatalogTermStatus {
   ACTIVE
   OBSOLETE
@@ -1574,6 +1610,10 @@ model ClinicalCatalogTerm {
   version       Int                       @default(1)
   status        ClinicalCatalogTermStatus @default(ACTIVE)
   mergedIntoId  String?
+  // Prompt 9: "marca los términos que necesitan validación de un
+  // médico antes de darse por buenos" — los sembrados de listas
+  // estándar no revisadas por Jorge nacen con true.
+  pendingMedicalReview Boolean @default(false)
   // Prompt 10: FK real al usuario curador que dio de alta el término.
   // El servidor la fija con el actor autenticado — nunca viaja del
   // cliente. Nullable sólo por los términos sembrados por seed.
@@ -1583,6 +1623,7 @@ model ClinicalCatalogTerm {
   mergedInto ClinicalCatalogTerm?  @relation("CatalogTermMerge", fields: [mergedIntoId], references: [id])
   mergedFrom ClinicalCatalogTerm[] @relation("CatalogTermMerge")
   curator    User?                 @relation("CatalogTermCurator", fields: [curatedBy], references: [id])
+  requests   CatalogTermRequest[]
 
   @@unique([domain, key])
   @@unique([domain, normalizedTerm])

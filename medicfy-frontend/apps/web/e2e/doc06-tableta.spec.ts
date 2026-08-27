@@ -53,7 +53,7 @@ test("Zona 1 completa visible sin scroll ni clic en 1280×800", async ({ page })
   await expectFullyInViewport(zona1.getByRole("heading", { name: "Diagnósticos vigentes" }), "encabezado de diagnósticos vigentes (#19)");
   await expectFullyInViewport(zona1.getByText("Diabetes mellitus tipo 2").first(), "primer diagnóstico vigente");
   await expectFullyInViewport(zona1.getByRole("heading", { name: "Antecedentes" }), "encabezado de antecedentes");
-  await expectFullyInViewport(zona1.getByRole("heading", { name: "Alergias" }), "encabezado de alergias");
+  await expectFullyInViewport(zona1.locator('[aria-label="Alergias activas"]'), "bloque de alergias (primero en prominencia, prompt 13)");
   await expectFullyInViewport(zona1.getByText("Penicilinas").first(), "la alergia GRAVE — el dato que salva de un evento adverso");
   await expectFullyInViewport(zona1.getByRole("heading", { name: "Últimas consultas" }), "encabezado de últimas consultas");
 

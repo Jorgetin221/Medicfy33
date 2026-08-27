@@ -147,7 +147,35 @@ export default async function globalSetup(): Promise<void> {
     });
   }
 
+  // Prueba 17.1 (Fase 1): una cita CONFIRMADA de HOY en la agenda de
+  // la doctora. El pago no tiene pasarela (billing es esqueleto), y
+  // cerca de medianoche MX no existe una hora futura que siga siendo
+  // "hoy" — así que la cita se ancla por psql a hace 30 minutos, con
+  // estado CONFIRMED, igual que hacen las pruebas de integración con
+  // confirmPayment interno.
+  // M2-RN-004: agendar exige consultorio activo o teleconsulta — se
+  // habilita teleconsulta a la doctora sintética por psql.
+  execFileSync("psql", [DB, "-q", "-c", `UPDATE doctors SET "acceptsTeleconsultation" = true WHERE "userId" = '${registered.userId}';`]);
+  const service = await api<{ id: string }>("/doctors/me/services", {
+    method: "POST",
+    token,
+    body: JSON.stringify({ serviceType: "FIRST_VISIT", name: "Consulta e2e", durationMinutes: 30, priceMxn: 500 }),
+  });
+  const inThreeDays = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+  inThreeDays.setUTCHours(16, 0, 0, 0);
+  const appointment = await api<{ id: string }>("/appointments", {
+    method: "POST",
+    token,
+    body: JSON.stringify({ patientId: patient.id, serviceId: service.id, startsAt: inThreeDays.toISOString() }),
+  });
+  execFileSync("psql", [
+    DB,
+    "-q",
+    "-c",
+    `UPDATE appointments SET status = 'CONFIRMED', "startsAt" = NOW() - interval '30 minutes', "endsAt" = NOW() WHERE id = '${appointment.id}';`,
+  ]);
+
   const statePath = path.join(__dirname, ".e2e-state.json");
   mkdirSync(path.dirname(statePath), { recursive: true });
-  writeFileSync(statePath, JSON.stringify({ email, password: PASSWORD, patientId: patient.id }, null, 2));
+  writeFileSync(statePath, JSON.stringify({ email, password: PASSWORD, patientId: patient.id, appointmentId: appointment.id }, null, 2));
 }

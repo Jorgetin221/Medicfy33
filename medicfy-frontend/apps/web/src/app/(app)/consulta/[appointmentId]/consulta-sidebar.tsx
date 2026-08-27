@@ -44,6 +44,16 @@ export function ConsultaSidebar({
 
   return (
     <aside className="flex w-full flex-col gap-4 lg:sticky lg:top-4 lg:h-[calc(100vh-2rem)] lg:w-72 lg:shrink-0 lg:overflow-y-auto">
+      {/* Prompt 13 — orden de prominencia fijo: 1) ALERGIAS ACTIVAS
+          destacadas (el renglón que el médico lee antes de prescribir;
+          "sin alergias registradas" explícito, nunca un hueco), 2)
+          identidad, 3) diagnósticos vigentes con código, 4) embarazo,
+          5) medicación crónica con conteo expandible. Nada comercial
+          ni administrativo ocupa este espacio. */}
+      <section aria-label="Alergias activas">
+        <AllergySummary allergies={allergies} compact />
+      </section>
+
       <div>
         <Link href={`/pacientes/${patientId}`} className="text-base font-semibold text-brand-900 underline">
           {patientFullName(patient)}
@@ -53,21 +63,8 @@ export function ConsultaSidebar({
         </p>
       </div>
 
-      {pregnancy ? (
-        // #18 — CLAUDE.md §5: el color nunca es el único portador de
-        // significado (icono + texto), y el dato clínico va en 16px.
-        <p
-          data-testid="pregnancy-banner"
-          className="rounded-md border border-brand-500 bg-brand-100 px-3 py-2 text-base font-medium text-brand-900"
-        >
-          🤰 Embarazo: {pregnancy.gestationalAge.weeks}.{pregnancy.gestationalAge.days} SDG · FPP{" "}
-          {formatMxDate(pregnancy.eddDate)}
-          {pregnancy.eddMethod === "ULTRASONIDO" ? " (USG)" : " (FUM)"}
-        </p>
-      ) : null}
-
       {isLoadingClinical ? (
-        <LoadingState label="Cargando antecedentes…" />
+        <LoadingState label="Cargando contexto clínico…" />
       ) : (
         <>
           <section data-testid="active-diagnoses">
@@ -87,29 +84,41 @@ export function ConsultaSidebar({
             )}
           </section>
 
+          {pregnancy ? (
+            <p
+              data-testid="pregnancy-banner"
+              className="rounded-md border border-brand-500 bg-brand-100 px-3 py-2 text-base font-medium text-brand-900"
+            >
+              🤰 Embarazo: {pregnancy.gestationalAge.weeks}.{pregnancy.gestationalAge.days} SDG · FPP{" "}
+              {formatMxDate(pregnancy.eddDate)}
+              {pregnancy.eddMethod === "ULTRASONIDO" ? " (USG)" : " (FUM)"}
+            </p>
+          ) : null}
+
+          <section>
+            {/* Prompt 13.5: conteo visible, detalle expandible — el
+                elemento nativo <details> es teclado-accesible y táctil. */}
+            <details>
+              <summary className="min-h-11 cursor-pointer list-none text-sm font-semibold uppercase tracking-wide text-gray-500">
+                Medicación crónica ({activeMedications.length}) <span aria-hidden="true">▾</span>
+              </summary>
+              {activeMedications.length === 0 ? (
+                <p className="text-sm text-gray-500">Ninguna registrada.</p>
+              ) : (
+                <ul className="flex flex-col gap-1">
+                  {activeMedications.map((m) => (
+                    <li key={m.id} className="text-sm text-gray-700">
+                      {m.genericName} — {m.dose}, {m.frequency}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </details>
+          </section>
+
           <section>
             <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-gray-500">Antecedentes</h2>
             <AntecedentesSummary historyItems={historyItems} />
-          </section>
-
-          <section>
-            <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-gray-500">Alergias</h2>
-            <AllergySummary allergies={allergies} compact />
-          </section>
-
-          <section>
-            <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-gray-500">Medicamentos activos</h2>
-            {activeMedications.length === 0 ? (
-              <p className="text-sm text-gray-500">Ninguno registrado.</p>
-            ) : (
-              <ul className="flex flex-col gap-1">
-                {activeMedications.map((m) => (
-                  <li key={m.id} className="text-sm text-gray-700">
-                    {m.genericName} — {m.dose}, {m.frequency}
-                  </li>
-                ))}
-              </ul>
-            )}
           </section>
 
           <section>

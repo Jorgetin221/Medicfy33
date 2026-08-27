@@ -16,12 +16,19 @@ const STATE_CONFIG: Record<SaveState, { label: string; dot: string; text: string
   "sin-respaldo": { label: "Sin conexión y sin respaldo local — no cierres ni recargues esta pestaña", dot: "bg-danger-600 animate-pulse", text: "text-danger-600" },
 };
 
-export function IndicadorGuardado({ state, className }: { state: SaveState; className?: string }) {
+export function IndicadorGuardado({ state, lastSavedAt, className }: { state: SaveState; lastSavedAt?: Date | null; className?: string }) {
   const config = STATE_CONFIG[state];
+  // Prompt 15: el "guardado" trae la hora — el médico sabe hasta
+  // cuándo está respaldado su texto.
+  const timeSuffix =
+    state === "guardado" && lastSavedAt
+      ? ` a las ${lastSavedAt.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" })}`
+      : "";
   return (
     <p role="status" className={cn("flex items-center gap-2 text-sm font-medium", config.text, className)}>
       <span aria-hidden="true" className={cn("h-2 w-2 rounded-full", config.dot)} />
       {config.label}
+      {timeSuffix}
     </p>
   );
 }

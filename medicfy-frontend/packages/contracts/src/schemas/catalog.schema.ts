@@ -15,6 +15,12 @@ import { z } from "zod";
 //                         (el enum de 30 subtipos sigue siendo la
 //                         fuente primaria; aquí viven términos curados
 //                         como el clúster de respuestas negativas)
+// Prompt 9 amplía la lista: sustancias psicoactivas (lista tipo NIDA),
+// tipos de nota y documento, y los administrativos con fuente oficial
+// (entidades INEGI, estados civiles). Ocupaciones (SINCO es enorme),
+// aseguradoras y los estudios en dos niveles + motivos quedan
+// DIFERIDOS y declarados en el ESTADO — sin fuente estándar razonable
+// a la mano, se dice en lugar de inventarla.
 export const CATALOG_DOMAINS = [
   "ALERGIA_AGENTE",
   "ESTUDIO_LABORATORIO",
@@ -22,6 +28,11 @@ export const CATALOG_DOMAINS = [
   "VIA_ADMINISTRACION",
   "FRECUENCIA_DOSIS",
   "ANTECEDENTE",
+  "SUSTANCIA_PSICOACTIVA",
+  "ENTIDAD_FEDERATIVA",
+  "ESTADO_CIVIL",
+  "TIPO_NOTA",
+  "TIPO_DOCUMENTO",
 ] as const;
 export const catalogDomainSchema = z.enum(CATALOG_DOMAINS);
 export type CatalogDomain = z.infer<typeof catalogDomainSchema>;
@@ -62,3 +73,29 @@ export const catalogMergeSchema = z
   })
   .strict();
 export type CatalogMergeInput = z.infer<typeof catalogMergeSchema>;
+
+// Prompt 10: lo ÚNICO que un médico puede crear rumbo al catálogo es
+// una solicitud — la bandeja del curador decide.
+export const catalogTermRequestCreateSchema = z
+  .object({
+    proposedTerm: z.string().min(2).max(200),
+    justification: z.string().max(500).optional(),
+  })
+  .strict();
+export type CatalogTermRequestCreateInput = z.infer<typeof catalogTermRequestCreateSchema>;
+
+export const catalogTermRequestResolveSchema = z
+  .object({
+    resolutionNote: z.string().max(500).optional(),
+    // Solo para la resolución "merge": el término vigente al que se
+    // mapea la solicitud.
+    mergeIntoTermId: z.string().uuid().optional(),
+    // Solo para "approve": clave y sistema de codificación del término
+    // nuevo; sinónimos opcionales (el término propuesto viaja en la
+    // solicitud misma).
+    key: z.string().min(1).max(100).optional(),
+    codingSystem: z.string().min(1).max(60).optional(),
+    synonyms: z.array(z.string().min(1).max(200)).max(50).optional(),
+  })
+  .strict();
+export type CatalogTermRequestResolveInput = z.infer<typeof catalogTermRequestResolveSchema>;

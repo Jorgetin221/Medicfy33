@@ -8,6 +8,7 @@
 // (upsert on the unique `code`), safe to run repeatedly.
 //
 // Usage: pnpm db:seed
+import { normalizeTerm } from "../apps/api/src/modules/catalog/term-normalizer.util";
 import { PrismaClient } from "@prisma/client";
 import * as argon2 from "argon2";
 import cie10Dgis from "./data/cie10-dgis.json" with { type: "json" };
@@ -238,6 +239,172 @@ async function seedCatalogoAntecedentes(): Promise<void> {
   console.log("Seeded catálogo ANTECEDENTE: término canónico 'Negado' + sinónimos del clúster negativo.");
 }
 
+
+// Prompt 9 — "Poblar los catálogos iniciales", con estas decisiones:
+// - FUENTES: cada dominio declara abajo de dónde sale. Los que vienen
+//   de una lista oficial (INEGI) o de la propia especificación entran
+//   sin marca; los que son listas estándar razonables pero NO
+//   revisadas por Jorge entran con pendingMedicalReview=true, como el
+//   prompt exige ("marca los términos que necesitan validación de un
+//   médico antes de darse por buenos").
+// - SNOMED CT (decisión 🔒 del prompt 9): mientras Jorge no decida
+//   licenciar, TODO es codingSystem "PROPIETARIO" — catálogo propio.
+// - DIFERIDOS (sin fuente estándar razonable a la mano, se declara en
+//   vez de inventar): ocupaciones (SINCO es enorme), aseguradoras,
+//   estudios en dos niveles y motivos de solicitud (llegan con la
+//   Fase 4/5, que es donde se consumen).
+type SeedTerm = { key: string; term: string; synonyms?: string[] };
+async function seedDomain(domain: string, source: string, review: boolean, terms: SeedTerm[]): Promise<void> {
+  let inserted = 0;
+  for (const t of terms) {
+    const existing = await prisma.clinicalCatalogTerm.findFirst({ where: { domain, key: t.key } });
+    if (existing) continue;
+    await prisma.clinicalCatalogTerm.create({
+      data: {
+        domain,
+        key: t.key,
+        preferredTerm: t.term,
+        normalizedTerm: normalizeTerm(t.term),
+        codingSystem: "PROPIETARIO",
+        synonyms: t.synonyms ?? [],
+        pendingMedicalReview: review,
+      },
+    });
+    inserted += 1;
+  }
+  console.log(`Seeded ${domain}: +${inserted}/${terms.length} (fuente: ${source}${review ? "; PENDIENTE de validación médica" : ""}).`);
+}
+
+async function seedCatalogosPrompt9(): Promise<void> {
+  // ANTECEDENTE — fuente: la propia especificación (los 30 subtipos de
+  // §10 ya transcritos como enum cerrado en contracts). Sin invención.
+  await seedDomain("ANTECEDENTE", "especificación §10 (enum de 30 subtipos)", false, [
+    { key: "estado_vital", term: "Estado vital de familiares" },
+    { key: "diabetes", term: "Diabetes" },
+    { key: "hipertension", term: "Hipertensión arterial" },
+    { key: "cardiopatia_evento_vascular", term: "Cardiopatía o evento vascular" },
+    { key: "cancer", term: "Cáncer" },
+    { key: "enfermedad_renal", term: "Enfermedad renal" },
+    { key: "enfermedad_hereditaria_congenita", term: "Enfermedad hereditaria o congénita" },
+    { key: "trastorno_neurologico_psiquiatrico", term: "Trastorno neurológico o psiquiátrico" },
+    { key: "enfermedad_autoinmune", term: "Enfermedad autoinmune" },
+    { key: "vivienda_servicios", term: "Vivienda y servicios" },
+    { key: "alimentacion_hidratacion", term: "Alimentación e hidratación" },
+    { key: "higiene", term: "Higiene" },
+    { key: "actividad_fisica", term: "Actividad física" },
+    { key: "sueno", term: "Sueño" },
+    { key: "ocupacion_exposiciones", term: "Ocupación y exposiciones" },
+    { key: "viajes_relevantes", term: "Viajes relevantes" },
+    { key: "tabaquismo", term: "Tabaquismo" },
+    { key: "alcohol", term: "Consumo de alcohol" },
+    { key: "otras_sustancias", term: "Otras sustancias" },
+    { key: "vacunacion", term: "Vacunación" },
+    { key: "animales_vectores_riesgos", term: "Animales, vectores y riesgos" },
+    { key: "enfermedades_previas_activas", term: "Enfermedades previas y activas" },
+    { key: "hospitalizaciones", term: "Hospitalizaciones" },
+    { key: "cirugias", term: "Cirugías" },
+    { key: "traumatismos", term: "Traumatismos" },
+    { key: "transfusiones", term: "Transfusiones" },
+    { key: "enfermedades_infecciosas_relevantes", term: "Enfermedades infecciosas relevantes" },
+    { key: "discapacidad_apoyos", term: "Discapacidad y apoyos" },
+    { key: "salud_mental", term: "Salud mental" },
+  ]);
+
+  // ALERGIA_AGENTE — lista estándar de agentes comunes y grupos de
+  // fármacos; NECESITA validación médica de Jorge.
+  await seedDomain("ALERGIA_AGENTE", "lista estándar de agentes comunes", true, [
+    { key: "penicilinas", term: "Penicilinas", synonyms: ["Penicilina", "Amoxicilina (grupo)"] },
+    { key: "sulfonamidas", term: "Sulfonamidas", synonyms: ["Sulfas"] },
+    { key: "aines", term: "AINEs", synonyms: ["Antiinflamatorios no esteroideos"] },
+    { key: "acido_acetilsalicilico", term: "Ácido acetilsalicílico", synonyms: ["Aspirina"] },
+    { key: "anestesicos_locales", term: "Anestésicos locales" },
+    { key: "medio_contraste_yodado", term: "Medio de contraste yodado" },
+    { key: "latex", term: "Látex" },
+    { key: "mariscos", term: "Mariscos" },
+    { key: "pescado", term: "Pescado" },
+    { key: "huevo", term: "Huevo" },
+    { key: "leche_vaca", term: "Proteína de leche de vaca" },
+    { key: "cacahuate", term: "Cacahuate", synonyms: ["Maní"] },
+    { key: "nueces_arbol", term: "Nueces de árbol" },
+    { key: "soya", term: "Soya" },
+    { key: "trigo_gluten", term: "Trigo" },
+    { key: "picadura_himenopteros", term: "Picadura de himenópteros", synonyms: ["Abejas", "Avispas"] },
+    { key: "polen", term: "Polen" },
+    { key: "acaros", term: "Ácaros del polvo" },
+    { key: "epitelio_animales", term: "Epitelio de animales" },
+    { key: "moho", term: "Moho" },
+  ]);
+
+  // SUSTANCIA_PSICOACTIVA — categorías estándar tipo NIDA; validación
+  // médica pendiente.
+  await seedDomain("SUSTANCIA_PSICOACTIVA", "categorías estándar tipo NIDA", true, [
+    { key: "tabaco", term: "Tabaco", synonyms: ["Cigarros", "Nicotina"] },
+    { key: "alcohol", term: "Alcohol" },
+    { key: "cannabis", term: "Cannabis", synonyms: ["Marihuana"] },
+    { key: "cocaina", term: "Cocaína" },
+    { key: "metanfetaminas", term: "Metanfetaminas", synonyms: ["Cristal"] },
+    { key: "heroina", term: "Heroína" },
+    { key: "opioides_prescripcion", term: "Opioides de prescripción" },
+    { key: "benzodiacepinas", term: "Benzodiacepinas" },
+    { key: "inhalantes", term: "Inhalantes" },
+    { key: "alucinogenos", term: "Alucinógenos" },
+    { key: "mdma", term: "MDMA", synonyms: ["Éxtasis"] },
+    { key: "esteroides_anabolicos", term: "Esteroides anabólicos" },
+  ]);
+
+  // VIA_ADMINISTRACION — el mismo vocabulario cerrado del contrato
+  // (P4 §2.8: "catálogo cerrado en cualquier estándar del mundo").
+  await seedDomain("VIA_ADMINISTRACION", "estándar farmacológico (contrato ADMINISTRATION_ROUTES)", false, [
+    { key: "vo", term: "Vía oral", synonyms: ["VO", "Oral"] },
+    { key: "iv", term: "Intravenosa", synonyms: ["IV"] },
+    { key: "im", term: "Intramuscular", synonyms: ["IM"] },
+    { key: "sc", term: "Subcutánea", synonyms: ["SC"] },
+    { key: "topica", term: "Tópica" },
+    { key: "oftalmica", term: "Oftálmica" },
+    { key: "otica", term: "Ótica" },
+    { key: "rectal", term: "Rectal" },
+    { key: "inhalada", term: "Inhalada" },
+    { key: "sublingual", term: "Sublingual" },
+  ]);
+
+  // ENTIDAD_FEDERATIVA — fuente oficial: catálogo INEGI de 32 entidades.
+  const entidades = ["Aguascalientes","Baja California","Baja California Sur","Campeche","Coahuila","Colima","Chiapas","Chihuahua","Ciudad de México","Durango","Guanajuato","Guerrero","Hidalgo","Jalisco","Estado de México","Michoacán","Morelos","Nayarit","Nuevo León","Oaxaca","Puebla","Querétaro","Quintana Roo","San Luis Potosí","Sinaloa","Sonora","Tabasco","Tamaulipas","Tlaxcala","Veracruz","Yucatán","Zacatecas"];
+  await seedDomain("ENTIDAD_FEDERATIVA", "INEGI (32 entidades)", false,
+    entidades.map((e) => ({ key: normalizeTerm(e).replace(/ /g, "_"), term: e }))
+  );
+
+  // ESTADO_CIVIL — categorías INEGI.
+  await seedDomain("ESTADO_CIVIL", "INEGI", false, [
+    { key: "soltero", term: "Soltero(a)" },
+    { key: "casado", term: "Casado(a)" },
+    { key: "union_libre", term: "Unión libre" },
+    { key: "separado", term: "Separado(a)" },
+    { key: "divorciado", term: "Divorciado(a)" },
+    { key: "viudo", term: "Viudo(a)" },
+  ]);
+
+  // TIPO_NOTA — clases de nota de NOM-004, con clave corta; la lista
+  // exacta del MVP necesita el visto de Jorge.
+  await seedDomain("TIPO_NOTA", "NOM-004 (clases de nota)", true, [
+    { key: "hc", term: "Historia clínica" },
+    { key: "ne", term: "Nota de evolución" },
+    { key: "ic", term: "Nota de interconsulta" },
+    { key: "ref", term: "Nota de referencia/traslado" },
+    { key: "urg", term: "Nota de urgencias" },
+  ]);
+
+  // TIPO_DOCUMENTO — los dos que el prompt nombra + los operativos del
+  // expediente; validación pendiente.
+  await seedDomain("TIPO_DOCUMENTO", "prompt 9 + operación del expediente", true, [
+    { key: "aviso_privacidad", term: "Aviso de privacidad" },
+    { key: "consentimiento_informado", term: "Consentimiento informado" },
+    { key: "identificacion", term: "Identificación oficial" },
+    { key: "resultado_externo", term: "Resultado de estudio externo" },
+    { key: "receta_externa", term: "Receta física externa" },
+    { key: "otro", term: "Otro documento" },
+  ]);
+}
+
 async function main(): Promise<void> {
   for (const specialty of SPECIALTIES) {
     await prisma.specialty.upsert({
@@ -274,6 +441,7 @@ async function main(): Promise<void> {
 
   await seedEscalas();
   await seedCatalogoAntecedentes();
+  await seedCatalogosPrompt9();
   await seedAdmin();
 }
 

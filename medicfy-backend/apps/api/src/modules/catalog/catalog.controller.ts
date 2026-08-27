@@ -4,6 +4,8 @@ import {
   catalogDomainSchema,
   catalogMergeSchema,
   catalogSearchQuerySchema,
+  catalogTermRequestCreateSchema,
+  catalogTermRequestResolveSchema,
   clinicalCatalogTermCreateSchema,
   type CatalogDomain,
 } from "@medicfy/contracts";
@@ -14,6 +16,7 @@ import { AuditService } from "../identity/services/audit.service";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CuratorGuard } from "./guards/curator.guard";
 import { ClinicalCatalogService, type CatalogActor } from "./services/clinical-catalog.service";
+import { TermRequestService } from "./services/term-request.service";
 import { normalizeTerm } from "./term-normalizer.util";
 
 const domainPipe = new ZodValidationPipe(catalogDomainSchema);
@@ -24,6 +27,8 @@ const mergePipe = new ZodValidationPipe(catalogMergeSchema);
 const createBodySchema = clinicalCatalogTermCreateSchema.omit({ domain: true }).strict();
 const createBodyPipe = new ZodValidationPipe(createBodySchema);
 const termIdPipe = new ZodValidationPipe(z.string().uuid());
+const termRequestCreatePipe = new ZodValidationPipe(catalogTermRequestCreateSchema);
+const termRequestResolvePipe = new ZodValidationPipe(catalogTermRequestResolveSchema);
 
 // Cuántas veces tiene que repetirse una cadena libre para aparecer en
 // el informe del curador — el umbral protege de exponer texto que sólo
@@ -49,6 +54,7 @@ function actorOf(req: AuthenticatedRequest): CatalogActor {
 export class CatalogController {
   constructor(
     private readonly catalog: ClinicalCatalogService,
+    private readonly termRequests: TermRequestService,
     private readonly prisma: PrismaService,
     private readonly audit: AuditService
   ) {}
@@ -104,6 +110,51 @@ export class CatalogController {
       metadata: { rowsReturned: report.length },
     });
     return { minCount: FREE_TEXT_REPORT_MIN_COUNT, report };
+  }
+
+  // ── Solicitudes de término (prompt 10) ───────────────────────────
+  // Lo único que la captura puede crear rumbo al catálogo. El médico
+  // solicita; SOLO el curador resuelve desde su bandeja.
+
+  @Get("term-requests")
+  @UseGuards(CuratorGuard)
+  @ApiQuery({ name: "domain", required: false })
+  @ApiOperation({ summary: "Bandeja del curador: solicitudes de término pendientes" })
+  async pendingRequests(@Query("domain") rawDomain?: string) {
+    const domain = rawDomain !== undefined ? domainPipe.transform(rawDomain) : undefined;
+    return this.termRequests.listPending(domain);
+  }
+
+  @Post(":domain/term-requests")
+  @ApiOperation({ summary: "El médico solicita un término nuevo — queda PENDIENTE para el curador" })
+  async requestTerm(@Param("domain") rawDomain: string, @Body() body: unknown, @Req() req: AuthenticatedRequest) {
+    const domain: CatalogDomain = domainPipe.transform(rawDomain);
+    const input = termRequestCreatePipe.transform(body);
+    return this.termRequests.create(domain, req.user.sub, input);
+  }
+
+  @Post("term-requests/:requestId/approve")
+  @UseGuards(CuratorGuard)
+  @ApiOperation({ summary: "Aprueba la solicitud: crea el término por el flujo normal de curación" })
+  async approveRequest(@Param("requestId") rawId: string, @Body() body: unknown, @Req() req: AuthenticatedRequest) {
+    const requestId = termIdPipe.transform(rawId);
+    return this.termRequests.approve(requestId, actorOf(req), termRequestResolvePipe.transform(body));
+  }
+
+  @Post("term-requests/:requestId/reject")
+  @UseGuards(CuratorGuard)
+  @ApiOperation({ summary: "Rechaza la solicitud, con nota de resolución" })
+  async rejectRequest(@Param("requestId") rawId: string, @Body() body: unknown, @Req() req: AuthenticatedRequest) {
+    const requestId = termIdPipe.transform(rawId);
+    return this.termRequests.reject(requestId, actorOf(req), termRequestResolvePipe.transform(body));
+  }
+
+  @Post("term-requests/:requestId/merge")
+  @UseGuards(CuratorGuard)
+  @ApiOperation({ summary: "Resuelve la solicitud mapeándola a un término existente" })
+  async mergeRequest(@Param("requestId") rawId: string, @Body() body: unknown, @Req() req: AuthenticatedRequest) {
+    const requestId = termIdPipe.transform(rawId);
+    return this.termRequests.mergeIntoExisting(requestId, actorOf(req), termRequestResolvePipe.transform(body));
   }
 
   // ── Lectura ──────────────────────────────────────────────────────

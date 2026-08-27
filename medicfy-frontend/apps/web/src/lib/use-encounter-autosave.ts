@@ -6,7 +6,11 @@ import { apiFetch, ApiError } from "./api-client";
 import { saveDraftLocally, clearDraftLocally } from "./offline-draft-store";
 import type { SaveState } from "@/components/ui/save-indicator";
 
-const AUTOSAVE_INTERVAL_MS = 10_000;
+// Prompt 15: "autoguardado con rebote de 2 segundos y también al
+// perder el foco". El rebote sustituye al intervalo fijo de 10s del
+// borrador anterior de CLAUDE.md §6 — el documento de 58 prompts es
+// la letra vigente.
+const AUTOSAVE_DEBOUNCE_MS = 2_000;
 
 interface UseEncounterAutosaveArgs {
   encounterId: string | null;
@@ -26,6 +30,8 @@ interface UseEncounterAutosaveArgs {
 export function useEncounterAutosave({ encounterId, accessToken, values, enabled }: UseEncounterAutosaveArgs) {
   const [saveState, setSaveState] = useState<SaveState>("guardado");
   const [fatalError, setFatalError] = useState<unknown>(null);
+  // Prompt 15: "indicador visible de guardado con la hora".
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
 
   const valuesRef = useRef(values);
   valuesRef.current = values;
@@ -49,6 +55,7 @@ export function useEncounterAutosave({ encounterId, accessToken, values, enabled
       });
       lastSavedJsonRef.current = currentJson;
       setSaveState("guardado");
+      setLastSavedAt(new Date());
       setFatalError(null);
       await clearDraftLocally(encounterId);
     } catch (error) {
@@ -68,13 +75,26 @@ export function useEncounterAutosave({ encounterId, accessToken, values, enabled
     }
   }, [encounterId, accessToken]);
 
+  // Rebote de 2s: cada cambio de valores reinicia el temporizador; a
+  // los 2s de quietud, se guarda.
+  const valuesJson = JSON.stringify(values);
   useEffect(() => {
     if (!encounterId || !accessToken || !enabled) return undefined;
-    const interval = setInterval(() => {
+    if (valuesJson === lastSavedJsonRef.current) return undefined;
+    const timeout = setTimeout(() => {
       void attemptSave();
-    }, AUTOSAVE_INTERVAL_MS);
-    return () => clearInterval(interval);
-  }, [encounterId, accessToken, enabled, attemptSave]);
+    }, AUTOSAVE_DEBOUNCE_MS);
+    return () => clearTimeout(timeout);
+  }, [encounterId, accessToken, enabled, attemptSave, valuesJson]);
+
+  // "también al perder el foco" — el blur de la ventana guarda ya.
+  useEffect(() => {
+    function handleWindowBlur() {
+      void attemptSave();
+    }
+    window.addEventListener("blur", handleWindowBlur);
+    return () => window.removeEventListener("blur", handleWindowBlur);
+  }, [attemptSave]);
 
   // "Perder texto clínico por un fallo de red es el peor bug posible
   // en este producto" (CLAUDE.md §5) — no esperar hasta 10s si el
@@ -89,6 +109,7 @@ export function useEncounterAutosave({ encounterId, accessToken, values, enabled
 
   return {
     saveState,
+    lastSavedAt,
     fatalError,
     clearFatalError: () => setFatalError(null),
     saveNow: attemptSave,

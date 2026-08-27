@@ -3,10 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api-client";
+import { tokenSubject } from "@/lib/jwt-claims";
 import { usePatientClinical } from "@/lib/use-patient-clinical";
 import { LoadingState, ErrorState, Card } from "@/components/ui/states";
 import { Button } from "@/components/ui/button";
 import { ConsultaSidebar } from "../../[appointmentId]/consulta-sidebar";
+import { ConsultaZona3 } from "../../[appointmentId]/consulta-zona3";
 import { ConsultaForm } from "../../[appointmentId]/consulta-form";
 import { ConsultaReadonly } from "../../[appointmentId]/consulta-readonly";
 import { patientFullName, type EncounterDetail } from "../../[appointmentId]/types";
@@ -153,6 +155,7 @@ export function PacienteConsultaScreen({ patientId, accessToken }: { patientId: 
           onAbandoned={() => setPhase("abandoned")}
         />
       )}
+      <ConsultaZona3 doctorKey={tokenSubject(accessToken)} />
     </main>
   );
 }

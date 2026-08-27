@@ -117,6 +117,27 @@ export function ConsultaForm({
     return () => clearInterval(interval);
   }, [encounter.startedAt]);
 
+  // Punto de scroll → sessionStorage (rebote de 500ms), para que la
+  // recarga recupere también dónde estaba leyendo/escribiendo.
+  useEffect(() => {
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+    function handleScroll() {
+      if (timeout) clearTimeout(timeout);
+      timeout = setTimeout(() => {
+        try {
+          sessionStorage.setItem(`medicfy:scroll:${encounter.id}`, String(window.scrollY));
+        } catch {
+          // sin sessionStorage simplemente no se restaura el scroll
+        }
+      }, 500);
+    }
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      if (timeout) clearTimeout(timeout);
+      window.removeEventListener("scroll", handleScroll);
+    };
+  }, [encounter.id]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -140,6 +161,16 @@ export function ConsultaForm({
         })),
       });
       setIsHydrated(true);
+      // Prompt 15: restaurar el punto de scroll tras recargar.
+      // sessionStorage: es posición de UI, no dato clínico (CLAUDE.md
+      // §5 prohíbe storage del navegador para datos clínicos, no para
+      // esto), y sobrevive exactamente a la recarga que nos importa.
+      try {
+        const savedScroll = sessionStorage.getItem(`medicfy:scroll:${encounter.id}`);
+        if (savedScroll) requestAnimationFrame(() => window.scrollTo(0, Number(savedScroll)));
+      } catch {
+        // sin sessionStorage no hay restauración — no es fatal
+      }
     })();
     return () => {
       cancelled = true;
@@ -161,7 +192,7 @@ export function ConsultaForm({
     prognosis: watched.prognosis,
   };
 
-  const { saveState, saveNow, fatalError } = useEncounterAutosave({
+  const { saveState, lastSavedAt, saveNow, fatalError } = useEncounterAutosave({
     encounterId: encounter.id,
     accessToken,
     values: draftPatch,
@@ -291,7 +322,7 @@ export function ConsultaForm({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <IndicadorGuardado state={saveState} />
+          <IndicadorGuardado state={saveState} lastSavedAt={lastSavedAt} />
           <Button type="button" variant="secondary" onClick={() => setLabPanelOpen(true)} className="min-h-11 px-3 text-sm">
             Ordenar laboratorio <span className="ml-1 text-gray-500">Alt+L</span>
           </Button>
@@ -441,7 +472,7 @@ export function ConsultaForm({
 
       <div className="fixed inset-x-0 bottom-0 z-20 border-t border-gray-300 bg-white p-4">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-2">
-          <IndicadorGuardado state={saveState} />
+          <IndicadorGuardado state={saveState} lastSavedAt={lastSavedAt} />
           <Button type="button" isLoading={isSigning} onClick={handleSignClick} className="px-6">
             Firmar consulta <span className="ml-1 opacity-70">⌘/Ctrl+Enter</span>
           </Button>

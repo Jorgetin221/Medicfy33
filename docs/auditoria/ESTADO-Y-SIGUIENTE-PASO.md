@@ -9,8 +9,8 @@
 |---|---|
 | **Bloque 0 · Diagnóstico** (prompts 1–6) | **Terminado.** Informes en `docs/auditoria/P1`…`P6`. |
 | **Remediación previa a la Fase 0** | **Terminada y VERIFICADA: la suite completa corrió en verde.** |
-| **Fase 0 · Catálogos** (prompts 7–11) | **Terminada** (con dos piezas que esperan decisión de Jorge, ver abajo). |
-| **Fase 1 · Escritorio de Consulta** (prompts 12–17) | **En curso — los tres hallazgos que P6 le asigna (#18, #19, #20) están cerrados y verificados.** |
+| **Fase 0 · Catálogos** (prompts 7–11) | **TERMINADA POR LA LETRA** — con el doc de 58 prompts ya en el repo: bandeja de solicitudes de término (prompt 10) y catálogos poblados (prompt 9, 120 términos en 8 dominios con fuente declarada); prueba 11.4 (cero duplicados) en verde. |
+| **Fase 1 · Escritorio de Consulta** (prompts 12–17) | **TERMINADA POR LA LETRA** — las cinco pruebas del prompt 17 pasan (agenda en 2 clics, recarga con borrador+scroll, alergia sin scroll, cajón táctil de la Zona 3, otro médico→403). Zona 1 en orden de prominencia, Zona 3 esqueleto con carga diferida, autoguardado con rebote de 2s+blur+hora, encadenar consultas. |
 
 ## Verificación de la suite (esta sesión)
 
@@ -148,6 +148,36 @@ Suite total tras la Fase 1 parcial: **227 API + 30 contratos + 5 UI +
 (fake-indexeddb) y el cierre formal contra el texto de los prompts
 12-17 — **el documento de 58 prompts no está en el repo**; con él a la
 mano se verifica prompt por prompt.
+
+## Cierre por la letra (el doc de 58 prompts ya está en el repo)
+
+`docs/medicfy-58-prompts.md` es ahora la fuente de verdad en el árbol.
+Con él se cerraron los huecos de letra de las fases 0 y 1:
+
+- **Prompt 10 completo**: `CatalogTermRequest` — el médico solicita un
+  término desde la captura (si ya existe, el 409 le dice cuál usar), el
+  curador aprueba/rechaza/fusiona desde su bandeja; todo auditado.
+- **Prompt 9**: 120 términos sembrados en 8 dominios, cada uno con su
+  fuente declarada y `pendingMedicalReview=true` donde falta el visto
+  de Jorge (alergenos, sustancias NIDA, tipos de nota/documento).
+  DIFERIDOS y declarados: ocupaciones (SINCO), aseguradoras, estudios
+  en dos niveles y motivos (se consumen en Fase 4/5). Decisión 🔒
+  SNOMED: mientras no se licencie, todo es PROPIETARIO.
+- **Prompt 13**: Zona 1 reordenada a la prominencia exigida — alergias
+  PRIMERO (rojo + reacción + "sin alergias" explícito), identidad,
+  diagnósticos con código, embarazo, medicación crónica expandible.
+  (La "vista materializada" literal se difirió: la barra carga en una
+  sola pasada y no re-consulta al cambiar pestañas, que es el efecto
+  que el prompt persigue; materializar en Postgres puede llegar como
+  optimización cuando haya volumen.)
+- **Prompt 14**: Zona 3 esqueleto — 5 pestañas vacías con carga
+  diferida real, panel fijo ≥1024px, cajón táctil debajo, pestaña
+  recordada por médico.
+- **Prompt 15**: rebote de 2s + guardado al blur + "Guardado a las
+  HH:MM" + recarga que restaura borrador Y punto de scroll.
+- **Prompt 16**: "siguiente paciente" al firmar — salta a la siguiente
+  cita CONFIRMADA del día o regresa a la agenda; R4 se revalúa al
+  abrir la siguiente.
 
 ## Decisiones tomadas por delegación (revisar cuando Jorge quiera)
 
