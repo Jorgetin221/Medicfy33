@@ -22,7 +22,7 @@ import { Icd10Picker } from "@/components/clinical/icd10-picker";
 import { NoteTemplateBar } from "@/components/clinical/note-template-bar";
 import { AntecedentesEditor, AntecedentesSummary } from "@/components/clinical/antecedentes-editor";
 import type { PatientHistoryItem } from "@/lib/use-patient-clinical";
-import { ENCOUNTER_TYPE_LABEL, type EncounterDetail } from "./types";
+import { ENCOUNTER_TYPE_LABEL, patientAgeYears, type EncounterDetail } from "./types";
 
 type FreeTextField = "chiefComplaint" | "currentIllness" | "physicalExam" | "assessment" | "plan" | "prognosis";
 
@@ -68,6 +68,7 @@ export function ConsultaForm({
   accessToken,
   encounter,
   historyItems,
+  patientBirthDate,
   onHistoryChanged,
   onSigned,
   onAbandoned,
@@ -75,6 +76,7 @@ export function ConsultaForm({
   accessToken: string;
   encounter: EncounterDetail;
   historyItems: PatientHistoryItem[];
+  patientBirthDate: string | null;
   onHistoryChanged: () => void;
   onSigned: () => void;
   onAbandoned: () => void;
@@ -414,6 +416,7 @@ export function ConsultaForm({
           accessToken={accessToken}
           values={watched.specialtyData ?? {}}
           onChange={(next) => form.setValue("specialtyData", next, { shouldDirty: true })}
+          patientAgeYears={patientBirthDate ? patientAgeYears(patientBirthDate) : null}
         />
 
         <FieldWrapper label="Exploración física (opcional)" htmlFor="physicalExam">

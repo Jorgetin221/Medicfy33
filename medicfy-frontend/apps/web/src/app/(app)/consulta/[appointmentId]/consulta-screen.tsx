@@ -241,6 +241,7 @@ export function ConsultaScreen({ appointmentId, accessToken }: { appointmentId: 
           accessToken={accessToken}
           encounter={encounter}
           historyItems={historyItems}
+          patientBirthDate={appointment.patient.birthDate}
           onHistoryChanged={reloadClinical}
           onSigned={() => void handleSigned()}
           onAbandoned={() => setPhase("abandoned")}
