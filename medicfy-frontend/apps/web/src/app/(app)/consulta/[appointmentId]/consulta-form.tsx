@@ -270,6 +270,27 @@ export function ConsultaForm({
     } catch (error) {
       if (error instanceof ApiError && error.code === "ENCOUNTER_ABANDONED") {
         onAbandoned();
+      } else if (error instanceof ApiError && error.code === "VITALS_CRITICAL_CONFIRMATION_REQUIRED") {
+        // Prompt 26: un signo vital CRÍTICO exige confirmación
+        // explícita del médico — se le muestra cuáles y confirma.
+        const fields = ((error.details as { criticalFields?: string[] } | undefined)?.criticalFields ?? []).join(", ");
+        const confirmed = window.confirm(
+          `⚠ Signos vitales en rango CRÍTICO: ${fields}.\n\n¿Confirmas que los valores capturados son correctos? La nota se firmará con la marca de valor crítico.`
+        );
+        if (confirmed) {
+          try {
+            await apiFetch(`/records/encounters/${encounter.id}/sign`, {
+              method: "POST",
+              accessToken,
+              body: { ...values, criticalVitalsConfirmed: true },
+            });
+            await clearDraftLocally(encounter.id);
+            onSigned();
+            return;
+          } catch (retryError) {
+            setSignError(retryError);
+          }
+        }
       } else {
         setSignError(error);
       }

@@ -10,7 +10,8 @@ import { ApiException } from "../../../common/api-exception";
 import { PrismaService } from "../../../prisma/prisma.service";
 import { sha256Hex } from "../../../common/content-hash.util";
 import { omitUndefined } from "../../../common/omit-undefined";
-import { withComputedVitals } from "../../../common/vitals-calculations.util";
+import { LMS_FORMULA, lmsPercentile, withBodySurfaceArea, withComputedVitals } from "../../../common/vitals-calculations.util";
+import { evaluateVitalRanges } from "../../../common/vital-ranges.util";
 import { AppointmentStateMachineService } from "../../scheduling/services/appointment-state-machine.service";
 import { SpecialtyScaleService } from "./specialty-scale.service";
 
@@ -156,21 +157,108 @@ export class ClinicalEncounterService {
     });
     const previousHashSha256 = previous?.contentHashSha256 ?? null;
 
-    const { diagnoses, physicalExam, prognosis, vitals, specialtyData: rawSpecialtyData, ...requiredNote } = input;
-    // Autoritativo: el IMC y las escalas finales se calculan aquí
-    // sobre lo que de verdad se firma, no sobre lo que haya quedado en
-    // el draft — y ambos entran al hash, protegidos igual que el resto
-    // del contenido de la nota.
-    const computedVitals = withComputedVitals(vitals);
+    const { diagnoses, physicalExam, prognosis, vitals: rawVitals, specialtyData: rawSpecialtyData, criticalVitalsConfirmed, ...requiredNote } = input;
+    // Prompt 27/31.2: si el cliente mandó bmi/bsaM2, se IGNORAN — el
+    // servidor siempre recalcula sobre peso y talla firmados.
+    const { bmi: _clientBmi, bsaM2: _clientBsa, ...vitals } = rawVitals;
+    void _clientBmi;
+    void _clientBsa;
+
+    // Prompt 26: rangos por edad + candado de valor crítico. Un signo
+    // vital crítico exige confirmación EXPLÍCITA del médico.
+    const patientForVitals = await this.prisma.patient.findUniqueOrThrow({
+      where: { id: encounter.patientId },
+      select: { birthDate: true, sexAtBirth: true },
+    });
+    const ageYears = (Date.now() - patientForVitals.birthDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
+    const rangeFlags = evaluateVitalRanges(ageYears, vitals);
+    if (rangeFlags.critical.length > 0 && criticalVitalsConfirmed !== true) {
+      throw new ApiException(
+        "VITALS_CRITICAL_CONFIRMATION_REQUIRED",
+        `Hay signos vitales en rango CRÍTICO (${rangeFlags.critical.join(", ")}) — confirma explícitamente que son correctos antes de firmar.`,
+        HttpStatus.UNPROCESSABLE_ENTITY,
+        { criticalFields: rangeFlags.critical }
+      );
+    }
+
+    // Prompt 28 / P4 §2.4: cada código CIE-10 provisto debe EXISTIR en
+    // el catálogo — un "ZZZZ9" ya no puede quedar firmado y hasheado.
+    const providedCodes = [...new Set(diagnoses.map((d) => d.icd10Code).filter((c): c is string => c !== undefined))];
+    const validCodes = new Set(
+      (await this.prisma.icd10Code.findMany({ where: { code: { in: providedCodes } }, select: { code: true } })).map((c) => c.code)
+    );
+    const invalidCodes = providedCodes.filter((c) => !validCodes.has(c));
+    if (invalidCodes.length > 0) {
+      throw new ApiException(
+        "DIAGNOSIS_ICD10_NOT_IN_CATALOG",
+        `Código(s) CIE-10 inexistentes en el catálogo: ${invalidCodes.join(", ")}.`,
+        HttpStatus.UNPROCESSABLE_ENTITY,
+        { invalidCodes }
+      );
+    }
+
+    // Prompt 25: tipo de nota TOMADO DEL CATÁLOGO (TIPO_NOTA) y
+    // especialidad del autor — fijados por el servidor.
+    const noteTypeKey = encounter.encounterType === "FIRST_VISIT" ? "hc" : encounter.encounterType === "URGENT" ? "urg" : "ne";
+    const noteTypeTerm = await this.prisma.clinicalCatalogTerm.findFirst({ where: { domain: "TIPO_NOTA", key: noteTypeKey } });
+    const signingDoctor = await this.prisma.doctor.findUnique({
+      where: { id: encounter.doctorId },
+      select: { primarySpecialty: { select: { code: true } } },
+    });
+    const specialtyCode = signingDoctor?.primarySpecialty?.code ?? null;
+
+    // Autoritativo: IMC, superficie corporal y percentilas se calculan
+    // aquí sobre lo que de verdad se firma — y entran al hash.
+    const computedVitals = withBodySurfaceArea(withComputedVitals(vitals));
+    // Prompt 27: percentilas pediátricas por edad y sexo (LMS OMS/CDC).
+    const percentiles = await this.computeGrowthPercentiles(ageYears, patientForVitals.sexAtBirth, vitals);
     const resolvedSpecialtyData = await this.resolveSpecialtyData(encounter.doctorId, rawSpecialtyData);
-    const noteContent = { ...requiredNote, vitals: computedVitals, physicalExam, prognosis };
+    const noteContent = { ...requiredNote, vitals: computedVitals, percentiles, physicalExam, prognosis, noteTypeKey, specialtyCode };
     const contentHashSha256 = sha256Hex({ noteContent, diagnoses, specialtyData: resolvedSpecialtyData?.data, previousHashSha256, encounterId });
     const signedAt = new Date();
 
     return this.prisma.$transaction(async (tx) => {
       const note = await tx.clinicalNote.create({
-        data: { encounterId, ...requiredNote, vitals: computedVitals, ...omitUndefined({ physicalExam, prognosis }) },
+        data: {
+          encounterId,
+          ...requiredNote,
+          vitals: computedVitals,
+          noteTypeTermId: noteTypeTerm?.id ?? null,
+          specialtyCode,
+          ...omitUndefined({ physicalExam, prognosis }),
+        },
       });
+      // Prompt 26: la entidad de signos vitales — columnas tipadas con
+      // unidad explícita, lista para graficar sin procesar texto.
+      const hasAnyVital = Object.values(vitals).some((v) => v !== undefined);
+      if (hasAnyVital) {
+        await tx.vitalSignSet.create({
+          data: {
+            noteId: note.id,
+            encounterId,
+            patientId: encounter.patientId,
+            bpSystolicMmHg: vitals.bpSystolic ?? null,
+            bpDiastolicMmHg: vitals.bpDiastolic ?? null,
+            heartRateBpm: vitals.heartRate ?? null,
+            respiratoryRateBpm: vitals.respiratoryRate ?? null,
+            temperatureC: vitals.tempC ?? null,
+            spo2Percent: vitals.spo2 ?? null,
+            weightKg: vitals.weightKg ?? null,
+            heightCm: vitals.heightCm ?? null,
+            headCircumferenceCm: vitals.headCircumferenceCm ?? null,
+            abdominalCircumferenceCm: vitals.abdominalCircumferenceCm ?? null,
+            bmi: computedVitals.bmi ?? null,
+            bmiFormula: computedVitals.bmiFormula ?? null,
+            bsaM2: computedVitals.bsaM2 ?? null,
+            bsaFormula: computedVitals.bsaFormula ?? null,
+            weightPercentile: percentiles?.weightPercentile ?? null,
+            heightPercentile: percentiles?.heightPercentile ?? null,
+            percentileSource: percentiles?.source ?? null,
+            outOfRangeFlags: rangeFlags.outOfRange,
+            criticalFlags: rangeFlags.critical,
+          },
+        });
+      }
       if (diagnoses.length > 0) {
         // omitUndefined: icd10Code/codeAbsentReason son mutuamente
         // opcionales (segunda ruta de M8-RN-006, ver
@@ -180,7 +268,8 @@ export class ClinicalEncounterService {
           data: diagnoses.map(({ icd10Code, codeAbsentReason, ...required }) => ({
             encounterId,
             ...required,
-            ...omitUndefined({ icd10Code, codeAbsentReason }),
+            // Prompt 28: FK real — validada arriba contra el catálogo.
+            ...omitUndefined({ icd10Code, icd10CodeId: icd10Code, codeAbsentReason }),
           })),
         });
       }
@@ -277,7 +366,8 @@ export class ClinicalEncounterService {
           data: diagnoses.map(({ icd10Code, codeAbsentReason, ...required }) => ({
             encounterId,
             ...required,
-            ...omitUndefined({ icd10Code, codeAbsentReason }),
+            // Prompt 28: FK real — validada arriba contra el catálogo.
+            ...omitUndefined({ icd10Code, icd10CodeId: icd10Code, codeAbsentReason }),
           })),
         });
       }
@@ -288,6 +378,38 @@ export class ClinicalEncounterService {
   // M8-RN-003: un draft sin firmar >72h se marca abandonado —
   // evaluado en el momento del acceso, sin scheduler (mismo patrón
   // que CareRelationship/PatientGuardian).
+  // Prompt 27: percentilas de peso y talla por edad y sexo (pacientes
+  // pediátricos, <20 años). LMS de growth_references (OMS 2006 /
+  // CDC 2000); se elige la fila de edad más cercana, prefiriendo OMS
+  // en 0-60 meses. Fórmula y fuente quedan almacenadas con el valor.
+  private async computeGrowthPercentiles(
+    ageYears: number,
+    sexAtBirth: string,
+    vitals: { weightKg?: number | undefined; heightCm?: number | undefined }
+  ): Promise<{ weightPercentile?: number; heightPercentile?: number; source?: string } | null> {
+    if (ageYears >= 20 || (vitals.weightKg === undefined && vitals.heightCm === undefined)) return null;
+    const ageMonths = ageYears * 12;
+    const source = ageMonths <= 60 ? "OMS_2006" : "CDC_2000";
+    const result: { weightPercentile?: number; heightPercentile?: number; source?: string } = {};
+    for (const [measure, value, key] of [
+      ["WEIGHT_FOR_AGE", vitals.weightKg, "weightPercentile"],
+      ["HEIGHT_FOR_AGE", vitals.heightCm, "heightPercentile"],
+    ] as const) {
+      if (value === undefined) continue;
+      const rows = await this.prisma.growthReference.findMany({
+        where: { sex: sexAtBirth, measure, source },
+        orderBy: { ageMonths: "asc" },
+      });
+      if (rows.length === 0) continue;
+      const nearest = rows.reduce((best, row) =>
+        Math.abs(Number(row.ageMonths) - ageMonths) < Math.abs(Number(best.ageMonths) - ageMonths) ? row : best
+      );
+      result[key] = lmsPercentile(value, Number(nearest.l), Number(nearest.m), Number(nearest.s));
+      result.source = `${source} · ${LMS_FORMULA}`;
+    }
+    return result.source ? result : null;
+  }
+
   private async assertDraft(encounterId: string) {
     const encounter = await this.prisma.clinicalEncounter.findUnique({ where: { id: encounterId } });
     if (!encounter) {

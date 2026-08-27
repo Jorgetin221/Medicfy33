@@ -122,18 +122,13 @@ describe("Nota clínica — IMC calculado y corrección (adenda) de nota firmada
       const patientId = await createPatient(doctor.accessToken);
       const encounterId = await createEncounter(doctor.accessToken, patientId);
 
-      // vitalsSchema es .strict() — un bmi enviado por el cliente se
-      // rechaza de entrada, no se ignora en silencio.
-      const rejected = await request(app.getHttpServer())
-        .post(`/records/encounters/${encounterId}/sign`)
-        .set("Authorization", `Bearer ${doctor.accessToken}`)
-        .send(signPayload({ vitals: { weightKg: 78.4, heightCm: 158, bmi: 999 } }));
-      expect(rejected.status).toBe(400);
-
+      // Prompt 31.2 (Fase 3, letra del doc de 58 prompts): un bmi
+      // enviado por el cliente se IGNORA y el servidor recalcula —
+      // antes se rechazaba con 400; la letra pide ignorar.
       const signed = await request(app.getHttpServer())
         .post(`/records/encounters/${encounterId}/sign`)
         .set("Authorization", `Bearer ${doctor.accessToken}`)
-        .send(signPayload());
+        .send(signPayload({ vitals: { weightKg: 78.4, heightCm: 158, bmi: 999 } }));
       expect(signed.status).toBe(201);
       expect(signed.body.note.vitals.bmi).toBe(31.4);
       expect(signed.body.note.vitals.bmiFormula).toBeTruthy();

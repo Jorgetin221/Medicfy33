@@ -1,7 +1,6 @@
 import { HttpStatus, Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import type {
-  AntecedentesTemplateCreateInput,
   GynecoHistoryUpsertInput,
   PatientAllergyCatalogCreateInput,
   PatientAllergyCreateInput,
@@ -367,7 +366,8 @@ export class PatientClinicalService {
         throw new ApiException("MEDICATION_NOT_FOUND", "El medicamento anclado no existe en el catálogo.", HttpStatus.UNPROCESSABLE_ENTITY);
       }
     }
-    const { agentKey, medicationCatalogId, reaction, ageOfOnset, ...rest } = input;
+    const { agentKey: _agentKey, medicationCatalogId, reaction, ageOfOnset, ...rest } = input;
+    void _agentKey;
     return this.prisma.patientAllergy.create({
       data: {
         patientId,
@@ -383,6 +383,83 @@ export class PatientClinicalService {
 
   // §6.5.8: expediente cronológico — encuentros, recetas y órdenes en
   // una sola línea de tiempo, cada uno con tipo/fecha/autor/estado.
+  // ── Fase 3 · Prompt 30: series estructuradas para graficar ───────
+  // "Se calculan leyendo campos estructurados, sin procesar una sola
+  // cadena de texto" — la entidad VitalSignSet ES la serie.
+  vitalsHistory(patientId: string) {
+    return this.prisma.vitalSignSet.findMany({
+      where: { patientId },
+      orderBy: { recordedAt: "asc" },
+      select: {
+        recordedAt: true,
+        bpSystolicMmHg: true,
+        bpDiastolicMmHg: true,
+        heartRateBpm: true,
+        respiratoryRateBpm: true,
+        temperatureC: true,
+        spo2Percent: true,
+        weightKg: true,
+        heightCm: true,
+        bmi: true,
+        bsaM2: true,
+        weightPercentile: true,
+        heightPercentile: true,
+        percentileSource: true,
+        outOfRangeFlags: true,
+        criticalFlags: true,
+      },
+    });
+  }
+
+  // Prompt 30 (pediatría): puntos de las curvas de percentilas P3/P15/
+  // P50/P85/P97 para el sexo del paciente — derivados de las filas LMS
+  // (valor del percentil p a edad t: M·(1+L·S·z_p)^(1/L)).
+  async growthCurves(patientId: string, measure: "WEIGHT_FOR_AGE" | "HEIGHT_FOR_AGE") {
+    const patient = await this.prisma.patient.findUniqueOrThrow({ where: { id: patientId }, select: { sexAtBirth: true, birthDate: true } });
+    const ageMonths = (Date.now() - patient.birthDate.getTime()) / (30.4375 * 24 * 60 * 60 * 1000);
+    const source = ageMonths <= 60 ? "OMS_2006" : "CDC_2000";
+    const rows = await this.prisma.growthReference.findMany({
+      where: { sex: patient.sexAtBirth, measure, source },
+      orderBy: { ageMonths: "asc" },
+    });
+    const Z = { p3: -1.8807936, p15: -1.0364334, p50: 0, p85: 1.0364334, p97: 1.8807936 };
+    const curve = rows.map((row) => {
+      const l = Number(row.l);
+      const m = Number(row.m);
+      const sVal = Number(row.s);
+      const value = (z: number) => Math.round(m * Math.pow(1 + l * sVal * z, 1 / l) * 100) / 100;
+      return {
+        ageMonths: Number(row.ageMonths),
+        p3: value(Z.p3),
+        p15: value(Z.p15),
+        p50: value(Z.p50),
+        p85: value(Z.p85),
+        p97: value(Z.p97),
+      };
+    });
+    return { source, measure, sex: patient.sexAtBirth, curve };
+  }
+
+  // ── Fase 3 · Prompt 28: descartar un diagnóstico ─────────────────
+  // No lo borra: cambia certainty a DESCARTADO y conserva el histórico
+  // con fecha y autor (R1). Sale de los diagnósticos vigentes.
+  async discardDiagnosis(patientId: string, diagnosisId: string, userId: string) {
+    const diagnosis = await this.prisma.encounterDiagnosis.findUnique({
+      where: { id: diagnosisId },
+      include: { encounter: { select: { patientId: true } } },
+    });
+    if (!diagnosis || diagnosis.encounter.patientId !== patientId) {
+      throw new ApiException("DIAGNOSIS_NOT_FOUND", "Diagnóstico no encontrado para este paciente.", HttpStatus.NOT_FOUND);
+    }
+    if (diagnosis.certainty === "DESCARTADO") {
+      throw new ApiException("DIAGNOSIS_ALREADY_DISCARDED", "Este diagnóstico ya está descartado.", HttpStatus.CONFLICT);
+    }
+    return this.prisma.encounterDiagnosis.update({
+      where: { id: diagnosisId },
+      data: { certainty: "DESCARTADO", discardedAt: new Date(), discardedByUserId: userId },
+    });
+  }
+
   // ── Fase 1 / #18: embarazo (Zona 1 de DOC-06) ────────────────────
   // Regla de Naegele: FPP = FUM + 280 días. Las SDG se derivan de la
   // FPP al leer (40 semanas menos lo que falta para la FPP) y NUNCA se
@@ -547,7 +624,11 @@ export class PatientClinicalService {
         });
       }
     }
-    return [...groups.values()].sort((a, b) => b.lastRecordedAt.getTime() - a.lastRecordedAt.getTime());
+    // Prompt 28: un diagnóstico descartado sale de los vigentes — pero
+    // su fila sobrevive con fecha y autor del descarte (R1).
+    return [...groups.values()]
+      .filter((g) => g.certainty !== "DESCARTADO")
+      .sort((a, b) => b.lastRecordedAt.getTime() - a.lastRecordedAt.getTime());
   }
 
   async timeline(patientId: string) {

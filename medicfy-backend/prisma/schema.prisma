@@ -508,6 +508,7 @@ model Patient {
   pregnancies       PatientPregnancy[]
   substanceUses     PatientSubstanceUse[]
   gynecoHistory     PatientGynecoHistory?
+  vitalSignSets     VitalSignSet[]
   encounters        ClinicalEncounter[]
   attachments       ClinicalAttachment[]
   prescriptions     Prescription[]
@@ -860,9 +861,27 @@ model ClinicalEncounter {
 // Estructura NOM-004 mínima. NO HAY UPDATE. NO HAY DELETE (M8-RN-001)
 // — corregir = nueva fila con isCorrectionOfNoteId apuntando a la
 // anterior; la interfaz muestra ambas, marcando la corrección.
+// Prompt 25 — FHIR (R7) campo por campo: la nota es un
+// Composition/ClinicalImpression: chiefComplaint → Encounter.reason /
+// Observation "chief complaint"; currentIllness (SUBJETIVO, texto
+// libre permitido por R3) → Composition.section[subjective];
+// physicalExam (OBJETIVO) → section[objective]; assessment (ANÁLISIS,
+// texto libre por R3) → ClinicalImpression.summary; plan →
+// CarePlan.description; vitals → ver VitalSignSet (Observation
+// vital-signs); noteTypeTermId → Composition.type (catálogo
+// TIPO_NOTA); specialtyCode → Composition.author.specialty;
+// isCorrectionOfNoteId (adenda) → Composition.relatesTo(replaces).
+// Estados: borrador vive en el encounter (draftContent); firmada =
+// esta fila; con adenda = corrections[]; "cancelada" no existe para
+// una nota firmada (R1) — se corrige, nunca se cancela.
 model ClinicalNote {
   id                   String   @id @default(uuid())
   encounterId          String
+  // Prompt 25: tipo de nota TOMADO DEL CATÁLOGO (dominio TIPO_NOTA) y
+  // especialidad del autor como snapshot — fijados por el servidor al
+  // firmar, nunca por el cliente.
+  noteTypeTermId       String?
+  specialtyCode        String?
   chiefComplaint       String
   currentIllness       String
   vitals               Json
@@ -873,11 +892,78 @@ model ClinicalNote {
   isCorrectionOfNoteId String?
   createdAt            DateTime @default(now()) @db.Timestamptz(3)
 
-  encounter          ClinicalEncounter @relation(fields: [encounterId], references: [id])
-  isCorrectionOfNote ClinicalNote?     @relation("NoteCorrection", fields: [isCorrectionOfNoteId], references: [id])
-  corrections        ClinicalNote[]    @relation("NoteCorrection")
+  encounter          ClinicalEncounter    @relation(fields: [encounterId], references: [id])
+  isCorrectionOfNote ClinicalNote?        @relation("NoteCorrection", fields: [isCorrectionOfNoteId], references: [id])
+  corrections        ClinicalNote[]       @relation("NoteCorrection")
+  noteTypeTerm       ClinicalCatalogTerm? @relation("NoteTypeTerm", fields: [noteTypeTermId], references: [id])
+  vitalSignSet       VitalSignSet?
 
   @@map("clinical_notes")
+}
+
+// Prompt 26 — signos vitales como ENTIDAD por nota, no campos de
+// texto: cada medida en su columna con la unidad EXPLÍCITA en el
+// nombre. Presión sistólica y diastólica SEPARADAS (en el sistema de
+// referencia eran un campo de texto y por eso no se podía graficar ni
+// detectar una crisis hipertensiva).
+// FHIR (R7): Observation vital-signs — 8480-6 sistólica, 8462-4
+// diastólica, 8867-4 FC, 9279-1 FR, 8310-5 temperatura, 59408-5 SpO2,
+// 29463-7 peso, 8302-2 talla, 9843-4 perímetro cefálico, 8280-0
+// perímetro abdominal (códigos LOINC).
+// outOfRangeFlags/criticalFlags: nombres de campo evaluados contra
+// rangos por edad (vital-ranges.util.ts, fuentes citadas ahí); un
+// valor crítico exigió confirmación explícita del médico al firmar.
+model VitalSignSet {
+  id                       String   @id @default(uuid())
+  noteId                   String   @unique
+  encounterId              String
+  patientId                String
+  bpSystolicMmHg           Int?
+  bpDiastolicMmHg          Int?
+  heartRateBpm             Int?
+  respiratoryRateBpm       Int?
+  temperatureC             Decimal? @db.Decimal(4, 1)
+  spo2Percent              Int?
+  weightKg                 Decimal? @db.Decimal(6, 2)
+  heightCm                 Decimal? @db.Decimal(5, 1)
+  headCircumferenceCm      Decimal? @db.Decimal(5, 1)
+  abdominalCircumferenceCm Decimal? @db.Decimal(5, 1)
+  // Prompt 27: calculados SIEMPRE en servidor, con fórmula y versión.
+  bmi                      Decimal? @db.Decimal(4, 1)
+  bmiFormula               String?
+  bsaM2                    Decimal? @db.Decimal(4, 2)
+  bsaFormula               String?
+  weightPercentile         Decimal? @db.Decimal(5, 2)
+  heightPercentile         Decimal? @db.Decimal(5, 2)
+  percentileSource         String?
+  outOfRangeFlags          String[] @default([])
+  criticalFlags            String[] @default([])
+  recordedAt               DateTime @default(now()) @db.Timestamptz(3)
+
+  note    ClinicalNote @relation(fields: [noteId], references: [id])
+  patient Patient      @relation(fields: [patientId], references: [id])
+
+  @@index([patientId, recordedAt])
+  @@map("vital_sign_sets")
+}
+
+// Prompt 27/30 — referencias LMS de crecimiento (OMS 2006 0-60 meses,
+// CDC 2000 24-240 meses), tal como las redistribuye pygrowup 0.8.2.
+// percentil = Φ(((valor/M)^L − 1) / (L·S)). Datos en
+// prisma/data/growth-lms.json; verificado: la mediana OMS (9.6479 kg,
+// niños 12 meses) produce exactamente P50.
+model GrowthReference {
+  id        String  @id @default(uuid())
+  sex       String
+  measure   String
+  ageMonths Decimal @db.Decimal(6, 2)
+  l         Decimal @db.Decimal(12, 8)
+  m         Decimal @db.Decimal(12, 6)
+  s         Decimal @db.Decimal(12, 8)
+  source    String
+
+  @@unique([sex, measure, ageMonths, source])
+  @@map("growth_references")
 }
 
 enum DiagnosisType {
@@ -890,6 +976,9 @@ enum DiagnosisType {
 enum DiagnosisCertainty {
   SUSPECTED
   CONFIRMED
+  // Prompt 28: descartar un diagnóstico no lo borra — cambia su tipo
+  // y conserva el histórico (R1). discardedAt/discardedByUserId abajo.
+  DESCARTADO
 
   @@map("diagnosis_certainty")
 }
@@ -904,17 +993,33 @@ enum DiagnosisCertainty {
 // de esa decisión. Exactamente uno de los dos siempre está presente
 // (icd10Code o codeAbsentReason), nunca ambos ni ninguno — validado
 // en encounterDiagnosisSchema (contracts), no aquí.
+// Prompt 28 — FHIR (R7): Condition. icd10CodeId → Condition.code
+// (ICD-10); certainty → verificationStatus (SUSPECTED=provisional,
+// CONFIRMED=confirmed, DESCARTADO=refuted); createdAt →
+// recordedDate; el autor es el firmante del encuentro.
+// Codificación COMPUESTA futura sin cambiar el esquema: el modelo ya
+// es fila-por-código dentro del encuentro (PRINCIPAL + N SECONDARY);
+// un código adicional por especialidad es otra fila SECONDARY cuyo
+// icd10CodeId apunta al código complementario — no hace falta columna
+// nueva, solo la convención (documentada aquí) de agrupar por
+// encounterId.
 model EncounterDiagnosis {
-  id               String             @id @default(uuid())
-  encounterId      String
-  icd10Code        String?
-  codeAbsentReason String?
-  description      String
-  diagnosisType    DiagnosisType
-  certainty        DiagnosisCertainty
-  createdAt        DateTime           @default(now()) @db.Timestamptz(3)
+  id                 String             @id @default(uuid())
+  encounterId        String
+  icd10Code          String?
+  // Prompt 28 / P4 §2.4: FK real — un código que no existe en el
+  // catálogo ya no puede quedar firmado y hasheado en el expediente.
+  icd10CodeId        String?
+  codeAbsentReason   String?
+  description        String
+  diagnosisType      DiagnosisType
+  certainty          DiagnosisCertainty
+  discardedAt        DateTime?          @db.Timestamptz(3)
+  discardedByUserId  String?
+  createdAt          DateTime           @default(now()) @db.Timestamptz(3)
 
   encounter ClinicalEncounter @relation(fields: [encounterId], references: [id])
+  icd10Ref  Icd10Code?        @relation(fields: [icd10CodeId], references: [code])
 
   @@map("encounter_diagnoses")
 }
@@ -1341,6 +1446,8 @@ model Icd10Code {
   code        String  @id
   description String
   isActive    Boolean @default(true)
+
+  encounterDiagnoses EncounterDiagnosis[]
 
   @@map("icd10_codes")
 }
@@ -1804,6 +1911,7 @@ model ClinicalCatalogTerm {
   historyItems PatientHistoryItem[] @relation("HistoryItemTerm")
   allergyTerms  PatientAllergy[]      @relation("AllergyTerm")
   substanceUses PatientSubstanceUse[] @relation("SubstanceTerm")
+  notesTyped    ClinicalNote[]        @relation("NoteTypeTerm")
 
   @@unique([domain, key])
   @@unique([domain, normalizedTerm])

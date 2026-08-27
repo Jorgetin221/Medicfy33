@@ -8,7 +8,17 @@ import { FieldWrapper, TextInput } from "@/components/ui/field";
 // (@medicfy/contracts/clinical.schema.ts) — nunca inventados aquí,
 // solo espejados para dar feedback inmediato en el campo (min/max
 // nativos de <input>); Zod en el servidor es la validación real.
-type VitalsFieldName = "bpSystolic" | "bpDiastolic" | "heartRate" | "respiratoryRate" | "tempC" | "spo2" | "weightKg" | "heightCm";
+type VitalsFieldName =
+  | "bpSystolic"
+  | "bpDiastolic"
+  | "heartRate"
+  | "respiratoryRate"
+  | "tempC"
+  | "spo2"
+  | "weightKg"
+  | "heightCm"
+  | "headCircumferenceCm"
+  | "abdominalCircumferenceCm";
 
 const VITALS_FIELDS: { name: VitalsFieldName; label: string; unit: string; min: number; max: number; step: string }[] = [
   { name: "bpSystolic", label: "TA sistólica", unit: "mmHg", min: 40, max: 300, step: "1" },
@@ -19,6 +29,9 @@ const VITALS_FIELDS: { name: VitalsFieldName; label: string; unit: string; min: 
   { name: "spo2", label: "SpO2", unit: "%", min: 50, max: 100, step: "1" },
   { name: "weightKg", label: "Peso", unit: "kg", min: 0.5, max: 400, step: "0.1" },
   { name: "heightCm", label: "Talla", unit: "cm", min: 20, max: 250, step: "1" },
+  // Prompt 26 (Fase 3): perímetros con unidad explícita.
+  { name: "headCircumferenceCm", label: "Perímetro cefálico", unit: "cm", min: 20, max: 70, step: "0.1" },
+  { name: "abdominalCircumferenceCm", label: "Perímetro abdominal", unit: "cm", min: 20, max: 250, step: "0.5" },
 ];
 
 export function VitalsFields({ form }: { form: UseFormReturn<ClinicalNoteSignInput> }) {

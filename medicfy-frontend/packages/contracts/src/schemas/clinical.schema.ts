@@ -15,6 +15,15 @@ export const vitalsSchema = z
     spo2: z.number().min(50).max(100).optional(),
     weightKg: z.number().min(0.5).max(400).optional(),
     heightCm: z.number().min(20).max(250).optional(),
+    // Prompt 26: perímetros cefálico y abdominal, con unidad explícita.
+    headCircumferenceCm: z.number().min(20).max(70).optional(),
+    abdominalCircumferenceCm: z.number().min(20).max(250).optional(),
+    // Prompt 27/31.2: si el cliente manda un valor CALCULADO, el
+    // servidor lo IGNORA y recalcula — se aceptan aquí solo para poder
+    // ignorarlos explícitamente (antes .strict() los rechazaba con
+    // 400; la letra pide ignorar).
+    bmi: z.number().optional(),
+    bsaM2: z.number().optional(),
   })
   .strict();
 export type VitalsInput = z.infer<typeof vitalsSchema>;
@@ -91,6 +100,9 @@ export const clinicalNoteSignSchema = z
     plan: z.string().min(1, "El plan es obligatorio."),
     prognosis: z.string().optional(),
     diagnoses: z.array(encounterDiagnosisSchema).min(1, "Se requiere al menos un diagnóstico con código CIE-10."),
+    // Prompt 26: un signo vital en rango CRÍTICO exige confirmación
+    // explícita del médico antes de permitir guardar/firmar.
+    criticalVitalsConfirmed: z.boolean().optional(),
   })
   .strict();
 export type ClinicalNoteSignInput = z.infer<typeof clinicalNoteSignSchema>;

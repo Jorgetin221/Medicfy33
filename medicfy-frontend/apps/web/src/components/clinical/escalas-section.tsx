@@ -36,21 +36,29 @@ export function EscalasSection({
   accessToken,
   values,
   onChange,
+  patientAgeYears,
 }: {
   accessToken: string;
   values: Record<string, number>;
   onChange: (next: Record<string, number>) => void;
+  patientAgeYears: number | null;
 }) {
   const { fields, isLoading, error } = useSpecialtyScales(accessToken, "ESCALAS");
 
   const groups = useMemo(() => {
     const computedFields = fields.filter((f) => f.inputType === "COMPUTED");
-    return computedFields.map((computed) => {
-      const componentKeys = (computed.computedFormula ?? "").split(" ").filter(Boolean);
-      const components = fields.filter((f) => componentKeys.includes(f.fieldKey)).sort((a, b) => a.displayOrder - b.displayOrder);
-      return { computed, components };
-    });
-  }, [fields]);
+    // Apgar es un instrumento de valoración neonatal — solo tiene
+    // sentido capturarlo en menores de 2 años. patientAgeYears===null
+    // (edad desconocida) lo deja visible para no ocultar el campo por
+    // un dato faltante.
+    return computedFields
+      .filter((computed) => !computed.fieldKey.startsWith("apgar") || patientAgeYears === null || patientAgeYears < 2)
+      .map((computed) => {
+        const componentKeys = (computed.computedFormula ?? "").split(" ").filter(Boolean);
+        const components = fields.filter((f) => componentKeys.includes(f.fieldKey)).sort((a, b) => a.displayOrder - b.displayOrder);
+        return { computed, components };
+      });
+  }, [fields, patientAgeYears]);
 
   function setFieldValue(fieldKey: string, raw: string) {
     const rest = Object.fromEntries(Object.entries(values).filter(([key]) => key !== fieldKey));

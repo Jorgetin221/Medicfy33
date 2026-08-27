@@ -10,6 +10,7 @@
 | **Bloque 0 · Diagnóstico** (prompts 1–6) | **Terminado.** Informes en `docs/auditoria/P1`…`P6`. |
 | **Remediación previa a la Fase 0** | **Terminada y VERIFICADA: la suite completa corrió en verde.** |
 | **Fase 0 · Catálogos** (prompts 7–11) | **TERMINADA POR LA LETRA** — con el doc de 58 prompts ya en el repo: bandeja de solicitudes de término (prompt 10) y catálogos poblados (prompt 9, 120 términos en 8 dominios con fuente declarada); prueba 11.4 (cero duplicados) en verde. |
+| **Fase 3 · La nota como datos** (prompts 25–31) | **Construida y verificada — 5 de las 6 pruebas del prompt 31B pasan; la 31.5 (exportación FHIR validada) sigue DIFERIDA por decisión previa de Jorge.** |
 | **Fase 2 · Historia clínica estructurada** (prompts 18–24) | **Construida y verificada — las CINCO pruebas del prompt 24 pasan.** Falta solo el criterio de los 10 minutos, que exige el material clínico real de Jorge (🔒). |
 | **Fase 1 · Escritorio de Consulta** (prompts 12–17) | **TERMINADA POR LA LETRA** — las cinco pruebas del prompt 17 pasan (agenda en 2 clics, recarga con borrador+scroll, alergia sin scroll, cajón táctil de la Zona 3, otro médico→403). Zona 1 en orden de prominencia, Zona 3 esqueleto con carga diferida, autoguardado con rebote de 2s+blur+hora, encadenar consultas. |
 
@@ -126,7 +127,7 @@ espera). Receta completa en la "Nota operativa" de abajo. Con eso:
 - Verificado en esta sesión: 2/2 e2e en verde contra la pila completa
   (Postgres real + API real + build de producción del web).
 
-Suite total: **236 API + 30 contratos + 5 UI + 6 e2e**, typecheck y lint limpios en ambos árboles.
+Suite total: **243 API + 30 contratos + 5 UI + 6 e2e**, typecheck y lint limpios en ambos árboles.
 
 **Segundo bloque de la Fase 1 (misma sesión):**
 - **Consulta sin ratón, probada**: `e2e/doc06-teclado.spec.ts` ejecuta
@@ -236,6 +237,62 @@ el ORDEN en que llena los campos, (3) las frases que repite (para las
 plantillas). Con eso se mide el tiempo y se calibran las plantillas.
 También pendiente: UI para CREAR plantillas (hoy se crean por API) y
 su revisión de los vocabularios sembrados con pendingMedicalReview.
+
+## Fase 3 — La nota como datos (misma sesión)
+
+**Prompt 25** — la nota ya era campos tipados (nunca HTML); se
+completó: tipo de nota TOMADO DEL CATÁLOGO (TIPO_NOTA: hc/ne/urg según
+el tipo de encuentro, fijado por el servidor), especialidad del autor
+como snapshot, y la equivalencia FHIR declarada campo por campo
+(Composition/ClinicalImpression). "Cancelada" no existe para una nota
+firmada (R1): se corrige con adenda, nunca se cancela.
+
+**Prompt 26** — `VitalSignSet`: sistólica y diastólica SEPARADAS, FC,
+FR, temperatura, SpO2, peso, talla y perímetros cefálico/abdominal —
+cada uno en su columna con la unidad en el nombre. Rangos por edad
+(fuentes PALS/ACC-AHA citadas en `vital-ranges.util.ts`, PENDIENTES de
+su validación médica) con marcas de fuera-de-rango y crítico; **un
+valor crítico bloquea la firma (422) hasta confirmación explícita**,
+también en la UI.
+
+**Prompt 27** — cálculos SIEMPRE en servidor, con fórmula y versión:
+IMC (verificado: 78.4 kg / 1.58 m → 31.4), superficie corporal por
+**Mosteller 1987** (verificada contra caso limpio: 180 cm / 80 kg →
+2.00 m² exactos; elegida por ser la de uso clínico más extendido y la
+más auditable), y **percentilas pediátricas reales**: 1,112 filas LMS
+de la OMS 2006 (0-60 m) y CDC 2000 (24-240 m), extraídas del paquete
+público pygrowup que redistribuye las tablas oficiales — verificado
+que la mediana OMS (9.6479 kg, niños 12 meses) produce exactamente
+P50. Un IMC/BSA enviado por el cliente SE IGNORA y se recalcula.
+
+**Prompt 28** — FK real a `icd10_codes`: un código inventado ("ZZZZ9")
+ya no puede quedar firmado y hasheado (el hueco de P4 §2.4). Certeza
+presuntivo/definitivo/**DESCARTADO**: descartar no borra — conserva la
+fila con fecha y autor y la saca de los diagnósticos vigentes. La
+codificación compuesta futura no exige cambiar el esquema (el modelo
+ya es fila-por-código dentro del encuentro; documentado en el schema).
+
+**Prompt 29** — el motor de escalas ya era declarativo (datos, no
+código); se sembraron **EVA** (dolor 0-10) y **Bishop** (Bishop 1964)
+con fuentes citadas, y se VERIFICÓ el criterio "alta sin desplegar":
+una escala insertada como configuración aparece en la nota y el
+servidor computa e interpreta su total (prueba 31.4). **PENDIENTE
+declarado: riesgo cardiovascular** — Framingham/Globorisk exigen
+coeficientes publicados exactos que no se reproducen de memoria.
+
+**Prompt 30** — pestaña Resultados de la Zona 3: presión arterial
+(sistólica/diastólica como dos tonos de un matiz, con leyenda), peso,
+talla e IMC — línea de 2px, banda de rango normal de fondo, último
+punto destacado y etiquetado, un eje por gráfica. En pediatría, curvas
+de percentilas P3-P97 reales sobre el MISMO eje de edad. Todo se lee
+de columnas tipadas — ni una cadena de texto se procesa (prueba 31.1:
+12 consultas de presión graficadas sin parseo).
+
+**Prompt 31** — A) exportación FHIR validada: **DIFERIDA** (decisión
+previa de Jorge, registrada en este documento; el validador oficial
+además es inaccesible desde este entorno). B) pruebas: **5 de 6 en
+verde** (31.1, 31.2, 31.3, 31.4, 31.6) + FK de CIE-10 + descarte +
+nota tipada, en `fase3-nota-datos.integration.spec.ts`.
 
 ## Decisiones tomadas por delegación (revisar cuando Jorge quiera)
 

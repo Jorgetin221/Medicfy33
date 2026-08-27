@@ -155,7 +155,7 @@ export function PacienteConsultaScreen({ patientId, accessToken }: { patientId: 
           onAbandoned={() => setPhase("abandoned")}
         />
       )}
-      <ConsultaZona3 doctorKey={tokenSubject(accessToken)} />
+      <ConsultaZona3 doctorKey={tokenSubject(accessToken)} patientId={patientId} accessToken={accessToken} birthDate={patient.birthDate} />
     </main>
   );
 }

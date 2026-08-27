@@ -9,6 +9,7 @@
 //
 // Usage: pnpm db:seed
 import { normalizeTerm } from "../apps/api/src/modules/catalog/term-normalizer.util";
+import GROWTH_LMS from "./data/growth-lms.json";
 import { PrismaClient } from "@prisma/client";
 import * as argon2 from "argon2";
 import cie10Dgis from "./data/cie10-dgis.json" with { type: "json" };
@@ -405,6 +406,97 @@ async function seedCatalogosPrompt9(): Promise<void> {
   ]);
 }
 
+
+// Prompt 27/30 — referencias LMS de crecimiento. Fuente: OMS Child
+// Growth Standards 2006 (0-60 meses) y CDC Growth Charts 2000
+// (24-240 meses), tal como las redistribuye pygrowup 0.8.2. Verificado
+// contra la mediana OMS publicada (niños, 12 meses: 9.6479 kg → P50).
+async function seedGrowthReferences(): Promise<void> {
+  const existing = await prisma.growthReference.count();
+  if (existing >= (GROWTH_LMS as unknown[]).length) {
+    console.log(`Growth references ya sembradas (${existing}).`);
+    return;
+  }
+  const rows = GROWTH_LMS as { sex: string; measure: string; ageMonths: number; l: number; m: number; s: number; source: string }[];
+  const BATCH = 500;
+  let inserted = 0;
+  for (let i = 0; i < rows.length; i += BATCH) {
+    const result = await prisma.growthReference.createMany({ data: rows.slice(i, i + BATCH), skipDuplicates: true });
+    inserted += result.count;
+  }
+  console.log(`Seeded ${inserted} referencias LMS de crecimiento (OMS 2006 + CDC 2000).`);
+}
+
+
+// Prompt 29 — escalas adicionales, definidas como DATOS (alta sin
+// desplegar código). Fuentes:
+// - EVA (escala visual análoga de dolor 0-10): instrumento estándar
+//   universal; cortes de interpretación de uso común (0 sin dolor,
+//   1-3 leve, 4-6 moderado, 7-10 intenso). PENDIENTE de validación
+//   médica de Jorge como todo lo clínico sembrado.
+// - Bishop: Bishop EH, Obstet Gynecol 1964 — dilatación/borramiento/
+//   altura de la presentación (0-3), consistencia/posición (0-2);
+//   interpretación ≥8 favorable, 6-7 intermedio, ≤5 desfavorable.
+// - RIESGO CARDIOVASCULAR: PENDIENTE — Framingham/Globorisk requieren
+//   coeficientes publicados exactos que no se reproducen de memoria;
+//   se declara en vez de inventarse (regla del propio prompt 29).
+const EVA_INTERPRETATION = [
+  { min: 0, max: 0, label: "Sin dolor" },
+  { min: 1, max: 3, label: "Dolor leve" },
+  { min: 4, max: 6, label: "Dolor moderado" },
+  { min: 7, max: 10, label: "Dolor intenso" },
+];
+const BISHOP_0_3 = [0, 1, 2, 3].map((v) => ({ value: v, label: String(v) }));
+const BISHOP_0_2 = [0, 1, 2].map((v) => ({ value: v, label: String(v) }));
+const BISHOP_INTERPRETATION = [
+  { min: 8, max: 13, label: "Cérvix favorable" },
+  { min: 6, max: 7, label: "Intermedio" },
+  { min: 0, max: 5, label: "Desfavorable" },
+];
+const ESCALAS_FASE3: EscalaFieldSeed[] = [
+  { fieldKey: "eva_dolor", label: "Dolor (EVA 0-10)", inputType: "NUMBER", minValue: 0, maxValue: 10, displayOrder: 100 },
+  { fieldKey: "eva_total", label: "EVA — interpretación", inputType: "COMPUTED", computedFormula: "eva_dolor", options: EVA_INTERPRETATION, displayOrder: 101 },
+  { fieldKey: "bishop_dilatacion", label: "Dilatación (Bishop)", inputType: "SELECT", minValue: 0, maxValue: 3, options: BISHOP_0_3, displayOrder: 110 },
+  { fieldKey: "bishop_borramiento", label: "Borramiento (Bishop)", inputType: "SELECT", minValue: 0, maxValue: 3, options: BISHOP_0_3, displayOrder: 111 },
+  { fieldKey: "bishop_altura", label: "Altura de la presentación (Bishop)", inputType: "SELECT", minValue: 0, maxValue: 3, options: BISHOP_0_3, displayOrder: 112 },
+  { fieldKey: "bishop_consistencia", label: "Consistencia (Bishop)", inputType: "SELECT", minValue: 0, maxValue: 2, options: BISHOP_0_2, displayOrder: 113 },
+  { fieldKey: "bishop_posicion", label: "Posición (Bishop)", inputType: "SELECT", minValue: 0, maxValue: 2, options: BISHOP_0_2, displayOrder: 114 },
+  {
+    fieldKey: "bishop_total",
+    label: "Bishop total",
+    inputType: "COMPUTED",
+    computedFormula: "bishop_dilatacion bishop_borramiento bishop_altura bishop_consistencia bishop_posicion",
+    options: BISHOP_INTERPRETATION,
+    displayOrder: 115,
+  },
+];
+
+async function seedEscalasFase3(): Promise<void> {
+  let inserted = 0;
+  for (const field of ESCALAS_FASE3) {
+    const existing = await prisma.specialtyFieldSchema.findFirst({ where: { section: "ESCALAS", fieldKey: field.fieldKey, version: 1 } });
+    if (existing) continue;
+    await prisma.specialtyFieldSchema.create({
+      data: {
+        specialtyId: null,
+        version: 1,
+        section: "ESCALAS",
+        fieldKey: field.fieldKey,
+        label: field.label,
+        inputType: field.inputType,
+        minValue: field.minValue ?? null,
+        maxValue: field.maxValue ?? null,
+        options: field.options === undefined ? undefined : (field.options as object),
+        computedFormula: field.computedFormula ?? null,
+        displayOrder: field.displayOrder,
+        publishedAt: new Date(),
+      },
+    });
+    inserted += 1;
+  }
+  console.log(`Seeded ${inserted} campos de escalas Fase 3 (EVA + Bishop). PENDIENTE declarado: riesgo cardiovascular (coeficientes publicados requeridos, no se inventan).`);
+}
+
 async function main(): Promise<void> {
   for (const specialty of SPECIALTIES) {
     await prisma.specialty.upsert({
@@ -442,6 +534,8 @@ async function main(): Promise<void> {
   await seedEscalas();
   await seedCatalogoAntecedentes();
   await seedCatalogosPrompt9();
+  await seedGrowthReferences();
+  await seedEscalasFase3();
   await seedAdmin();
 }
 

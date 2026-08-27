@@ -122,7 +122,9 @@ describe("Soporte de frontend M8 — catálogos, plantillas, firma completa la c
       vitals: {},
       assessment: "Cefalea tensional",
       plan: "Analgesia",
-      diagnoses: [{ icd10Code: "R51", description: "Cefalea", diagnosisType: "PRINCIPAL", certainty: "CONFIRMED" }],
+      // Prompt 28: la FK exige un código EXISTENTE — el DGIS codifica
+      // la cefalea como "R51.X", no "R51" a secas.
+      diagnoses: [{ icd10Code: "R51.X", description: "Cefalea", diagnosisType: "PRINCIPAL", certainty: "CONFIRMED" }],
     };
   }
 

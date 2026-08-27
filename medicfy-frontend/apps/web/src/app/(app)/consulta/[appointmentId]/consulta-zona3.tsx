@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { ResultadosCharts } from "@/components/clinical/resultados-charts";
 
 // Prompt 14 — Zona 3, esqueleto: pestañas Hoja frontal / Historia /
 // Notas / Estudios / Resultados, VACÍAS por ahora (el contenido llega
@@ -32,7 +33,18 @@ function storageKey(doctorKey: string): string {
   return `medicfy:zona3:${doctorKey}`;
 }
 
-export function ConsultaZona3({ doctorKey }: { doctorKey: string }) {
+export function ConsultaZona3({
+  doctorKey,
+  patientId,
+  accessToken,
+  birthDate,
+}: {
+  doctorKey: string;
+  // Fase 3 (prompt 30): Resultados grafica las series estructuradas.
+  patientId?: string;
+  accessToken?: string | null;
+  birthDate?: string;
+}) {
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<Zona3Tab>("Hoja frontal");
   // Carga diferida real: solo las pestañas que el médico ABRIÓ en esta
@@ -83,7 +95,16 @@ export function ConsultaZona3({ doctorKey }: { doctorKey: string }) {
         {TABS.map((tab) =>
           openedTabs.has(tab) && activeTab === tab ? (
             <div key={tab} role="tabpanel" aria-label={tab}>
-              <p className="text-sm text-gray-500">{PLACEHOLDER[tab]}</p>
+              {tab === "Resultados" && patientId && accessToken && birthDate ? (
+                <ResultadosCharts
+                  patientId={patientId}
+                  accessToken={accessToken}
+                  birthDate={birthDate}
+                  ageYears={(Date.now() - new Date(birthDate).getTime()) / (365.25 * 24 * 60 * 60 * 1000)}
+                />
+              ) : (
+                <p className="text-sm text-gray-500">{PLACEHOLDER[tab]}</p>
+              )}
             </div>
           ) : null
         )}

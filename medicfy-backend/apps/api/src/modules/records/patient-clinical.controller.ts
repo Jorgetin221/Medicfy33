@@ -1,7 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import {
-  antecedentesTemplateCreateSchema,
   gynecoHistoryUpsertSchema,
   patientAllergyCatalogCreateSchema,
   patientAllergyUpdateSchema,
@@ -12,7 +11,6 @@ import {
   patientPregnancyCreateSchema,
   patientPregnancyUpdateSchema,
   substanceUseUpsertSchema,
-  type AntecedentesTemplateCreateInput,
   type GynecoHistoryUpsertInput,
   type PatientAllergyCatalogCreateInput,
   type PatientAllergyUpdateInput,
@@ -121,6 +119,38 @@ export class PatientClinicalController {
   ) {
     await this.auditWrite(req, patientId, "records.history.upsert");
     return this.patientClinical.upsertHistoryItem(patientId, req.user.sub, body);
+  }
+
+  // ── Fase 3 · Prompts 28 y 30 ─────────────────────────────────────
+
+  @Get("vitals-history")
+  @ApiOperation({ summary: "Prompt 30: serie de signos vitales ESTRUCTURADA — sin procesar texto" })
+  async vitalsHistory(@Param("patientId") patientId: string, @Req() req: ClinicalRequest) {
+    await this.auditRead(req, patientId, "records.vitalsHistory.read");
+    return this.patientClinical.vitalsHistory(patientId);
+  }
+
+  @Get("growth-curves")
+  @ApiOperation({ summary: "Prompt 30 (pediatría): curvas de percentilas OMS/CDC para el sexo del paciente" })
+  async growthCurves(
+    @Param("patientId") patientId: string,
+    @Query("measure") measure: string | undefined,
+    @Req() req: ClinicalRequest
+  ) {
+    await this.auditRead(req, patientId, "records.growthCurves.read");
+    const parsed = measure === "HEIGHT_FOR_AGE" ? "HEIGHT_FOR_AGE" : "WEIGHT_FOR_AGE";
+    return this.patientClinical.growthCurves(patientId, parsed);
+  }
+
+  @Post("diagnoses/:diagnosisId/discard")
+  @ApiOperation({ summary: "Prompt 28: descartar no borra — DESCARTADO con fecha y autor, fuera de vigentes" })
+  async discardDiagnosis(
+    @Param("patientId") patientId: string,
+    @Param("diagnosisId") diagnosisId: string,
+    @Req() req: ClinicalRequest
+  ) {
+    await this.auditWrite(req, patientId, "records.diagnosis.discard");
+    return this.patientClinical.discardDiagnosis(patientId, diagnosisId, req.user.sub);
   }
 
   // ── Fase 2 · Prompt 21: toxicomanías ─────────────────────────────
