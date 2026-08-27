@@ -249,6 +249,27 @@ describe("Fase 1 · Zona 1 — embarazo (#18) y diagnósticos vigentes (#19)", (
     });
   });
 
+  describe("M8-RN-013 — tiempo abrir→firmar", () => {
+    it("al firmar, el servidor fija timeToSignSeconds = signedAt - startedAt (la métrica del negocio, nunca del cliente)", async () => {
+      const doctor = await registerDoctor();
+      const patientId = await createPatient(doctor.accessToken, "F");
+      const encounterId = await signEncounterWithDiagnoses(doctor.accessToken, patientId, [
+        {
+          description: "Control sano",
+          codeAbsentReason: "Consulta de control sin patología que codificar.",
+          diagnosisType: "PRINCIPAL",
+          certainty: "CONFIRMED",
+        },
+      ]);
+      const row = await prisma.clinicalEncounter.findUniqueOrThrow({ where: { id: encounterId } });
+      expect(row.timeToSignSeconds).not.toBeNull();
+      const expected = Math.round(((row.signedAt as Date).getTime() - row.startedAt.getTime()) / 1000);
+      expect(row.timeToSignSeconds).toBe(expected);
+      expect(row.timeToSignSeconds).toBeGreaterThanOrEqual(0);
+      expect(row.timeToSignSeconds).toBeLessThan(60); // la prueba tarda segundos, no minutos
+    });
+  });
+
   describe("#19 — diagnósticos vigentes", () => {
     it("deduplica por CIE-10 y por descripción normalizada, cuenta repeticiones y ordena por más reciente", async () => {
       const doctor = await registerDoctor();

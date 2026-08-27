@@ -89,6 +89,11 @@ export function ConsultaForm({
   const [signError, setSignError] = useState<unknown>(null);
   const [isSigning, setIsSigning] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(() => Math.floor((Date.now() - new Date(encounter.startedAt).getTime()) / 1000));
+  // M8-RN-013 / CLAUDE.md §6: el objetivo del modo — el límite alto de
+  // cada rango (15 y 4 min). La métrica real la fija el servidor al
+  // firmar (timeToSignSeconds); esto es solo la señal en pantalla.
+  const targetSeconds = encounter.encounterType === "FIRST_VISIT" ? 15 * 60 : 4 * 60;
+  const targetLabel = encounter.encounterType === "FIRST_VISIT" ? "12–15 min" : "3–4 min";
 
   const form = useForm<ClinicalNoteSignInput>({
     resolver: zodResolver(clinicalNoteSignSchema),
@@ -276,7 +281,14 @@ export function ConsultaForm({
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-gray-300 bg-white p-3">
         <div>
           <p className="text-base font-medium text-brand-900">{ENCOUNTER_TYPE_LABEL[encounter.encounterType]}</p>
-          <p className="text-sm text-gray-500">Tiempo transcurrido: {formatElapsed(elapsedSeconds)}</p>
+          {/* CLAUDE.md §6: dos modos con tiempo objetivo — Historia
+              Clínica 12–15 min, Nota de Evolución 3–4 min. Rebasado el
+              objetivo lo dice el TEXTO además del color (el color
+              nunca es el único portador de significado). */}
+          <p className={`text-sm ${elapsedSeconds > targetSeconds ? "font-medium text-warn-600" : "text-gray-500"}`}>
+            Tiempo transcurrido: {formatElapsed(elapsedSeconds)} · objetivo {targetLabel}
+            {elapsedSeconds > targetSeconds ? " — rebasado" : ""}
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <IndicadorGuardado state={saveState} />

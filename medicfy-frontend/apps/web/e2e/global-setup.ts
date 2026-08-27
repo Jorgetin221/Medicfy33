@@ -57,7 +57,11 @@ export default async function globalSetup(): Promise<void> {
     DB,
     "-q",
     "-c",
-    `UPDATE doctors SET "verificationStatus" = 'VERIFIED' WHERE "userId" = '${registered.userId}'; UPDATE users SET status = 'ACTIVE', "emailVerifiedAt" = now() WHERE id = '${registered.userId}';`,
+    // loginsWithoutMfa muy negativo: M1-RN-005 exige MFA al 4º login
+    // sin ella — correcto en producto, pero cada prueba e2e inicia
+    // sesión y la doctora sembrada agotaría el margen a media suite.
+    // Solo aplica a ESTA cuenta sintética de prueba.
+    `UPDATE doctors SET "verificationStatus" = 'VERIFIED' WHERE "userId" = '${registered.userId}'; UPDATE users SET status = 'ACTIVE', "emailVerifiedAt" = now(), "loginsWithoutMfa" = -1000000 WHERE id = '${registered.userId}';`,
   ]);
 
   const login = await api<{ accessToken: string }>("/auth/login", {

@@ -823,6 +823,12 @@ model ClinicalEncounter {
   startedAt          DateTime         @default(now()) @db.Timestamptz(3)
   endedAt            DateTime?        @db.Timestamptz(3)
   signedAt           DateTime?        @db.Timestamptz(3)
+  // M8-RN-013: "el sistema mide el tiempo entre abrir y firmar cada
+  // nota — es la métrica del negocio, no telemetría opcional". Se fija
+  // al firmar como signedAt - startedAt, en servidor. Es tiempo de
+  // reloj de pared: un borrador retomado días después la infla, y ese
+  // caso queda visible en vez de esconderse en un promedio.
+  timeToSignSeconds  Int?
   signedByUserId     String?
   signatureMethod    SignatureMethod?
   contentHashSha256  String?

@@ -35,6 +35,9 @@ export function Icd10Picker({
 }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Icd10Result[]>([]);
+  // DOC-06: "consulta completa sin tocar el ratón" — el buscador se
+  // navega con ↑/↓ y selecciona con Enter, como cualquier combobox.
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const [isSearching, setIsSearching] = useState(false);
   const [showManualForm, setShowManualForm] = useState(false);
   const [manualDescription, setManualDescription] = useState("");
@@ -50,7 +53,10 @@ export function Icd10Picker({
     const timeout = setTimeout(() => {
       apiFetch<Icd10Result[]>(`/icd10?search=${encodeURIComponent(query)}`, { accessToken })
         .then((data) => {
-          if (!cancelled) setResults(data);
+          if (!cancelled) {
+            setResults(data);
+            setHighlightedIndex(data.length > 0 ? 0 : -1);
+          }
         })
         .catch(() => {
           if (!cancelled) setResults([]);
@@ -101,21 +107,51 @@ export function Icd10Picker({
           placeholder="Buscar por código o descripción (CIE-10)…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (results.length === 0) return;
+            if (e.key === "ArrowDown") {
+              e.preventDefault();
+              setHighlightedIndex((i) => Math.min(i + 1, results.length - 1));
+            } else if (e.key === "ArrowUp") {
+              e.preventDefault();
+              setHighlightedIndex((i) => Math.max(i - 1, 0));
+            } else if (e.key === "Enter") {
+              // Enter dentro del buscador SELECCIONA, nunca envía el
+              // formulario de la nota.
+              e.preventDefault();
+              const target = results[highlightedIndex];
+              if (target) addDiagnosis(target);
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              setQuery("");
+              setResults([]);
+            }
+          }}
+          role="combobox"
+          aria-expanded={results.length > 0}
+          aria-controls="icd10-results"
+          aria-activedescendant={highlightedIndex >= 0 ? `icd10-option-${highlightedIndex}` : undefined}
           aria-label="Buscar diagnóstico CIE-10"
         />
         {query.trim().length >= 2 && (
-          <div className="absolute z-10 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-gray-300 bg-white shadow-card">
+          <div id="icd10-results" role="listbox" className="absolute z-10 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-gray-300 bg-white shadow-card">
             {isSearching ? (
               <p className="p-3 text-sm text-gray-500">Buscando…</p>
             ) : results.length === 0 ? (
               <p className="p-3 text-sm text-gray-500">Sin resultados para &quot;{query}&quot;.</p>
             ) : (
-              results.map((r) => (
+              results.map((r, index) => (
                 <button
                   key={r.code}
+                  id={`icd10-option-${index}`}
+                  role="option"
+                  aria-selected={index === highlightedIndex}
                   type="button"
                   onClick={() => addDiagnosis(r)}
-                  className="flex min-h-11 w-full flex-col items-start border-b border-gray-100 px-3 py-2 text-left hover:bg-gray-100 last:border-0"
+                  onMouseEnter={() => setHighlightedIndex(index)}
+                  className={`flex min-h-11 w-full flex-col items-start border-b border-gray-100 px-3 py-2 text-left last:border-0 ${
+                    index === highlightedIndex ? "bg-brand-100" : "hover:bg-gray-100"
+                  }`}
                 >
                   <span className="text-base font-medium text-gray-900">{r.code}</span>
                   <span className="text-sm text-gray-500">{r.description}</span>

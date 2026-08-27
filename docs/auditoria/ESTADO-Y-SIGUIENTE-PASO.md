@@ -125,15 +125,29 @@ espera). Receta completa en la "Nota operativa" de abajo. Con eso:
 - Verificado en esta sesión: 2/2 e2e en verde contra la pila completa
   (Postgres real + API real + build de producción del web).
 
-Suite total tras la Fase 1 parcial: **226 API + 30 contratos + 5 UI +
-2 e2e**, typecheck y lint limpios en ambos árboles.
+Suite total tras la Fase 1 parcial: **227 API + 30 contratos + 5 UI +
+3 e2e**, typecheck y lint limpios en ambos árboles.
 
-**Qué le queda a la Fase 1** (contra CLAUDE.md §6, sin el texto exacto
-de los prompts 12-17): consulta de seguimiento completa sin ratón
-(prueba de teclado e2e), autoguardado sin conexión (IndexedDB),
-verificación de los dos modos con sus tiempos objetivo, y la métrica
-abrir→firmar (el cronómetro ya se pinta; falta persistirla como métrica
-de negocio, M8-RN-013).
+**Segundo bloque de la Fase 1 (misma sesión):**
+- **Consulta sin ratón, probada**: `e2e/doc06-teclado.spec.ts` ejecuta
+  una consulta de seguimiento completa solo con teclado — nota, alta de
+  diagnóstico con ↑/↓/Enter en el buscador CIE-10 (navegación de
+  combobox agregada al picker, con roles ARIA), Ctrl+Enter para firmar,
+  confirmación nativa y redirección con toast. 3/3 e2e en verde.
+- **M8-RN-013 persistida**: `timeToSignSeconds` en ClinicalEncounter,
+  fijada por el SERVIDOR al firmar (migración `20260827060000`), con
+  prueba de integración. Es tiempo de reloj de pared: un borrador
+  retomado días después la infla, y eso queda visible a propósito.
+- **Dos modos con objetivo visible**: el cronómetro de DOC-06 muestra
+  "objetivo 12–15 min" / "3–4 min" según el modo y avisa con TEXTO
+  (no solo color) al rebasarlo.
+- El autoguardado offline (IndexedDB cifrado) YA EXISTÍA
+  (`offline-draft-store.ts` + `use-encounter-autosave.ts`).
+
+**Qué le queda a la Fase 1:** prueba dedicada del almacén offline
+(fake-indexeddb) y el cierre formal contra el texto de los prompts
+12-17 — **el documento de 58 prompts no está en el repo**; con él a la
+mano se verifica prompt por prompt.
 
 ## Decisiones tomadas por delegación (revisar cuando Jorge quiera)
 

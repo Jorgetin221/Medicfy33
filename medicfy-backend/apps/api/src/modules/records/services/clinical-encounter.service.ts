@@ -184,6 +184,8 @@ export class ClinicalEncounterService {
           status: "SIGNED",
           endedAt: signedAt,
           signedAt,
+          // M8-RN-013: la métrica del negocio, fijada en servidor.
+          timeToSignSeconds: Math.max(0, Math.round((signedAt.getTime() - encounter.startedAt.getTime()) / 1000)),
           signedByUserId: doctorUserId,
           signatureMethod: "INTERNAL_SYSTEM",
           contentHashSha256,
