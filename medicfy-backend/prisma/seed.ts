@@ -84,6 +84,125 @@ const MEDICATIONS = [
   { genericName: "Morfina", brandNames: [], presentations: [{ label: "Solución inyectable 10 mg/mL" }], atcCode: "N02AA01", controlGroup: "I" as const, isElectronicallyPrescribable: false },
 ];
 
+// Motor de escalas (SpecialtyFieldSchema, sección ESCALAS): la
+// infraestructura ya existía en el esquema desde M8-RN-014 sin una
+// sola fila sembrada. Acotado a Glasgow y Apgar — son instrumentos
+// universales, sin variación entre fuentes ni necesidad de licencia,
+// a diferencia de Bishop o un score de riesgo cardiovascular con
+// nombre propio, que quedan pendientes hasta tener una fuente única
+// que citar. Valores de referencia sin modificar:
+// - Glasgow Coma Scale: Teasdale G, Jennett B. "Assessment of coma
+//   and impaired consciousness." Lancet. 1974;2(7872):81-84.
+// - Apgar score: Apgar V. "A proposal for a new method of evaluation
+//   of the newborn infant." Curr Res Anesth Analg. 1953;32(4):260-267.
+const GLASGOW_OCULAR_OPTIONS = [
+  { value: 4, label: "Espontánea (4)" },
+  { value: 3, label: "Al habla (3)" },
+  { value: 2, label: "Al dolor (2)" },
+  { value: 1, label: "Sin respuesta (1)" },
+];
+const GLASGOW_VERBAL_OPTIONS = [
+  { value: 5, label: "Orientado (5)" },
+  { value: 4, label: "Confuso (4)" },
+  { value: 3, label: "Palabras inapropiadas (3)" },
+  { value: 2, label: "Sonidos incomprensibles (2)" },
+  { value: 1, label: "Sin respuesta (1)" },
+];
+const GLASGOW_MOTORA_OPTIONS = [
+  { value: 6, label: "Obedece órdenes (6)" },
+  { value: 5, label: "Localiza el dolor (5)" },
+  { value: 4, label: "Retira al dolor (4)" },
+  { value: 3, label: "Flexión anormal — decorticación (3)" },
+  { value: 2, label: "Extensión anormal — descerebración (2)" },
+  { value: 1, label: "Sin respuesta (1)" },
+];
+const GLASGOW_INTERPRETATION = [
+  { min: 13, max: 15, label: "Leve" },
+  { min: 9, max: 12, label: "Moderado" },
+  { min: 3, max: 8, label: "Severo" },
+];
+const APGAR_ITEM_OPTIONS = [
+  { value: 0, label: "0" },
+  { value: 1, label: "1" },
+  { value: 2, label: "2" },
+];
+const APGAR_INTERPRETATION = [
+  { min: 7, max: 10, label: "Normal" },
+  { min: 4, max: 6, label: "Depresión moderada" },
+  { min: 0, max: 3, label: "Depresión severa" },
+];
+
+const ESCALAS_VERSION = 1;
+type EscalaFieldSeed = {
+  fieldKey: string;
+  label: string;
+  inputType: "SELECT" | "COMPUTED";
+  minValue?: number;
+  maxValue?: number;
+  options?: unknown;
+  computedFormula?: string;
+  displayOrder: number;
+};
+const ESCALAS_FIELDS: EscalaFieldSeed[] = [
+  { fieldKey: "glasgow_ocular", label: "Apertura ocular", inputType: "SELECT", minValue: 1, maxValue: 4, options: GLASGOW_OCULAR_OPTIONS, displayOrder: 0 },
+  { fieldKey: "glasgow_verbal", label: "Respuesta verbal", inputType: "SELECT", minValue: 1, maxValue: 5, options: GLASGOW_VERBAL_OPTIONS, displayOrder: 1 },
+  { fieldKey: "glasgow_motora", label: "Respuesta motora", inputType: "SELECT", minValue: 1, maxValue: 6, options: GLASGOW_MOTORA_OPTIONS, displayOrder: 2 },
+  {
+    fieldKey: "glasgow_total",
+    label: "Glasgow total",
+    inputType: "COMPUTED",
+    computedFormula: "glasgow_ocular glasgow_verbal glasgow_motora",
+    options: GLASGOW_INTERPRETATION,
+    displayOrder: 3,
+  },
+  ...(["1min", "5min"] as const).flatMap((momento, momentoIndex) => {
+    const items: EscalaFieldSeed[] = [
+      { fieldKey: `apgar_${momento}_apariencia`, label: `Apariencia (${momento})`, inputType: "SELECT", minValue: 0, maxValue: 2, options: APGAR_ITEM_OPTIONS, displayOrder: momentoIndex * 10 },
+      { fieldKey: `apgar_${momento}_pulso`, label: `Pulso (${momento})`, inputType: "SELECT", minValue: 0, maxValue: 2, options: APGAR_ITEM_OPTIONS, displayOrder: momentoIndex * 10 + 1 },
+      { fieldKey: `apgar_${momento}_gesticulacion`, label: `Gesticulación/irritabilidad refleja (${momento})`, inputType: "SELECT", minValue: 0, maxValue: 2, options: APGAR_ITEM_OPTIONS, displayOrder: momentoIndex * 10 + 2 },
+      { fieldKey: `apgar_${momento}_actividad`, label: `Actividad/tono muscular (${momento})`, inputType: "SELECT", minValue: 0, maxValue: 2, options: APGAR_ITEM_OPTIONS, displayOrder: momentoIndex * 10 + 3 },
+      { fieldKey: `apgar_${momento}_respiracion`, label: `Respiración (${momento})`, inputType: "SELECT", minValue: 0, maxValue: 2, options: APGAR_ITEM_OPTIONS, displayOrder: momentoIndex * 10 + 4 },
+      {
+        fieldKey: `apgar_total_${momento}`,
+        label: `Apgar total (${momento})`,
+        inputType: "COMPUTED",
+        computedFormula: [`apariencia`, `pulso`, `gesticulacion`, `actividad`, `respiracion`].map((k) => `apgar_${momento}_${k}`).join(" "),
+        options: APGAR_INTERPRETATION,
+        displayOrder: momentoIndex * 10 + 5,
+      },
+    ];
+    return items;
+  }),
+];
+
+async function seedEscalas(): Promise<void> {
+  for (const field of ESCALAS_FIELDS) {
+    const existing = await prisma.specialtyFieldSchema.findFirst({
+      where: { specialtyId: null, section: "ESCALAS", fieldKey: field.fieldKey, version: ESCALAS_VERSION },
+    });
+    const data = {
+      specialtyId: null,
+      section: "ESCALAS" as const,
+      version: ESCALAS_VERSION,
+      fieldKey: field.fieldKey,
+      label: field.label,
+      inputType: field.inputType,
+      minValue: field.minValue ?? null,
+      maxValue: field.maxValue ?? null,
+      options: field.options ?? undefined,
+      computedFormula: field.computedFormula ?? null,
+      displayOrder: field.displayOrder,
+      publishedAt: new Date(),
+    };
+    if (existing) {
+      await prisma.specialtyFieldSchema.update({ where: { id: existing.id }, data });
+    } else {
+      await prisma.specialtyFieldSchema.create({ data });
+    }
+  }
+  console.log(`Seeded ${ESCALAS_FIELDS.length} campos de escalas (Glasgow + Apgar).`);
+}
+
 async function main(): Promise<void> {
   for (const specialty of SPECIALTIES) {
     await prisma.specialty.upsert({
@@ -118,6 +237,7 @@ async function main(): Promise<void> {
   }
   console.log(`Seeded ${MEDICATIONS.length} medications.`);
 
+  await seedEscalas();
   await seedAdmin();
 }
 

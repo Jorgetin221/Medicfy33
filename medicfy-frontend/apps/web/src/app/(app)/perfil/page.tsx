@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import QRCode from "qrcode";
 import {
   practiceLocationSchema,
   doctorProfileUpdateSchema,
@@ -104,6 +105,7 @@ function PerfilContent({ accessToken }: { accessToken: string }) {
       </div>
 
       <VerificationSection doctor={doctor} accessToken={accessToken} />
+      <MfaSection accessToken={accessToken} />
       <LockedFieldsSection doctor={doctor} specialtyName={specialtyName} />
       <ProfessionalInfoSection doctor={doctor} accessToken={accessToken} onSaved={reload} />
       <LocationsSection accessToken={accessToken} locations={locations} error={locationsError} onReload={loadLocations} />
@@ -169,6 +171,187 @@ function VerificationSection({ doctor, accessToken }: { doctor: DoctorProfile; a
               </li>
             ))}
           </ul>
+        ) : null}
+      </div>
+    </Card>
+  );
+}
+
+interface MeStatus {
+  mfaEnabled: boolean;
+}
+
+interface EnrollmentStart {
+  otpauthUri: string;
+  backupCodes: string[];
+}
+
+// M1-RN-005/M1-CA-005: sin esta pantalla, una cuenta que llega al 4to
+// login sin haber activado la verificación en dos pasos quedaba
+// bloqueada sin ninguna forma de continuar — el sistema la exige pero
+// nunca hubo dónde enrolarse. Usa POST /auth/mfa/enroll, ya existente
+// y probado desde antes: sin `code` inicia el enrolamiento, con
+// `code` lo confirma (mfa.controller.ts).
+function MfaSection({ accessToken }: { accessToken: string }) {
+  const [me, setMe] = useState<MeStatus | null>(null);
+  const [meError, setMeError] = useState<unknown>(null);
+  const [enrollment, setEnrollment] = useState<EnrollmentStart | null>(null);
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const [code, setCode] = useState("");
+  const [isStarting, setIsStarting] = useState(false);
+  const [isConfirming, setIsConfirming] = useState(false);
+  const [isDisabling, setIsDisabling] = useState(false);
+  const [actionError, setActionError] = useState<unknown>(null);
+
+  const loadMe = useCallback(() => {
+    setMeError(null);
+    apiFetch<MeStatus>("/me", { accessToken })
+      .then(setMe)
+      .catch((err: unknown) => setMeError(err));
+  }, [accessToken]);
+
+  useEffect(() => {
+    loadMe();
+  }, [loadMe]);
+
+  useEffect(() => {
+    if (!enrollment) {
+      setQrDataUrl(null);
+      return undefined;
+    }
+    let cancelled = false;
+    QRCode.toDataURL(enrollment.otpauthUri).then((url) => {
+      if (!cancelled) setQrDataUrl(url);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [enrollment]);
+
+  async function startEnrollment() {
+    setActionError(null);
+    setIsStarting(true);
+    try {
+      const result = await apiFetch<EnrollmentStart>("/auth/mfa/enroll", { method: "POST", accessToken, body: {} });
+      setEnrollment(result);
+      setCode("");
+    } catch (err) {
+      setActionError(err);
+    } finally {
+      setIsStarting(false);
+    }
+  }
+
+  async function confirmEnrollment() {
+    setActionError(null);
+    setIsConfirming(true);
+    try {
+      await apiFetch("/auth/mfa/enroll", { method: "POST", accessToken, body: { code } });
+      setEnrollment(null);
+      loadMe();
+    } catch (err) {
+      setActionError(err);
+    } finally {
+      setIsConfirming(false);
+    }
+  }
+
+  async function disableMfa() {
+    if (!window.confirm("¿Desactivar la verificación en dos pasos? Tu cuenta quedará protegida solo con tu contraseña.")) return;
+    setActionError(null);
+    setIsDisabling(true);
+    try {
+      await apiFetch("/auth/mfa/disable", { method: "POST", accessToken, body: {} });
+      loadMe();
+    } catch (err) {
+      setActionError(err);
+    } finally {
+      setIsDisabling(false);
+    }
+  }
+
+  const manualSecret = enrollment ? new URL(enrollment.otpauthUri).searchParams.get("secret") : null;
+
+  return (
+    <Card>
+      <h2 className="font-heading text-xl text-brand-900">Verificación en dos pasos</h2>
+      <p className="text-sm text-gray-500">
+        Después de 3 inicios de sesión sin activarla, Medicfy la exige para proteger el expediente de tus pacientes.
+      </p>
+
+      <div className="mt-4">
+        {meError ? <ErrorState error={meError} onRetry={loadMe} /> : null}
+        {!me && !meError ? <LoadingState /> : null}
+
+        {me && me.mfaEnabled && !enrollment ? (
+          <div className="flex flex-col gap-3">
+            <Aviso variant="exito" title="Verificación en dos pasos activada" />
+            <Button type="button" variant="danger" isLoading={isDisabling} onClick={() => void disableMfa()} className="w-fit">
+              Desactivar
+            </Button>
+          </div>
+        ) : null}
+
+        {me && !me.mfaEnabled && !enrollment ? (
+          <div className="flex flex-col gap-3">
+            <p className="text-base text-gray-900">No está activada todavía.</p>
+            <Button type="button" isLoading={isStarting} onClick={() => void startEnrollment()} className="w-fit">
+              Activar verificación en dos pasos
+            </Button>
+          </div>
+        ) : null}
+
+        {enrollment ? (
+          <div className="flex flex-col gap-4">
+            <div>
+              <p className="text-base font-medium text-gray-900">1. Escanea este código con tu app de autenticación</p>
+              <p className="text-sm text-gray-500">Google Authenticator, Authy, 1Password u otra app de códigos TOTP.</p>
+              {qrDataUrl ? (
+                <img src={qrDataUrl} alt="Código QR para activar verificación en dos pasos" className="mt-3 h-48 w-48" />
+              ) : (
+                <LoadingState />
+              )}
+              <p className="mt-2 text-sm text-gray-500">
+                ¿No puedes escanear? Ingresa esta clave manualmente: <span className="font-mono text-base text-gray-900">{manualSecret}</span>
+              </p>
+            </div>
+
+            <Aviso variant="advertencia" title="Guarda estos códigos de respaldo en un lugar seguro">
+              <p className="mb-2">Si pierdes acceso a tu app de autenticación, son la única forma de recuperar tu cuenta. Solo se muestran una vez.</p>
+              <ul className="grid grid-cols-2 gap-1 font-mono text-base text-gray-900">
+                {enrollment.backupCodes.map((c) => (
+                  <li key={c}>{c}</li>
+                ))}
+              </ul>
+            </Aviso>
+
+            <div>
+              <p className="text-base font-medium text-gray-900">2. Confirma con el código de 6 dígitos que muestra la app</p>
+              <div className="mt-2 flex flex-wrap items-end gap-3">
+                <FieldWrapper label="Código" htmlFor="mfa-confirm-code">
+                  <TextInput
+                    id="mfa-confirm-code"
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={code}
+                    onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+                  />
+                </FieldWrapper>
+                <Button type="button" isLoading={isConfirming} disabled={code.length !== 6} onClick={() => void confirmEnrollment()}>
+                  Confirmar
+                </Button>
+                <Button type="button" variant="secondary" onClick={() => setEnrollment(null)}>
+                  Cancelar
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {actionError ? (
+          <div className="mt-3">
+            <ErrorState error={actionError} />
+          </div>
         ) : null}
       </div>
     </Card>

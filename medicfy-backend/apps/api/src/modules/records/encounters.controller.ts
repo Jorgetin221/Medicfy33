@@ -2,9 +2,11 @@ import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from "@nest
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import {
   clinicalEncounterCreateSchema,
+  clinicalNoteCorrectionSchema,
   clinicalNoteDraftUpdateSchema,
   clinicalNoteSignSchema,
   type ClinicalEncounterCreateInput,
+  type ClinicalNoteCorrectionInput,
   type ClinicalNoteDraftUpdateInput,
   type ClinicalNoteSignInput,
 } from "@medicfy/contracts";
@@ -77,6 +79,19 @@ export class EncountersController {
     const result = await this.encounters.signAndCompleteAppointment(encounterId, req.user.sub, body);
     await this.audit(req, req.clinicalPatientId as string, "records.encounter.sign", encounterId);
     return result;
+  }
+
+  @Post("records/encounters/:encounterId/correct-note")
+  @UseGuards(DoctorVerifiedGuard)
+  @ApiOperation({ summary: "Corrige una nota firmada: inserta una nota nueva referenciando la original, nunca UPDATE (M8-RN-001)" })
+  async correctNote(
+    @Param("encounterId") encounterId: string,
+    @Body(new ZodValidationPipe(clinicalNoteCorrectionSchema)) body: ClinicalNoteCorrectionInput,
+    @Req() req: ClinicalRequest
+  ) {
+    const note = await this.encounters.correctNote(encounterId, req.user.sub, body);
+    await this.audit(req, req.clinicalPatientId as string, "records.encounter.note.correct", note.id);
+    return note;
   }
 
   private async audit(req: ClinicalRequest, patientId: string, action: string, resourceId?: string) {

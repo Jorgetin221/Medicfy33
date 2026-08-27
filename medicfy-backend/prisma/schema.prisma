@@ -1473,3 +1473,56 @@ model LabResult {
 
   @@map("lab_results")
 }
+
+// Prompt 7 (medicfy-50-prompts.md), R2 "los catálogos son cerrados".
+// Infraestructura nueva y paralela a Specialty/Icd10Code/MedicationCatalog
+// — no los reemplaza ni los migra (fuera de alcance de este prompt).
+// Un término nunca se borra: se marca OBSOLETE o se fusiona
+// (status=MERGED + mergedIntoId apuntando al vigente). Los registros
+// que ya referencian un término fusionado por su id lo siguen
+// resolviendo sin error — la fila nunca desaparece; solo una consulta
+// NUEVA que pida "el vigente" necesita caminar mergedIntoId
+// (ClinicalCatalogService.resolveCurrent).
+enum ClinicalCatalogTermStatus {
+  ACTIVE
+  OBSOLETE
+  MERGED
+
+  @@map("clinical_catalog_term_status")
+}
+
+model ClinicalCatalogTerm {
+  id            String                    @id @default(uuid())
+  // Discriminador del catálogo (ej. "ALERGIA_AGENTE") — String, no
+  // enum: el Prompt 9 todavía decide la lista completa de dominios, y
+  // un enum exigiría una migración por cada uno nuevo.
+  domain        String
+  key           String
+  preferredTerm String
+  // Prompt 8: minúsculas/sin acentos/sin puntuación final/espacios
+  // colapsados (term-normalizer.util.ts) — calculado en servidor al
+  // crear, nunca recibido del cliente. Único junto con domain,
+  // SIN filtrar por status: un término ya obsoleto o fusionado sigue
+  // bloqueando que alguien recree el mismo duplicado.
+  normalizedTerm String
+  synonyms      String[]                  @default([])
+  externalCode  String?
+  // Nunca null — R2: "todo catálogo declara su sistema de
+  // codificación externo o queda documentado explícitamente como
+  // propietario" (valor "PROPIETARIO", no un campo vacío).
+  codingSystem  String
+  version       Int                       @default(1)
+  status        ClinicalCatalogTermStatus @default(ACTIVE)
+  mergedIntoId  String?
+  // Referencia descriptiva simple — se vuelve FK real a un usuario
+  // curador cuando exista ese rol (Prompt 10, fuera de este pase).
+  curatedBy     String?
+  createdAt     DateTime                  @default(now()) @db.Timestamptz(3)
+
+  mergedInto ClinicalCatalogTerm?  @relation("CatalogTermMerge", fields: [mergedIntoId], references: [id])
+  mergedFrom ClinicalCatalogTerm[] @relation("CatalogTermMerge")
+
+  @@unique([domain, key])
+  @@unique([domain, normalizedTerm])
+  @@map("clinical_catalog_terms")
+}

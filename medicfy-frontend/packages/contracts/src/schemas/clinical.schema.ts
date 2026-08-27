@@ -38,6 +38,11 @@ export const clinicalNoteDraftUpdateSchema = z
     chiefComplaint: z.string().max(500).optional(),
     currentIllness: z.string().optional(),
     vitals: vitalsSchema.optional(),
+    // Motor de escalas (SpecialtyFieldSchema/EncounterSpecialtyData,
+    // sección ESCALAS): fieldKey -> valor numérico crudo, tal como el
+    // médico lo captura. El cómputo/interpretación nunca viaja desde
+    // el cliente — el servidor los recalcula siempre.
+    specialtyData: z.record(z.string(), z.number()).optional(),
     physicalExam: z.string().optional(),
     assessment: z.string().optional(),
     plan: z.string().optional(),
@@ -78,6 +83,7 @@ export const clinicalNoteSignSchema = z
     chiefComplaint: z.string().min(3, "El motivo de consulta debe tener al menos 3 caracteres.").max(500),
     currentIllness: z.string().min(1, "El padecimiento actual es obligatorio."),
     vitals: vitalsSchema,
+    specialtyData: z.record(z.string(), z.number()).optional(),
     physicalExam: z.string().optional(),
     assessment: z.string().min(1, "El análisis es obligatorio."),
     plan: z.string().min(1, "El plan es obligatorio."),

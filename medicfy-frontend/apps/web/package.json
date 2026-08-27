@@ -22,11 +22,13 @@
     "react-hook-form": "^7.54.2",
     "@hookform/resolvers": "^3.9.1",
     "@medicfy/contracts": "workspace:*",
-    "idb": "^8.0.1"
+    "idb": "^8.0.1",
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.1",
     "@types/node": "^22.10.5",
+    "@types/qrcode": "^1.5.5",
     "@types/react": "^19.0.4",
     "@types/react-dom": "^19.0.2",
     "autoprefixer": "^10.4.20",

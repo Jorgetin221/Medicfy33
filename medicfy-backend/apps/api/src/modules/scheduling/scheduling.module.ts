@@ -48,6 +48,10 @@ import { AppointmentsController } from "./appointments.controller";
   // (records) llama a completeWithSignedNote() — "cuando M8 exista,
   // la ruta real a completed se vuelve la primaria" (ver el
   // comentario de completedWithoutNoteReason en schema.prisma).
-  exports: [CareRelationshipService, AppointmentStateMachineService],
+  // SchedulingAuthService: SpecialtyFieldSchemasController (records,
+  // motor de escalas) necesita resolveActingDoctor() para resolver la
+  // especialidad de un DOCTOR o de un ASSISTANT que actúa por él, sin
+  // reimplementar esa resolución.
+  exports: [CareRelationshipService, AppointmentStateMachineService, SchedulingAuthService],
 })
 export class SchedulingModule {}

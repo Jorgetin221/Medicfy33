@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Aviso } from "@/components/ui/alert";
 import { IndicadorGuardado } from "@/components/ui/save-indicator";
 import { VitalsFields } from "@/components/clinical/vitals-fields";
+import { EscalasSection } from "@/components/clinical/escalas-section";
 import { Icd10Picker } from "@/components/clinical/icd10-picker";
 import { NoteTemplateBar } from "@/components/clinical/note-template-bar";
 import { PrescriptionPanel } from "@/components/clinical/prescription-panel";
@@ -31,6 +32,35 @@ function formatElapsed(totalSeconds: number): string {
   const m = Math.floor(totalSeconds / 60);
   const s = totalSeconds % 60;
   return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+const RAW_VITALS_KEYS = ["bpSystolic", "bpDiastolic", "heartRate", "respiratoryRate", "tempC", "spo2", "weightKg", "heightCm"] as const;
+
+// El draftContent que guarda el servidor trae vitals con bmi/bmiFormula/
+// bmiFormulaVersion ya mezclados (withComputedVitals, backend) —
+// vitalsSchema es .strict(), así que hay que quitarlos al hidratar o
+// el siguiente autoguardado los reenviaría y el servidor los
+// rechazaría con 400.
+function stripComputedVitals(vitals: Record<string, unknown>): Record<string, number> {
+  const raw: Record<string, number> = {};
+  for (const key of RAW_VITALS_KEYS) {
+    const value = vitals[key];
+    if (typeof value === "number") raw[key] = value;
+  }
+  return raw;
+}
+
+// Mismo problema para specialtyData: el servidor guarda
+// {fieldKey: {value, interpretation?}} (SpecialtyScaleService); el
+// formulario y el contrato solo aceptan fieldKey -> número crudo.
+function unwrapSpecialtyData(specialtyData: Record<string, unknown>): Record<string, number> {
+  const raw: Record<string, number> = {};
+  for (const [key, entry] of Object.entries(specialtyData)) {
+    if (entry && typeof entry === "object" && "value" in entry && typeof (entry as { value: unknown }).value === "number") {
+      raw[key] = (entry as { value: number }).value;
+    }
+  }
+  return raw;
 }
 
 // DOC-06 — "la pantalla que decide todo" (CLAUDE.md §6). Autoguardado
@@ -62,7 +92,17 @@ export function ConsultaForm({
 
   const form = useForm<ClinicalNoteSignInput>({
     resolver: zodResolver(clinicalNoteSignSchema),
-    defaultValues: { chiefComplaint: "", currentIllness: "", vitals: {}, physicalExam: "", assessment: "", plan: "", prognosis: "", diagnoses: [] },
+    defaultValues: {
+      chiefComplaint: "",
+      currentIllness: "",
+      vitals: {},
+      specialtyData: {},
+      physicalExam: "",
+      assessment: "",
+      plan: "",
+      prognosis: "",
+      diagnoses: [],
+    },
   });
 
   useEffect(() => {
@@ -81,7 +121,8 @@ export function ConsultaForm({
       form.reset({
         chiefComplaint: base.chiefComplaint ?? "",
         currentIllness: base.currentIllness ?? "",
-        vitals: base.vitals ?? {},
+        vitals: stripComputedVitals(base.vitals ?? {}),
+        specialtyData: unwrapSpecialtyData(base.specialtyData ?? {}),
         physicalExam: base.physicalExam ?? "",
         assessment: base.assessment ?? "",
         plan: base.plan ?? "",
@@ -108,6 +149,7 @@ export function ConsultaForm({
     chiefComplaint: watched.chiefComplaint,
     currentIllness: watched.currentIllness,
     vitals: watched.vitals,
+    specialtyData: watched.specialtyData,
     physicalExam: watched.physicalExam,
     assessment: watched.assessment,
     plan: watched.plan,
@@ -307,6 +349,12 @@ export function ConsultaForm({
           <h2 className="mb-2 text-base font-semibold text-gray-900">Signos vitales</h2>
           <VitalsFields form={form} />
         </section>
+
+        <EscalasSection
+          accessToken={accessToken}
+          values={watched.specialtyData ?? {}}
+          onChange={(next) => form.setValue("specialtyData", next, { shouldDirty: true })}
+        />
 
         <FieldWrapper label="Exploración física (opcional)" htmlFor="physicalExam">
           <Textarea

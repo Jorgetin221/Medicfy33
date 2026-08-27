@@ -150,6 +150,22 @@ export class LabOrderService {
     });
   }
 
+  // §6.7: existía subir y revisar, pero ninguna ruta para volver a
+  // ver lo subido — un resultado quedaba huérfano en cuanto se
+  // cerraba la respuesta del POST. listResultsForPatient/getResultFile
+  // son lo que faltaba conectar, mismo patrón que getPdf() de arriba.
+  async listResultsForPatient(patientId: string) {
+    return this.prisma.labResult.findMany({ where: { patientId }, orderBy: { uploadedAt: "desc" } });
+  }
+
+  async getResultFile(resultId: string, patientId: string): Promise<{ buffer: Buffer; contentType: string }> {
+    const result = await this.prisma.labResult.findUnique({ where: { id: resultId } });
+    if (!result || result.patientId !== patientId) {
+      throw new ApiException("LAB_RESULT_NOT_FOUND", "Resultado no encontrado.", HttpStatus.NOT_FOUND);
+    }
+    return this.fileStorage.retrieve(result.fileKey);
+  }
+
   async reviewResult(resultId: string, doctorId: string, doctorComment: string) {
     const result = await this.prisma.labResult.findUnique({ where: { id: resultId } });
     if (!result) {

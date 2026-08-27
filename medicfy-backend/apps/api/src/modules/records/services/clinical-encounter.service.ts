@@ -2,6 +2,7 @@ import { HttpStatus, Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import type {
   ClinicalEncounterCreateInput,
+  ClinicalNoteCorrectionInput,
   ClinicalNoteDraftUpdateInput,
   ClinicalNoteSignInput,
 } from "@medicfy/contracts";
@@ -9,7 +10,9 @@ import { ApiException } from "../../../common/api-exception";
 import { PrismaService } from "../../../prisma/prisma.service";
 import { sha256Hex } from "../../../common/content-hash.util";
 import { omitUndefined } from "../../../common/omit-undefined";
+import { withComputedVitals } from "../../../common/vitals-calculations.util";
 import { AppointmentStateMachineService } from "../../scheduling/services/appointment-state-machine.service";
+import { SpecialtyScaleService } from "./specialty-scale.service";
 
 const ABANDONED_AFTER_HOURS = 72;
 
@@ -30,8 +33,27 @@ const ABANDONED_AFTER_HOURS = 72;
 export class ClinicalEncounterService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly appointments: AppointmentStateMachineService
+    private readonly appointments: AppointmentStateMachineService,
+    private readonly scales: SpecialtyScaleService
   ) {}
+
+  // Resuelve la especialidad del médico dueño del encuentro y computa
+  // specialtyData contra sus SpecialtyFieldSchema activos (ESCALAS).
+  // undefined si no vino specialtyData en el patch/input — firmar sin
+  // mandarlo sigue funcionando exactamente igual que antes de esto.
+  // version viaja junto con data porque EncounterSpecialtyData debe
+  // fijar la versión de los campos REALMENTE usados para este cálculo
+  // (M8-RN-014: "si cambia una guía, las notas viejas conservan su
+  // cálculo"), no cualquier versión de ESCALAS que exista hoy.
+  private async resolveSpecialtyData(
+    doctorId: string,
+    rawSpecialtyData: Record<string, number> | undefined
+  ): Promise<{ version: number; data: Record<string, unknown> } | undefined> {
+    if (!rawSpecialtyData) return undefined;
+    const doctor = await this.prisma.doctor.findUniqueOrThrow({ where: { id: doctorId } });
+    const fields = await this.scales.listActiveFields(doctor.primarySpecialtyId, "ESCALAS");
+    return { version: fields[0]?.version ?? 1, data: this.scales.computeAndValidate(fields, rawSpecialtyData) };
+  }
 
   // appointmentId es @unique en ClinicalEncounter (a propósito: una
   // cita, un encounter). /consulta/[appointmentId] puede disparar dos
@@ -89,10 +111,19 @@ export class ClinicalEncounterService {
   // nota de cabecera.
   async updateDraft(encounterId: string, patch: ClinicalNoteDraftUpdateInput) {
     const encounter = await this.assertDraft(encounterId);
-    const draftContent = { ...(encounter.draftContent as Record<string, unknown>), ...patch };
+    // IMC/escalas en vivo mientras se escribe — sign() vuelve a
+    // calcularlos de forma autoritativa a partir de los valores
+    // finales, nunca confía en lo que quedó guardado aquí.
+    const resolvedSpecialtyData = await this.resolveSpecialtyData(encounter.doctorId, patch.specialtyData);
+    const nextPatch = {
+      ...patch,
+      ...(patch.vitals ? { vitals: withComputedVitals(patch.vitals) } : {}),
+      ...(resolvedSpecialtyData ? { specialtyData: resolvedSpecialtyData.data } : {}),
+    };
+    const draftContent = { ...(encounter.draftContent as Record<string, unknown>), ...nextPatch };
     return this.prisma.clinicalEncounter.update({
       where: { id: encounterId },
-      data: { draftContent },
+      data: { draftContent: draftContent as unknown as Prisma.InputJsonValue },
     });
   }
 
@@ -110,14 +141,20 @@ export class ClinicalEncounterService {
     });
     const previousHashSha256 = previous?.contentHashSha256 ?? null;
 
-    const { diagnoses, physicalExam, prognosis, ...requiredNote } = input;
-    const noteContent = { ...requiredNote, physicalExam, prognosis };
-    const contentHashSha256 = sha256Hex({ noteContent, diagnoses, previousHashSha256, encounterId });
+    const { diagnoses, physicalExam, prognosis, vitals, specialtyData: rawSpecialtyData, ...requiredNote } = input;
+    // Autoritativo: el IMC y las escalas finales se calculan aquí
+    // sobre lo que de verdad se firma, no sobre lo que haya quedado en
+    // el draft — y ambos entran al hash, protegidos igual que el resto
+    // del contenido de la nota.
+    const computedVitals = withComputedVitals(vitals);
+    const resolvedSpecialtyData = await this.resolveSpecialtyData(encounter.doctorId, rawSpecialtyData);
+    const noteContent = { ...requiredNote, vitals: computedVitals, physicalExam, prognosis };
+    const contentHashSha256 = sha256Hex({ noteContent, diagnoses, specialtyData: resolvedSpecialtyData?.data, previousHashSha256, encounterId });
     const signedAt = new Date();
 
     return this.prisma.$transaction(async (tx) => {
       const note = await tx.clinicalNote.create({
-        data: { encounterId, ...requiredNote, ...omitUndefined({ physicalExam, prognosis }) },
+        data: { encounterId, ...requiredNote, vitals: computedVitals, ...omitUndefined({ physicalExam, prognosis }) },
       });
       if (diagnoses.length > 0) {
         // omitUndefined: icd10Code/codeAbsentReason son mutuamente
@@ -130,6 +167,15 @@ export class ClinicalEncounterService {
             ...required,
             ...omitUndefined({ icd10Code, codeAbsentReason }),
           })),
+        });
+      }
+      if (resolvedSpecialtyData && Object.keys(resolvedSpecialtyData.data).length > 0) {
+        await tx.encounterSpecialtyData.create({
+          data: {
+            encounterId,
+            specialtySchemaVersion: resolvedSpecialtyData.version,
+            data: resolvedSpecialtyData.data as unknown as Prisma.InputJsonValue,
+          },
         });
       }
       const updated = await tx.clinicalEncounter.update({
@@ -162,6 +208,64 @@ export class ClinicalEncounterService {
       await this.appointments.completeWithSignedNote(result.encounter.appointmentId, doctorUserId);
     }
     return result;
+  }
+
+  // M8-RN-001: "corregir = nota nueva con isCorrectionOfNoteId, nunca
+  // UPDATE" — el modelo y el contrato (clinicalNoteCorrectionSchema)
+  // ya existían desde que se construyó M8; esto es lo que faltaba
+  // conectar. Reusa exactamente el mismo patrón de creación de
+  // note+diagnoses que sign(), sobre un encounter que YA está SIGNED
+  // (nunca lo vuelve a tocar: el encounter no se re-firma, solo gana
+  // una nota más en su lista). Limitación heredada del esquema, no
+  // introducida aquí: EncounterDiagnosis solo referencia encounterId,
+  // no noteId — los diagnósticos de una corrección se suman a los
+  // del encounter, no reemplazan a los de la nota original en la
+  // base de datos (la interfaz decide cómo mostrarlo).
+  async correctNote(encounterId: string, doctorUserId: string, input: ClinicalNoteCorrectionInput) {
+    const encounter = await this.prisma.clinicalEncounter.findUnique({ where: { id: encounterId } });
+    if (!encounter) {
+      throw new ApiException("ENCOUNTER_NOT_FOUND", "Encuentro no encontrado.", HttpStatus.NOT_FOUND);
+    }
+    if (encounter.status !== "SIGNED") {
+      throw new ApiException(
+        "ENCOUNTER_NOT_SIGNED",
+        "Solo se puede corregir un encuentro ya firmado. Un borrador se edita directamente.",
+        HttpStatus.CONFLICT
+      );
+    }
+    const original = await this.prisma.clinicalNote.findUnique({ where: { id: input.isCorrectionOfNoteId } });
+    if (!original || original.encounterId !== encounterId) {
+      throw new ApiException(
+        "NOTE_NOT_FOUND",
+        "La nota que se intenta corregir no existe o no pertenece a este encuentro.",
+        HttpStatus.NOT_FOUND
+      );
+    }
+
+    const { diagnoses, physicalExam, prognosis, vitals, isCorrectionOfNoteId, ...requiredNote } = input;
+    const computedVitals = withComputedVitals(vitals);
+
+    return this.prisma.$transaction(async (tx) => {
+      const note = await tx.clinicalNote.create({
+        data: {
+          encounterId,
+          isCorrectionOfNoteId,
+          ...requiredNote,
+          vitals: computedVitals,
+          ...omitUndefined({ physicalExam, prognosis }),
+        },
+      });
+      if (diagnoses.length > 0) {
+        await tx.encounterDiagnosis.createMany({
+          data: diagnoses.map(({ icd10Code, codeAbsentReason, ...required }) => ({
+            encounterId,
+            ...required,
+            ...omitUndefined({ icd10Code, codeAbsentReason }),
+          })),
+        });
+      }
+      return note;
+    });
   }
 
   // M8-RN-003: un draft sin firmar >72h se marca abandonado —
