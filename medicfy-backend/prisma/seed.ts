@@ -203,6 +203,41 @@ async function seedEscalas(): Promise<void> {
   console.log(`Seeded ${ESCALAS_FIELDS.length} campos de escalas (Glasgow + Apgar).`);
 }
 
+
+// Prompt 9 / P4 §4.4: el clúster de respuestas negativas — la forma en
+// que cuatro médicos distintos dicen "no hay nada que reportar" — es
+// el grupo de duplicados más frecuente del sistema de referencia y no
+// lo resuelve ningún normalizador de forma (no comparten raíz). Se
+// siembra como UN término canónico del dominio ANTECEDENTE con las
+// variantes conocidas como sinónimos curados: el chequeo de alta del
+// catálogo (ClinicalCatalogService.create) los consulta, así que
+// ninguna variante puede volver a nacer como término separado.
+// El vocabulario de subtipos de antecedentes sigue siendo el enum
+// cerrado de 30 valores de clinical.schema.ts — esto lo complementa,
+// no lo sustituye.
+async function seedCatalogoAntecedentes(): Promise<void> {
+  const NEGATIVE_CLUSTER = {
+    domain: "ANTECEDENTE",
+    key: "negado",
+    preferredTerm: "Negado",
+    normalizedTerm: "negado",
+    codingSystem: "PROPIETARIO",
+    synonyms: ["Ninguno", "Ninguna", "Negados", "Negada", "SANO", "Sana", "Sin antecedentes"],
+  };
+  const existing = await prisma.clinicalCatalogTerm.findFirst({
+    where: { domain: NEGATIVE_CLUSTER.domain, key: NEGATIVE_CLUSTER.key },
+  });
+  if (existing) {
+    await prisma.clinicalCatalogTerm.update({
+      where: { id: existing.id },
+      data: { synonyms: NEGATIVE_CLUSTER.synonyms },
+    });
+  } else {
+    await prisma.clinicalCatalogTerm.create({ data: NEGATIVE_CLUSTER });
+  }
+  console.log("Seeded catálogo ANTECEDENTE: término canónico 'Negado' + sinónimos del clúster negativo.");
+}
+
 async function main(): Promise<void> {
   for (const specialty of SPECIALTIES) {
     await prisma.specialty.upsert({
@@ -238,6 +273,7 @@ async function main(): Promise<void> {
   console.log(`Seeded ${MEDICATIONS.length} medications.`);
 
   await seedEscalas();
+  await seedCatalogoAntecedentes();
   await seedAdmin();
 }
 

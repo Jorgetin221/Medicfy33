@@ -110,7 +110,7 @@ describe("Receta — duplicidad terapéutica (nombre exacto y clase ATC)", () =>
     const res = await request(app.getHttpServer())
       .post(`/records/patients/${patientId}/medications`)
       .set("Authorization", `Bearer ${accessToken}`)
-      .send({ genericName, dose: "dosis habitual", route: "oral", frequency: "según indicación", source: "Reportado por el paciente" });
+      .send({ genericName, dose: "dosis habitual", route: "VO", frequency: "según indicación", source: "PACIENTE" });
     expect(res.status).toBe(201);
   }
 

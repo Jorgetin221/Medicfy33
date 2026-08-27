@@ -11,6 +11,7 @@ export * from "./schemas/doctor.schema";
 export * from "./schemas/scheduling.schema";
 export * from "./schemas/patient.schema";
 export * from "./schemas/clinical.schema";
+export * from "./schemas/catalog.schema";
 export * from "./schemas/prescription.schema";
 export * from "./schemas/lab-order.schema";
 export * from "./errors/identity.errors";

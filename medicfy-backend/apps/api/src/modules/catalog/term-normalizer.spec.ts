@@ -72,15 +72,15 @@ describe("normalizeTerm() — el número no se toca donde el español es ambiguo
 
 describe("clinicalCatalogTermCreateSchema — R2: el sistema de codificación se declara siempre", () => {
   it("rechaza codingSystem vacío u omitido", () => {
-    const omitted = clinicalCatalogTermCreateSchema.safeParse({ domain: "D", key: "x", preferredTerm: "X" });
+    const omitted = clinicalCatalogTermCreateSchema.safeParse({ domain: "ANTECEDENTE", key: "x", preferredTerm: "X" });
     expect(omitted.success).toBe(false);
 
-    const empty = clinicalCatalogTermCreateSchema.safeParse({ domain: "D", key: "x", preferredTerm: "X", codingSystem: "" });
+    const empty = clinicalCatalogTermCreateSchema.safeParse({ domain: "ANTECEDENTE", key: "x", preferredTerm: "X", codingSystem: "" });
     expect(empty.success).toBe(false);
   });
 
   it("acepta \"PROPIETARIO\" como declaración explícita de que no hay sistema externo", () => {
-    const result = clinicalCatalogTermCreateSchema.safeParse({ domain: "D", key: "x", preferredTerm: "X", codingSystem: "PROPIETARIO" });
+    const result = clinicalCatalogTermCreateSchema.safeParse({ domain: "ANTECEDENTE", key: "x", preferredTerm: "X", codingSystem: "PROPIETARIO" });
     expect(result.success).toBe(true);
   });
 });

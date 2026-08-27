@@ -63,7 +63,9 @@ export const encounterDiagnosisSchema = z
   .object({
     icd10Code: z.string().min(1).max(10).optional(),
     codeAbsentReason: z.string().min(10, "Explica en al menos 10 caracteres por qué no hay código CIE-10.").max(500).optional(),
-    description: z.string().min(1),
+    // P4 §6.2: tope explícito — era el único campo clínico sin .max(),
+    // y el sitio natural donde acabaría pegado un párrafo narrativo.
+    description: z.string().min(1).max(500),
     diagnosisType: z.enum(["PRINCIPAL", "SECONDARY"]),
     certainty: z.enum(["SUSPECTED", "CONFIRMED"]),
   })
@@ -100,16 +102,65 @@ export const clinicalNoteCorrectionSchema = clinicalNoteSignSchema.extend({
 });
 export type ClinicalNoteCorrectionInput = z.infer<typeof clinicalNoteCorrectionSchema>;
 
+// P4 §6.1 (Fase 0): los vocabularios que ya se sabían cerrados dejan
+// de ser texto libre. Las listas salen de la propia auditoría (P4
+// §2.7-2.8) y de los hint de los formularios que ya las contenían como
+// sugerencia. DECISIÓN DELEGADA (Jorge, "aplicar recomendaciones
+// viables como decisiones tomadas") — los valores exactos quedan
+// sujetos a su revisión clínica.
+export const ALLERGY_TYPES = ["MEDICAMENTO", "ALIMENTO", "AMBIENTAL", "PICADURA", "LATEX", "CONTRASTE", "OTRO"] as const;
+export const ALLERGY_SEVERITIES = ["LEVE", "MODERADA", "GRAVE"] as const;
+export const CLINICAL_DATA_SOURCES = ["PACIENTE", "FAMILIAR", "EXPEDIENTE_PREVIO", "MEDICO"] as const;
+// P4 §2.8: "route es un catálogo cerrado en cualquier estándar del
+// mundo" — la lista es la de la propia auditoría.
+export const ADMINISTRATION_ROUTES = ["VO", "IV", "IM", "SC", "TOPICA", "OFTALMICA", "OTICA", "RECTAL", "INHALADA", "SUBLINGUAL"] as const;
+
+export const ALLERGY_TYPE_LABELS: Record<(typeof ALLERGY_TYPES)[number], string> = {
+  MEDICAMENTO: "Medicamento",
+  ALIMENTO: "Alimento",
+  AMBIENTAL: "Ambiental",
+  PICADURA: "Picadura de insecto",
+  LATEX: "Látex",
+  CONTRASTE: "Medio de contraste",
+  OTRO: "Otro",
+};
+export const ALLERGY_SEVERITY_LABELS: Record<(typeof ALLERGY_SEVERITIES)[number], string> = {
+  LEVE: "Leve",
+  MODERADA: "Moderada",
+  GRAVE: "Grave",
+};
+export const CLINICAL_DATA_SOURCE_LABELS: Record<(typeof CLINICAL_DATA_SOURCES)[number], string> = {
+  PACIENTE: "Referida por el paciente",
+  FAMILIAR: "Referida por un familiar",
+  EXPEDIENTE_PREVIO: "Expediente previo",
+  MEDICO: "Confirmada por el médico",
+};
+export const ADMINISTRATION_ROUTE_LABELS: Record<(typeof ADMINISTRATION_ROUTES)[number], string> = {
+  VO: "Vía oral",
+  IV: "Intravenosa",
+  IM: "Intramuscular",
+  SC: "Subcutánea",
+  TOPICA: "Tópica",
+  OFTALMICA: "Oftálmica",
+  OTICA: "Ótica",
+  RECTAL: "Rectal",
+  INHALADA: "Inhalada",
+  SUBLINGUAL: "Sublingual",
+};
+
 export const patientAllergyCreateSchema = z
   .object({
-    substance: z.string().min(1),
-    allergyType: z.string().min(1),
-    reaction: z.string().optional(),
-    severity: z.string().min(1),
+    // P4 §6.4: min(3) — una cadena de 1-2 caracteres («no», «x», «-»)
+    // convertía el cruce alergia↔receta por subcadena en falsos
+    // positivos garantizados («naproxeno».includes("no")).
+    substance: z.string().min(3, "Escribe el agente completo (mínimo 3 caracteres). Si no hay alergias, no captures una fila.").max(200),
+    allergyType: z.enum(ALLERGY_TYPES),
+    reaction: z.string().max(500).optional(),
+    severity: z.enum(ALLERGY_SEVERITIES),
     ageOfOnset: z.string().optional(),
     status: z.enum(["ACTIVE", "INACTIVE", "RULED_OUT"]).optional(),
     certainty: z.enum(["CONFIRMED", "LIKELY", "UNCERTAIN"]),
-    source: z.string().min(1),
+    source: z.enum(CLINICAL_DATA_SOURCES),
   })
   .strict();
 export type PatientAllergyCreateInput = z.infer<typeof patientAllergyCreateSchema>;
@@ -121,15 +172,19 @@ export const patientMedicationCreateSchema = z
   .object({
     genericName: z.string().min(1),
     brandName: z.string().optional(),
+    // dose se queda libre a propósito: es una decisión clínica para un
+    // paciente concreto, no un vocabulario (P4 §2.8).
     dose: z.string().min(1),
-    route: z.string().min(1),
-    frequency: z.string().min(1),
+    // P4 §6.1: route es catálogo cerrado; frequency se instrumenta en
+    // Fase 4 junto con la receta (P6), aquí sólo se acota.
+    route: z.enum(ADMINISTRATION_ROUTES),
+    frequency: z.string().min(1).max(120),
     startedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     suspendedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     reason: z.string().optional(),
     status: z.enum(["ACTIVE", "SUSPENDED", "COMPLETED"]).optional(),
     prescriber: z.string().optional(),
-    source: z.string().min(1),
+    source: z.enum(CLINICAL_DATA_SOURCES),
   })
   .strict();
 export type PatientMedicationCreateInput = z.infer<typeof patientMedicationCreateSchema>;

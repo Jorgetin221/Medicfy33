@@ -31,6 +31,11 @@ enum RoleName {
   SUPPORT
   ADMIN
   SUPERADMIN
+  // Prompt 10 / P4 §6.5: rol curador de catálogos clínicos. El alta,
+  // fusión y obsolescencia de términos de catálogo es un flujo aparte
+  // de la captura clínica ("los catálogos son cerrados") y exige este
+  // rol (o SUPERADMIN para el arranque). Ver CuratorGuard.
+  CURATOR
 
   @@map("role_name")
 }
@@ -122,6 +127,7 @@ model User {
   invitations       AssistantInvitation[] @relation("InvitingDoctor")
   verificationCodes VerificationCode[]
   passwordResets    PasswordResetToken[]
+  curatedTerms      ClinicalCatalogTerm[] @relation("CatalogTermCurator")
 
   @@map("users")
 }
@@ -1493,9 +1499,10 @@ enum ClinicalCatalogTermStatus {
 
 model ClinicalCatalogTerm {
   id            String                    @id @default(uuid())
-  // Discriminador del catálogo (ej. "ALERGIA_AGENTE") — String, no
-  // enum: el Prompt 9 todavía decide la lista completa de dominios, y
-  // un enum exigiría una migración por cada uno nuevo.
+  // Discriminador del catálogo (ej. "ALERGIA_AGENTE") — String en la
+  // base para no exigir una migración por dominio nuevo, pero CERRADO
+  // en el contrato: CATALOG_DOMAINS (catalog.schema.ts) es un z.enum
+  // y la API rechaza cualquier dominio fuera de esa lista (Prompt 9).
   domain        String
   key           String
   preferredTerm String
@@ -1514,13 +1521,15 @@ model ClinicalCatalogTerm {
   version       Int                       @default(1)
   status        ClinicalCatalogTermStatus @default(ACTIVE)
   mergedIntoId  String?
-  // Referencia descriptiva simple — se vuelve FK real a un usuario
-  // curador cuando exista ese rol (Prompt 10, fuera de este pase).
+  // Prompt 10: FK real al usuario curador que dio de alta el término.
+  // El servidor la fija con el actor autenticado — nunca viaja del
+  // cliente. Nullable sólo por los términos sembrados por seed.
   curatedBy     String?
   createdAt     DateTime                  @default(now()) @db.Timestamptz(3)
 
   mergedInto ClinicalCatalogTerm?  @relation("CatalogTermMerge", fields: [mergedIntoId], references: [id])
   mergedFrom ClinicalCatalogTerm[] @relation("CatalogTermMerge")
+  curator    User?                 @relation("CatalogTermCurator", fields: [curatedBy], references: [id])
 
   @@unique([domain, key])
   @@unique([domain, normalizedTerm])

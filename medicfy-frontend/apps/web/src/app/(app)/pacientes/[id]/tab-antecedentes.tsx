@@ -4,6 +4,14 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
+  ADMINISTRATION_ROUTES,
+  ADMINISTRATION_ROUTE_LABELS,
+  ALLERGY_SEVERITIES,
+  ALLERGY_SEVERITY_LABELS,
+  ALLERGY_TYPES,
+  ALLERGY_TYPE_LABELS,
+  CLINICAL_DATA_SOURCES,
+  CLINICAL_DATA_SOURCE_LABELS,
   patientAllergyCreateSchema,
   patientMedicationCreateSchema,
   type PatientAllergyCreateInput,
@@ -119,11 +127,25 @@ function AddAllergyForm({ patientId, accessToken, onCreated }: { patientId: stri
         <FieldWrapper label="Sustancia" htmlFor="allergy-substance" error={form.formState.errors.substance?.message}>
           <TextInput id="allergy-substance" error={!!form.formState.errors.substance} {...form.register("substance")} />
         </FieldWrapper>
-        <FieldWrapper label="Tipo" htmlFor="allergy-type" hint="p. ej. medicamento, alimento" error={form.formState.errors.allergyType?.message}>
-          <TextInput id="allergy-type" error={!!form.formState.errors.allergyType} {...form.register("allergyType")} />
+        <FieldWrapper label="Tipo" htmlFor="allergy-type" error={form.formState.errors.allergyType?.message}>
+          {/* P4 §6.1: vocabulario cerrado — el hint ya contenía la lista */}
+          <SelectInput id="allergy-type" error={!!form.formState.errors.allergyType} {...form.register("allergyType")}>
+            {ALLERGY_TYPES.map((value) => (
+              <option key={value} value={value}>
+                {ALLERGY_TYPE_LABELS[value]}
+              </option>
+            ))}
+          </SelectInput>
         </FieldWrapper>
         <FieldWrapper label="Severidad" htmlFor="allergy-severity" error={form.formState.errors.severity?.message}>
-          <TextInput id="allergy-severity" error={!!form.formState.errors.severity} {...form.register("severity")} />
+          {/* Cerrado para poder ordenar/filtrar por gravedad (P4 §2.7) */}
+          <SelectInput id="allergy-severity" error={!!form.formState.errors.severity} {...form.register("severity")}>
+            {ALLERGY_SEVERITIES.map((value) => (
+              <option key={value} value={value}>
+                {ALLERGY_SEVERITY_LABELS[value]}
+              </option>
+            ))}
+          </SelectInput>
         </FieldWrapper>
         <FieldWrapper label="Certeza" htmlFor="allergy-certainty">
           <SelectInput id="allergy-certainty" {...form.register("certainty")}>
@@ -135,8 +157,14 @@ function AddAllergyForm({ patientId, accessToken, onCreated }: { patientId: stri
         <FieldWrapper label="Reacción (opcional)" htmlFor="allergy-reaction">
           <TextInput id="allergy-reaction" {...form.register("reaction")} />
         </FieldWrapper>
-        <FieldWrapper label="Fuente" htmlFor="allergy-source" hint="p. ej. referida por paciente" error={form.formState.errors.source?.message}>
-          <TextInput id="allergy-source" error={!!form.formState.errors.source} {...form.register("source")} />
+        <FieldWrapper label="Fuente" htmlFor="allergy-source" error={form.formState.errors.source?.message}>
+          <SelectInput id="allergy-source" error={!!form.formState.errors.source} {...form.register("source")}>
+            {CLINICAL_DATA_SOURCES.map((value) => (
+              <option key={value} value={value}>
+                {CLINICAL_DATA_SOURCE_LABELS[value]}
+              </option>
+            ))}
+          </SelectInput>
         </FieldWrapper>
       </div>
       {submitError ? <ErrorState error={submitError} /> : null}
@@ -190,13 +218,26 @@ function AddMedicationForm({ patientId, accessToken, onCreated }: { patientId: s
           <TextInput id="med-dose-hab" error={!!form.formState.errors.dose} {...form.register("dose")} />
         </FieldWrapper>
         <FieldWrapper label="Vía" htmlFor="med-route-hab" error={form.formState.errors.route?.message}>
-          <TextInput id="med-route-hab" error={!!form.formState.errors.route} {...form.register("route")} />
+          {/* P4 §2.8: la vía de administración es un catálogo cerrado */}
+          <SelectInput id="med-route-hab" error={!!form.formState.errors.route} {...form.register("route")}>
+            {ADMINISTRATION_ROUTES.map((value) => (
+              <option key={value} value={value}>
+                {ADMINISTRATION_ROUTE_LABELS[value]}
+              </option>
+            ))}
+          </SelectInput>
         </FieldWrapper>
         <FieldWrapper label="Frecuencia" htmlFor="med-freq-hab" error={form.formState.errors.frequency?.message}>
           <TextInput id="med-freq-hab" error={!!form.formState.errors.frequency} {...form.register("frequency")} />
         </FieldWrapper>
-        <FieldWrapper label="Fuente" htmlFor="med-source" hint="p. ej. referido por paciente" error={form.formState.errors.source?.message}>
-          <TextInput id="med-source" error={!!form.formState.errors.source} {...form.register("source")} />
+        <FieldWrapper label="Fuente" htmlFor="med-source" error={form.formState.errors.source?.message}>
+          <SelectInput id="med-source" error={!!form.formState.errors.source} {...form.register("source")}>
+            {CLINICAL_DATA_SOURCES.map((value) => (
+              <option key={value} value={value}>
+                {CLINICAL_DATA_SOURCE_LABELS[value]}
+              </option>
+            ))}
+          </SelectInput>
         </FieldWrapper>
       </div>
       {submitError ? <ErrorState error={submitError} /> : null}

@@ -5,6 +5,11 @@ import { isValidCurp } from "../validators/curp";
 import { isValidBirthDate } from "../validators/birthDate";
 import { calculateAge } from "../validators/age";
 
+// P4 §2.11/§6.1: "el caso más claro de toda la auditoría" — un
+// catálogo de ocho valores modelado como texto libre. Se cierra aquí
+// antes de que el formulario lo exponga.
+export const BLOOD_TYPES = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"] as const;
+
 const emailSchema = z
   .string()
   .max(MAX_EMAIL_LENGTH, "Ingresa un correo electrónico válido.")
@@ -54,7 +59,9 @@ export const patientCreateSchema = z
     sexAtBirth: z.enum(["F", "M"]),
     genderIdentity: z.string().max(60).optional(),
     curp: curpSchema.optional(),
-    bloodType: z.string().max(10).optional(),
+    // P4 §6.1: catálogo de OCHO valores cerrado ANTES de exponerse en
+    // la UI — es un campo que alguien leerá en una urgencia.
+    bloodType: z.enum(BLOOD_TYPES).optional(),
     phoneE164: phoneSchema,
     email: emailSchema,
     addressStreet: z.string().max(200).optional(),

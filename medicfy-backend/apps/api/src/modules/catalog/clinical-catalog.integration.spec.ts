@@ -149,6 +149,34 @@ describe("ClinicalCatalogService — Prompt 7: tabla base de catálogo", () => {
     }
   });
 
+  it("Prompt 11: rechaza un término cuyo SINÓNIMO colisiona con el preferredTerm de otro ya existente (ambas direcciones del chequeo)", async () => {
+    const domain = uniqueKey("syn-domain");
+    const existing = await service.create({ domain, key: uniqueKey("s1"), preferredTerm: "Hipertensión", codingSystem: "PROPIETARIO" });
+
+    // Dirección: sinónimo de entrada vs preferredTerm existente.
+    await expect(
+      service.create({
+        domain,
+        key: uniqueKey("s2"),
+        preferredTerm: "Presión alta",
+        codingSystem: "PROPIETARIO",
+        synonyms: ["HIPERTENSION"],
+      })
+    ).rejects.toMatchObject({ code: "CATALOG_TERM_DUPLICATE_NORMALIZED_FORM", details: { existingTermId: existing.id } });
+
+    // Dirección: preferredTerm de entrada vs sinónimo existente.
+    const withSynonyms = await service.create({
+      domain,
+      key: uniqueKey("s3"),
+      preferredTerm: "Negado",
+      codingSystem: "PROPIETARIO",
+      synonyms: ["Ninguno", "SANO"],
+    });
+    await expect(
+      service.create({ domain, key: uniqueKey("s4"), preferredTerm: "sano", codingSystem: "PROPIETARIO" })
+    ).rejects.toMatchObject({ code: "CATALOG_TERM_DUPLICATE_NORMALIZED_FORM", details: { existingTermId: withSynonyms.id } });
+  });
+
   it("el mismo término normalizado SÍ se permite en dominios distintos", async () => {
     const domainA = uniqueKey("norm-a");
     const domainB = uniqueKey("norm-b");

@@ -94,7 +94,22 @@ export function NoteTemplateBar({
         </span>
       ))}
       {isCreating ? (
-        <div className="flex flex-wrap items-end gap-2">
+        <div className="flex w-full flex-col gap-2">
+          {/* P4 §2.5 (#14): el texto que se congela como plantilla es el
+              valor CRUDO del campo activo — escrito frente a un paciente
+              concreto. La vista previa + el aviso obligan a verlo antes
+              de guardarlo, porque una plantilla con datos de un paciente
+              se reinsertará en expedientes de OTROS pacientes y esas
+              notas se firman y se vuelven inmutables. */}
+          <div className="w-full rounded-md border border-warn-600 bg-warn-50 p-2">
+            <p className="text-sm font-medium text-gray-700">Esto es exactamente lo que se guardará como plantilla:</p>
+            <pre className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap text-sm text-gray-700">{pendingContent.trim()}</pre>
+            <p className="mt-1 text-sm text-gray-600">
+              Revisa que no contenga datos del paciente actual (nombre, edad, teléfono, hallazgos específicos). Una plantilla se
+              reutiliza en expedientes de otros pacientes.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-end gap-2">
           <FieldWrapper label="Nombre" htmlFor="template-label">
             <TextInput id="template-label" value={label} onChange={(e) => setLabel(e.target.value)} className="w-40" />
           </FieldWrapper>
@@ -113,6 +128,7 @@ export function NoteTemplateBar({
           <Button type="button" variant="secondary" onClick={() => setIsCreating(false)} className="min-h-11 px-3 text-sm">
             Cancelar
           </Button>
+          </div>
         </div>
       ) : (
         <Button type="button" variant="secondary" onClick={() => setIsCreating(true)} disabled={!pendingContent.trim()} className="min-h-11 px-3 text-sm">
