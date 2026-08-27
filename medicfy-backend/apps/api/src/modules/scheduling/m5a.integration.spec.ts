@@ -199,7 +199,7 @@ describe("M5a — Pacientes y citas (núcleo)", () => {
         .send({ patientId: paciente.id, serviceId: servicioPropio.id, startsAt: isoDaysFromNow(3) });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe("CARE_RELATIONSHIP_REQUIRED");
+      expect(res.body.error.code).toBe("CARE_RELATIONSHIP_REQUIRED");
 
       // Lo que de verdad importa: la cita rechazada no dejó atrás una
       // llave. Antes, este mismo POST fabricaba un care_relationship
@@ -225,7 +225,7 @@ describe("M5a — Pacientes y citas (núcleo)", () => {
         where: { patientId: paciente.id, doctorId: doctorRecord.id },
       });
       expect(vinculos).toHaveLength(1);
-      expect(vinculos[0].origin).toBe("CREATED_BY_DOCTOR");
+      expect(vinculos[0]?.origin).toBe("CREATED_BY_DOCTOR");
     });
 
     it("un vínculo REVOCADO no se reabre agendando una cita", async () => {
@@ -245,7 +245,7 @@ describe("M5a — Pacientes y citas (núcleo)", () => {
         .send({ patientId: paciente.id, serviceId: servicio.id, startsAt: isoDaysFromNow(5) });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe("CARE_RELATIONSHIP_REQUIRED");
+      expect(res.body.error.code).toBe("CARE_RELATIONSHIP_REQUIRED");
     });
 
     it("GET /patients/:id no entrega el perfil de un paciente ajeno", async () => {
@@ -377,18 +377,13 @@ describe("M5a — Pacientes y citas (núcleo)", () => {
   });
 
   describe("AUTH-RN-001 — care_relationship: tres orígenes y caducidad a 18 meses", () => {
-    it("origin=APPOINTMENT is set when a relationship is created via booking", async () => {
-      const doctor = await registerDoctor();
-      const patient = await createAdultPatient(doctor.accessToken);
-      const otherDoctor = await registerDoctor();
-      const otherService = await createService(otherDoctor.accessToken);
-
-      await bookAppointment(otherDoctor.accessToken, patient.id, otherService.id, isoDaysFromNow(10));
-
-      const doctorRecord = await prisma.doctor.findUniqueOrThrow({ where: { userId: otherDoctor.userId } });
-      const relationship = await prisma.careRelationship.findFirstOrThrow({ where: { patientId: patient.id, doctorId: doctorRecord.id } });
-      expect(relationship.origin).toBe("APPOINTMENT");
-    });
+    // Bloque 0 (remediación IDOR #1): agendar YA NO emite el vínculo —
+    // un médico sin care_relationship recibe 403 y no deja llave atrás
+    // (cubierto arriba en "R4 — autorización por recurso"). El origen
+    // APPOINTMENT queda reservado al flujo donde es el PACIENTE quien
+    // agenda (M5b, agendamiento público, no construido): ahí sí es el
+    // paciente quien abre la puerta, no el médico quien se la fabrica.
+    it.todo("origin=APPOINTMENT se crea cuando el PACIENTE agenda por el flujo público (M5b)");
 
     it("treats a relationship as inactive once expiresAt has passed, and flips it to EXPIRED", async () => {
       const doctor = await registerDoctor();

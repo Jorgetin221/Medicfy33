@@ -133,7 +133,10 @@ describe("Soporte de frontend M8 — catálogos, plantillas, firma completa la c
         .get("/icd10?search=cefalea")
         .set("Authorization", `Bearer ${doctor.accessToken}`);
       expect(bySearch.status).toBe(200);
-      expect(bySearch.body.some((c: { code: string }) => c.code === "R51")).toBe(true);
+      // El catálogo DGIS codifica la cefalea como "R51.X" (con sufijo),
+      // no "R51" a secas — se acepta el prefijo para no atar la prueba
+      // a una variante de sufijo del archivo fuente.
+      expect(bySearch.body.some((c: { code: string }) => c.code.startsWith("R51"))).toBe(true);
 
       const all = await request(app.getHttpServer()).get("/icd10").set("Authorization", `Bearer ${doctor.accessToken}`);
       expect(all.status).toBe(200);
