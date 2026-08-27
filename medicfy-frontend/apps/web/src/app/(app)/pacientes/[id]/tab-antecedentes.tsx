@@ -47,53 +47,79 @@ export function TabAntecedentes({
   onChanged: () => void;
 }) {
   return (
-    <div className="flex flex-col gap-6">
-      <Card>
-        <h2 className="mb-3 text-base font-semibold text-gray-900">Alergias</h2>
-        <AllergySummary allergies={allergies} />
-        {allergies.some((a) => a.status !== "ACTIVE") && (
-          <ul className="mt-2 flex flex-col gap-1">
-            {allergies
-              .filter((a) => a.status !== "ACTIVE")
-              .map((a) => (
-                <li key={a.id} className="text-sm text-gray-500">
-                  {a.substance} — {a.status === "INACTIVE" ? "inactiva" : "descartada"}
+    <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+      <nav aria-label="Bloques de la historia clínica" className="order-2 flex flex-row flex-wrap gap-1 lg:sticky lg:top-6 lg:order-1 lg:w-56 lg:shrink-0 lg:flex-col">
+        {BLOQUES.map((b) => (
+          <a
+            key={b.id}
+            href={`#${b.id}`}
+            className="min-h-11 rounded-md px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 lg:flex lg:items-center"
+          >
+            {b.label}
+          </a>
+        ))}
+      </nav>
+
+      <div className="order-1 flex flex-1 flex-col gap-6 lg:order-2">
+        <Card id="bloque-alergias" className="scroll-mt-20">
+          <h2 className="mb-3 text-base font-semibold text-gray-900">Alergias</h2>
+          <AllergySummary allergies={allergies} />
+          {allergies.some((a) => a.status !== "ACTIVE") && (
+            <ul className="mt-2 flex flex-col gap-1">
+              {allergies
+                .filter((a) => a.status !== "ACTIVE")
+                .map((a) => (
+                  <li key={a.id} className="text-sm text-gray-500">
+                    {a.substance} — {a.status === "INACTIVE" ? "inactiva" : "descartada"}
+                  </li>
+                ))}
+            </ul>
+          )}
+          <AddAllergyForm patientId={patientId} accessToken={accessToken} onCreated={onChanged} />
+        </Card>
+
+        <Card id="bloque-medicacion" className="scroll-mt-20">
+          <h2 className="mb-3 text-base font-semibold text-gray-900">Medicamentos habituales</h2>
+          {medications.length === 0 ? (
+            <p className="text-base text-gray-500">Ninguno registrado.</p>
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {medications.map((m) => (
+                <li key={m.id} className="rounded-md border border-gray-300 px-3 py-2">
+                  <p className="text-base font-medium text-gray-900">
+                    {m.genericName} {m.brandName ? `(${m.brandName})` : ""}
+                  </p>
+                  <p className="text-sm text-gray-700">
+                    {m.dose} · {m.route} · {m.frequency}
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    {m.status === "ACTIVE" ? "Activo" : m.status === "SUSPENDED" ? "Suspendido" : "Completado"}
+                    {m.reason ? ` — ${m.reason}` : ""}
+                  </p>
                 </li>
               ))}
-          </ul>
-        )}
-        <AddAllergyForm patientId={patientId} accessToken={accessToken} onCreated={onChanged} />
-      </Card>
+            </ul>
+          )}
+          <AddMedicationForm patientId={patientId} accessToken={accessToken} onCreated={onChanged} />
+        </Card>
 
-      <Card>
-        <h2 className="mb-3 text-base font-semibold text-gray-900">Medicamentos habituales</h2>
-        {medications.length === 0 ? (
-          <p className="text-base text-gray-500">Ninguno registrado.</p>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {medications.map((m) => (
-              <li key={m.id} className="rounded-md border border-gray-300 px-3 py-2">
-                <p className="text-base font-medium text-gray-900">
-                  {m.genericName} {m.brandName ? `(${m.brandName})` : ""}
-                </p>
-                <p className="text-sm text-gray-700">
-                  {m.dose} · {m.route} · {m.frequency}
-                </p>
-                <p className="text-sm text-gray-500">
-                  {m.status === "ACTIVE" ? "Activo" : m.status === "SUSPENDED" ? "Suspendido" : "Completado"}
-                  {m.reason ? ` — ${m.reason}` : ""}
-                </p>
-              </li>
-            ))}
-          </ul>
-        )}
-        <AddMedicationForm patientId={patientId} accessToken={accessToken} onCreated={onChanged} />
-      </Card>
-
-      <AntecedentesEditor patientId={patientId} accessToken={accessToken} historyItems={historyItems} onChanged={onChanged} />
+        <AntecedentesEditor patientId={patientId} accessToken={accessToken} historyItems={historyItems} onChanged={onChanged} />
+      </div>
     </div>
   );
 }
+
+// Orden de exploración de la página, no el orden del mockup — Alergias
+// y Medicación viven primero en el DOM (tarjetas propias de este
+// componente); Historia clínica los bloques de AntecedentesEditor.
+const BLOQUES = [
+  { id: "bloque-alergias", label: "Alergias" },
+  { id: "bloque-medicacion", label: "Medicación crónica" },
+  { id: "bloque-heredofamiliares", label: "Heredofamiliares" },
+  { id: "bloque-no-patologicos", label: "No patológicos" },
+  { id: "bloque-patologicos", label: "Personales patológicos" },
+  { id: "bloque-gineco", label: "Gineco-obstétricos" },
+];
 
 function AddAllergyForm({ patientId, accessToken, onCreated }: { patientId: string; accessToken: string; onCreated: () => void }) {
   const [agentOptions, setAgentOptions] = useState<{ key: string; preferredTerm: string }[]>([]);

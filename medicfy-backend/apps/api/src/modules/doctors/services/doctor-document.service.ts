@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { DoctorDocument, DoctorDocumentType } from "@prisma/client";
 import { PrismaService } from "../../../prisma/prisma.service";
 import { FILE_STORAGE_PORT, type FileStoragePort } from "./file-storage.port";
+import { extensionForMimeType } from "./local-disk-file-storage.adapter";
 
 // spec M2 validaciones: "Documentos: PDF/JPG/PNG, ≤10 MB, hash SHA-256
 // almacenado."
@@ -32,7 +33,10 @@ export class DoctorDocumentService {
     }
 
     const fileHashSha256 = createHash("sha256").update(params.buffer).digest("hex");
-    const fileKey = `doctor-documents/${params.doctorId}/${randomUUID()}`;
+    // Sin extensión, retrieve() no puede inferir el content-type y cae
+    // a application/octet-stream (mismo hallazgo que lab-results —
+    // ver lab-results.controller.ts).
+    const fileKey = `doctor-documents/${params.doctorId}/${randomUUID()}${extensionForMimeType(params.mimeType)}`;
     await this.fileStorage.store({ fileKey, buffer: params.buffer, contentType: params.mimeType });
 
     return this.prisma.doctorDocument.create({

@@ -18,6 +18,12 @@ export default {
           300: "var(--gray-300)",
           100: "var(--gray-100)",
         },
+        rail: {
+          bg: "var(--rail-bg)",
+          icon: "var(--rail-icon)",
+          "icon-active-bg": "var(--rail-icon-active-bg)",
+          "icon-active": "var(--rail-icon-active)",
+        },
         danger: { 600: "var(--danger-600)", 50: "var(--danger-050)" },
         warn: { 600: "var(--warn-600)", 50: "var(--warn-050)" },
         success: { 600: "var(--success-600)", 50: "var(--success-050)" },

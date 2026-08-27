@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { ApiError } from "@/lib/api-client";
+import { cn } from "@/lib/utils";
 
 // CLAUDE.md §5: "Cada pantalla necesita sus cuatro estados: vacío,
 // cargando, error y sin conexión." These four are shared across every
@@ -46,6 +47,10 @@ export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () =>
   );
 }
 
-export function Card({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={`rounded-lg border border-gray-300 bg-white p-6 shadow-card ${className ?? ""}`}>{children}</div>;
+export function Card({ children, className, id }: { children: ReactNode; className?: string; id?: string }) {
+  return (
+    <div id={id} className={cn("rounded-lg border border-gray-300 bg-white p-6 shadow-card", className)}>
+      {children}
+    </div>
+  );
 }

@@ -10,6 +10,7 @@ import { buildLegalSnapshot } from "../../../common/legal-snapshot.util";
 import { SignatureVerificationService } from "../../identity/services/signature-verification.service";
 import { FILE_STORAGE_PORT, type FileStoragePort } from "../../doctors/services/file-storage.port";
 import { LabOrderPdfService } from "./lab-order-pdf.service";
+import { assertEncounterEditableForDocuments } from "../../../common/encounter-editable.util";
 
 // M10 — ÓRDENES DE LABORATORIO (parcial en MVP, spec §2.2): PDF
 // firmado, sin portal de laboratorio. R1: lab_orders es append-only
@@ -35,16 +36,13 @@ export class LabOrderService {
       await this.signatureVerification.verify(doctorUserId, input.password, input.totpCode);
     }
 
-    // Prompt 32/37 letra: los documentos se emiten desde una nota
-    // FIRMADA — un borrador no emite órdenes.
-    const encounter = await this.prisma.clinicalEncounter.findUnique({ where: { id: encounterId }, select: { status: true } });
-    if (!encounter || encounter.status !== "SIGNED") {
-      throw new ApiException(
-        "LAB_ORDER_REQUIRES_SIGNED_NOTE",
-        "La orden de estudios se emite desde una nota FIRMADA — firma la consulta primero.",
-        HttpStatus.UNPROCESSABLE_ENTITY
-      );
-    }
+    // Fase 4b: la orden se emite contra un encuentro DRAFT o SIGNED —
+    // ver encounter-editable.util.ts (mismo cambio que prescriptions).
+    const encounter = await this.prisma.clinicalEncounter.findUnique({
+      where: { id: encounterId },
+      select: { status: true, startedAt: true, abandonedAt: true },
+    });
+    assertEncounterEditableForDocuments(encounter, "LAB_ORDER_ENCOUNTER_NOT_EDITABLE");
 
     const [doctor, patient] = await Promise.all([
       this.prisma.doctor.findUnique({ where: { id: doctorId }, include: { primarySpecialty: true, locations: { where: { isPrimary: true }, take: 1 } } }),

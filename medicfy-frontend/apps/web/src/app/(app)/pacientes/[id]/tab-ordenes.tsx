@@ -1,15 +1,42 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { apiFetch, apiFetchBlob, apiUpload } from "@/lib/api-client";
 import type { TimelineLabOrder, TimelineStandaloneResult } from "@/lib/use-patient-clinical";
 import { Card, EmptyState, ErrorState } from "@/components/ui/states";
 import { Button } from "@/components/ui/button";
+import { Panel } from "@/components/ui/panel";
+import { PdfViewer } from "@/components/clinical/pdf-viewer";
+
+// Un resultado subido — GET /lab-results/patients/:patientId, la
+// misma forma que devuelve el POST de subida. TimelineLabOrder /
+// TimelineStandaloneResult (use-patient-clinical.ts) no traen
+// labOrderId por resultado ni el resultId de cada archivo, así que no
+// alcanzan para armar el botón "Ver resultado" — esto sí.
+interface LabResultRecord {
+  id: string;
+  labOrderId: string | null;
+  labName: string | null;
+  resultDate: string | null;
+  uploadedAt: string;
+  uploadedByRole: "DOCTOR" | "PATIENT";
+  reviewedAt: string | null;
+  doctorComment: string | null;
+}
 
 const MX_TIME_ZONE = "America/Mexico_City";
 function formatMxDate(iso: string): string {
   return new Intl.DateTimeFormat("es-MX", { timeZone: MX_TIME_ZONE, dateStyle: "long" }).format(new Date(iso));
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
 }
 
 const STATUS_LABEL: Record<TimelineLabOrder["status"], string> = {
@@ -22,6 +49,15 @@ const STANDALONE_STATUS_LABEL: Record<TimelineStandaloneResult["status"], string
   PENDING_REVIEW: "Pendiente de revisión",
   REVIEWED: "Revisado",
 };
+
+// Especificación §14 (M10, casos límite): "Estudios de imagen → se
+// aceptan como adjunto PDF/JPG; sin visor DICOM." Se agrega PNG por
+// ser el mismo trío que ya acepta el resto de la app para documentos
+// escaneados (§9, perfil del médico). El servidor (labResultFileFilter,
+// lab-results.controller.ts) es la autoridad real — esto es solo el
+// filtro nativo del selector de archivo y el texto de ayuda.
+const LAB_RESULT_ACCEPT = "application/pdf,image/jpeg,image/png";
+const LAB_RESULT_FORMAT_HINT = "PDF, JPG o PNG · máx. 10 MB";
 
 export function TabOrdenes({
   accessToken,
@@ -43,6 +79,109 @@ export function TabOrdenes({
   const [error, setError] = useState<unknown>(null);
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const standaloneFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Antes solo se mostraba el estado ("Pendiente de revisión") sin
+  // ninguna forma de abrir el archivo — GET .../file ya existía en el
+  // backend, solo faltaba conectarlo aquí.
+  const [results, setResults] = useState<LabResultRecord[] | null>(null);
+  const [viewingId, setViewingId] = useState<string | null>(null);
+  const [reviewingId, setReviewingId] = useState<string | null>(null);
+  // "Ver sin descargar" pasó por dos intentos fallidos: window.open()
+  // tras un await ya no cuenta como gesto directo del usuario para
+  // varios navegadores (lo bloquean o lo mandan a descargas), y una
+  // URL blob:/data: en un <iframe> depende de que ESE navegador traiga
+  // habilitado su visor de PDF nativo — no es parejo entre navegadores
+  // ni configuraciones. PdfViewer (pdf.js) dibuja el PDF con Canvas,
+  // sin depender de ningún visor externo. Para imágenes sí basta un
+  // <img> normal — ahí nunca hubo el problema.
+  const [preview, setPreview] = useState<{ mimeType: string; pdfData: ArrayBuffer | null; imageUrl: string | null; downloadUrl: string } | null>(null);
+
+  const loadResults = useCallback(() => {
+    apiFetch<LabResultRecord[]>(`/lab-results/patients/${patientId}`, { accessToken })
+      .then(setResults)
+      .catch(setError);
+  }, [patientId, accessToken]);
+
+  useEffect(loadResults, [loadResults]);
+
+  async function viewResult(resultId: string) {
+    setError(null);
+    setViewingId(resultId);
+    try {
+      const blob = await apiFetchBlob(`/lab-results/patients/${patientId}/${resultId}/file`, { accessToken });
+      if (!blob) return;
+      const downloadUrl = URL.createObjectURL(blob);
+      if (blob.type === "application/pdf") {
+        setPreview({ mimeType: blob.type, pdfData: await blob.arrayBuffer(), imageUrl: null, downloadUrl });
+      } else {
+        setPreview({ mimeType: blob.type, pdfData: null, imageUrl: await blobToDataUrl(blob), downloadUrl });
+      }
+    } catch (err) {
+      setError(err);
+    } finally {
+      setViewingId(null);
+    }
+  }
+
+  function closePreview() {
+    if (preview) URL.revokeObjectURL(preview.downloadUrl);
+    setPreview(null);
+  }
+
+  async function markReviewed(resultId: string) {
+    const doctorComment = window.prompt("Comentario de revisión (obligatorio):");
+    if (!doctorComment || !doctorComment.trim()) return;
+    setError(null);
+    setReviewingId(resultId);
+    try {
+      await apiFetch(`/lab-results/patients/${patientId}/${resultId}/review`, { method: "POST", accessToken, body: { doctorComment } });
+      loadResults();
+    } catch (err) {
+      setError(err);
+    } finally {
+      setReviewingId(null);
+    }
+  }
+
+  function ResultRow({ result }: { result: LabResultRecord }) {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-gray-300 px-3 py-2">
+        <div>
+          <p className="text-base text-gray-900">
+            {result.labName || "Resultado"}
+            {result.resultDate ? ` · estudio del ${formatMxDate(result.resultDate)}` : ""}
+          </p>
+          <p className="text-sm text-gray-500">
+            Subido {formatMxDate(result.uploadedAt)} por {result.uploadedByRole === "DOCTOR" ? "el médico" : "el paciente"}
+            {result.doctorComment ? ` · "${result.doctorComment}"` : ""}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span
+            className={`whitespace-nowrap rounded-full border px-3 py-1 text-sm font-medium ${
+              result.reviewedAt ? "border-success-600 text-success-600" : "border-warn-600 text-warn-600"
+            }`}
+          >
+            {result.reviewedAt ? "Revisado" : "Pendiente de revisión"}
+          </span>
+          <Button type="button" variant="secondary" isLoading={viewingId === result.id} onClick={() => void viewResult(result.id)} className="min-h-11 px-3 text-sm">
+            Ver resultado
+          </Button>
+          {!result.reviewedAt ? (
+            <Button
+              type="button"
+              variant="secondary"
+              isLoading={reviewingId === result.id}
+              onClick={() => void markReviewed(result.id)}
+              className="min-h-11 px-3 text-sm"
+            >
+              Marcar como revisado
+            </Button>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
 
   async function cancelOrder(id: string) {
     const reason = window.prompt("Motivo de cancelación:");
@@ -78,6 +217,7 @@ export function TabOrdenes({
     try {
       await apiUpload(`/lab-results/patients/${patientId}?labOrderId=${labOrderId}`, file, { accessToken });
       onChanged();
+      loadResults();
     } catch (err) {
       setError(err);
     } finally {
@@ -96,6 +236,7 @@ export function TabOrdenes({
     try {
       await apiUpload(`/lab-results/patients/${patientId}`, file, { accessToken });
       onChanged();
+      loadResults();
     } catch (err) {
       setError(err);
     } finally {
@@ -116,6 +257,7 @@ export function TabOrdenes({
       <input
         ref={standaloneFileInputRef}
         type="file"
+        accept={LAB_RESULT_ACCEPT}
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0];
@@ -132,6 +274,7 @@ export function TabOrdenes({
       >
         Subir resultado
       </Button>
+      <span className="text-sm text-gray-500">{LAB_RESULT_FORMAT_HINT}</span>
     </div>
   );
 
@@ -139,30 +282,58 @@ export function TabOrdenes({
     <div>
       <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500">Resultados sin orden</h3>
       <ul className="flex flex-col gap-2">
-        {standaloneResults.map((r) => (
-          <li key={r.id}>
-            <Card>
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-base font-medium text-gray-900">{r.labName || "Resultado sin nombre de laboratorio"}</p>
-                  <p className="text-sm text-gray-500">
-                    {r.resultDate ? `Fecha del estudio: ${formatMxDate(r.resultDate)} · ` : ""}
-                    Subido {formatMxDate(r.uploadedAt)} por {r.uploadedByRole === "DOCTOR" ? "el médico" : "el paciente"}
-                  </p>
-                </div>
-                <span
-                  className={`whitespace-nowrap rounded-full border px-3 py-1 text-sm font-medium ${
-                    r.status === "REVIEWED" ? "border-success-600 text-success-600" : "border-warn-600 text-warn-600"
-                  }`}
-                >
-                  {STANDALONE_STATUS_LABEL[r.status]}
-                </span>
-              </div>
-            </Card>
-          </li>
-        ))}
+        {standaloneResults.map((r) => {
+          const loaded = results?.find((full) => full.id === r.id);
+          return (
+            <li key={r.id}>
+              {loaded ? (
+                <ResultRow result={loaded} />
+              ) : (
+                // Mientras carga /lab-results/patients/:id (loadResults),
+                // se muestra el resumen que ya trajo el timeline del
+                // paciente para no dejar la pantalla en blanco.
+                <Card>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-base font-medium text-gray-900">{r.labName || "Resultado sin nombre de laboratorio"}</p>
+                      <p className="text-sm text-gray-500">
+                        {r.resultDate ? `Fecha del estudio: ${formatMxDate(r.resultDate)} · ` : ""}
+                        Subido {formatMxDate(r.uploadedAt)} por {r.uploadedByRole === "DOCTOR" ? "el médico" : "el paciente"}
+                      </p>
+                    </div>
+                    <span
+                      className={`whitespace-nowrap rounded-full border px-3 py-1 text-sm font-medium ${
+                        r.status === "REVIEWED" ? "border-success-600 text-success-600" : "border-warn-600 text-warn-600"
+                      }`}
+                    >
+                      {STANDALONE_STATUS_LABEL[r.status]}
+                    </span>
+                  </div>
+                </Card>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </div>
+  );
+
+  const previewPanel = (
+    <Panel open={preview !== null} onClose={closePreview} title="Resultado de laboratorio" wide>
+      {preview ? (
+        <div className="flex flex-col gap-3">
+          <a href={preview.downloadUrl} download className="w-fit text-sm font-medium text-brand-700 underline">
+            Descargar archivo original
+          </a>
+          {preview.pdfData ? (
+            <PdfViewer data={preview.pdfData} />
+          ) : preview.imageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element -- data: URL, no Next Image loader aplica
+            <img src={preview.imageUrl} alt="Resultado de laboratorio" className="max-w-full" />
+          ) : null}
+        </div>
+      ) : null}
+    </Panel>
   );
 
   if (labOrders.length === 0) {
@@ -178,6 +349,7 @@ export function TabOrdenes({
         ) : (
           standaloneSection
         )}
+        {previewPanel}
       </div>
     );
   }
@@ -216,6 +388,15 @@ export function TabOrdenes({
               <p className="mt-2 break-all text-sm text-gray-500">
                 Verificación: <span className="font-mono">/verificar/{o.qrVerificationToken}</span>
               </p>
+              {results && results.some((r) => r.labOrderId === o.id) ? (
+                <div className="mt-3 flex flex-col gap-2">
+                  {results
+                    .filter((r) => r.labOrderId === o.id)
+                    .map((r) => (
+                      <ResultRow key={r.id} result={r} />
+                    ))}
+                </div>
+              ) : null}
               <div className="mt-3 flex flex-wrap items-center gap-3">
                 <Button
                   type="button"
@@ -233,6 +414,7 @@ export function TabOrdenes({
                         fileInputRefs.current[o.id] = el;
                       }}
                       type="file"
+                      accept={LAB_RESULT_ACCEPT}
                       className="hidden"
                       onChange={(e) => {
                         const file = e.target.files?.[0];
@@ -249,6 +431,7 @@ export function TabOrdenes({
                     >
                       Subir resultado
                     </Button>
+                    <span className="text-sm text-gray-500">{LAB_RESULT_FORMAT_HINT}</span>
                     <Button
                       type="button"
                       variant="danger"
@@ -266,6 +449,7 @@ export function TabOrdenes({
         ))}
       </ul>
       {standaloneSection}
+      {previewPanel}
     </div>
   );
 }

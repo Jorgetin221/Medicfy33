@@ -9,6 +9,7 @@ import { nextPrescriptionFolio } from "../../../common/folio.util";
 import { omitUndefined } from "../../../common/omit-undefined";
 import { buildLegalSnapshot } from "../../../common/legal-snapshot.util";
 import { SignatureVerificationService } from "../../identity/services/signature-verification.service";
+import { assertEncounterEditableForDocuments } from "../../../common/encounter-editable.util";
 import { FILE_STORAGE_PORT, type FileStoragePort } from "../../doctors/services/file-storage.port";
 import { PrescriptionPdfService } from "./prescription-pdf.service";
 import { derivePrescriptionStatus } from "../prescription-status.util";
@@ -38,18 +39,16 @@ export class PrescriptionService {
       await this.signatureVerification.verify(doctorUserId, input.password, input.totpCode);
     }
 
-    // Prompt 32 (Fase 4, letra del doc de 58 prompts): "la receta
-    // pertenece a una nota firmada. Un borrador no emite recetas." La
-    // línea se compone durante la consulta, pero la EMISIÓN (folio,
-    // snapshot legal, PDF) exige el encuentro FIRMADO.
-    const encounter = await this.prisma.clinicalEncounter.findUnique({ where: { id: encounterId }, select: { status: true } });
-    if (!encounter || encounter.status !== "SIGNED") {
-      throw new ApiException(
-        "PRESCRIPTION_REQUIRES_SIGNED_NOTE",
-        "La receta se emite desde una nota FIRMADA — firma la consulta primero; un borrador no emite documentos.",
-        HttpStatus.UNPROCESSABLE_ENTITY
-      );
-    }
+    // Fase 4b: la receta se compone y EMITE (folio, snapshot legal,
+    // PDF) contra un encuentro DRAFT o SIGNED — ya no exige firma
+    // previa (ver encounter-editable.util.ts). M9-RN-002 solo exige
+    // que pertenezca a un clinical_encounter documentado, no que esté
+    // firmado; un borrador abandonado (72 h) sigue bloqueado.
+    const encounter = await this.prisma.clinicalEncounter.findUnique({
+      where: { id: encounterId },
+      select: { status: true, startedAt: true, abandonedAt: true },
+    });
+    assertEncounterEditableForDocuments(encounter, "PRESCRIPTION_ENCOUNTER_NOT_EDITABLE");
 
     const [doctor, patient] = await Promise.all([
       this.prisma.doctor.findUnique({ where: { id: doctorId }, include: { primarySpecialty: true, locations: { where: { isPrimary: true }, take: 1 } } }),
@@ -384,18 +383,12 @@ export class PrescriptionService {
   }
 
   async createExternalPhysical(encounterId: string, doctorId: string, patientId: string, input: ExternalPhysicalPrescriptionCreateInput) {
-    // Prompt 32 (Fase 4, letra del doc de 58 prompts): "la receta
-    // pertenece a una nota firmada. Un borrador no emite recetas." La
-    // línea se compone durante la consulta, pero la EMISIÓN (folio,
-    // snapshot legal, PDF) exige el encuentro FIRMADO.
-    const encounter = await this.prisma.clinicalEncounter.findUnique({ where: { id: encounterId }, select: { status: true } });
-    if (!encounter || encounter.status !== "SIGNED") {
-      throw new ApiException(
-        "PRESCRIPTION_REQUIRES_SIGNED_NOTE",
-        "La receta se emite desde una nota FIRMADA — firma la consulta primero; un borrador no emite documentos.",
-        HttpStatus.UNPROCESSABLE_ENTITY
-      );
-    }
+    // Fase 4b — ver create(): DRAFT o SIGNED, no abandonado.
+    const encounter = await this.prisma.clinicalEncounter.findUnique({
+      where: { id: encounterId },
+      select: { status: true, startedAt: true, abandonedAt: true },
+    });
+    assertEncounterEditableForDocuments(encounter, "PRESCRIPTION_ENCOUNTER_NOT_EDITABLE");
 
     const [doctor, patient] = await Promise.all([
       this.prisma.doctor.findUnique({ where: { id: doctorId }, include: { primarySpecialty: true, locations: { where: { isPrimary: true }, take: 1 } } }),

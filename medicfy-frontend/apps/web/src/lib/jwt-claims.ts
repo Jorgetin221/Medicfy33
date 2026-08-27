@@ -11,3 +11,17 @@ export function tokenSubject(accessToken: string | null): string {
     return "anon";
   }
 }
+
+// Igual de no-autoritativo que tokenSubject: solo para decidir si el
+// rail de navegación muestra el ícono de Admin. Un usuario sin este
+// rol que llegue igual a /admin recibe 403 del AdminGuard del backend.
+export function tokenPrimaryRole(accessToken: string | null): string | null {
+  if (!accessToken) return null;
+  try {
+    const payload = accessToken.split(".")[1] ?? "";
+    const json = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/"))) as { primaryRole?: string };
+    return json.primaryRole ?? null;
+  } catch {
+    return null;
+  }
+}

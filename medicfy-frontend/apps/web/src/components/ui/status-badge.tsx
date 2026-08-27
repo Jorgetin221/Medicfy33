@@ -17,7 +17,7 @@ const STATUS_CONFIG: Record<AppointmentStatus, { label: string; icon: string; cl
   PENDING_PAYMENT: { label: "Pago pendiente", icon: "⏳", className: "border-warn-600 text-warn-600" },
   SCHEDULED: { label: "Agendada", icon: "○", className: "border-gray-500 text-gray-700" },
   CONFIRMED: { label: "Confirmada", icon: "✓", className: "border-success-600 text-success-600" },
-  IN_PROGRESS: { label: "En curso", icon: "▶", className: "border-brand-700 text-brand-700" },
+  IN_PROGRESS: { label: "En consulta", icon: "▶", className: "border-brand-700 text-brand-700" },
   COMPLETED: { label: "Completada", icon: "✓", className: "border-success-600 text-success-600" },
   CANCELLED_BY_PATIENT: { label: "Cancelada (paciente)", icon: "✕", className: "border-danger-600 text-danger-600" },
   CANCELLED_BY_DOCTOR: { label: "Cancelada (médico)", icon: "✕", className: "border-danger-600 text-danger-600" },

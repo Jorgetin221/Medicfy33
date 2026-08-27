@@ -11,11 +11,17 @@ export function Panel({
   open,
   onClose,
   title,
+  wide = false,
   children,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
+  // Formularios (receta/orden) están cómodos en max-w-md; un visor de
+  // documento (PDF/imagen de un resultado) necesita más ancho para no
+  // quedar ilegible — opt-in para no mover el ancho de los paneles
+  // existentes.
+  wide?: boolean;
   children: ReactNode;
 }) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -58,7 +64,7 @@ export function Panel({
         role="dialog"
         aria-modal="true"
         aria-labelledby="panel-title"
-        className="relative flex h-full w-full max-w-md flex-col bg-white shadow-card"
+        className={`relative flex h-full w-full flex-col bg-white shadow-card ${wide ? "max-w-3xl" : "max-w-md"}`}
       >
         <div className="flex items-center justify-between border-b border-gray-300 px-6 py-4">
           <h2 id="panel-title" className="font-heading text-lg text-brand-900">

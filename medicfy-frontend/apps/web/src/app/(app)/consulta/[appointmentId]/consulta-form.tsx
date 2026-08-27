@@ -18,6 +18,7 @@ import { Aviso } from "@/components/ui/alert";
 import { IndicadorGuardado } from "@/components/ui/save-indicator";
 import { VitalsFields } from "@/components/clinical/vitals-fields";
 import { EscalasSection } from "@/components/clinical/escalas-section";
+import { EmisionDocumentos } from "@/components/clinical/emision-documentos";
 import { Icd10Picker } from "@/components/clinical/icd10-picker";
 import { NoteTemplateBar } from "@/components/clinical/note-template-bar";
 import { AntecedentesEditor, AntecedentesSummary } from "@/components/clinical/antecedentes-editor";
@@ -86,6 +87,11 @@ export function ConsultaForm({
   const [activeField, setActiveField] = useState<FreeTextField>("plan");
   const [signError, setSignError] = useState<unknown>(null);
   const [isSigning, setIsSigning] = useState(false);
+  // Fase 4b: receta/estudios ya se pueden emitir contra la nota en
+  // borrador (encounter-editable.util.ts, backend) — mientras el
+  // panel de EmisionDocumentos esté abierto con edición sin guardar,
+  // no se deja firmar para no perderla.
+  const [planPanelOpen, setPlanPanelOpen] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(() => Math.floor((Date.now() - new Date(encounter.startedAt).getTime()) / 1000));
   // M8-RN-013 / CLAUDE.md §6: el objetivo del modo — el límite alto de
   // cada rango (15 y 4 min). La métrica real la fija el servidor al
@@ -309,6 +315,7 @@ export function ConsultaForm({
   const handleSignSubmit = form.handleSubmit(onSign);
 
   function handleSignClick() {
+    if (planPanelOpen) return;
     if (!window.confirm("¿Firmar esta consulta? Una vez firmada, la nota no se puede editar — solo corregir con una nota nueva.")) return;
     void handleSignSubmit();
   }
@@ -409,7 +416,7 @@ export function ConsultaForm({
 
         <section>
           <h2 className="mb-2 text-base font-semibold text-gray-900">Signos vitales</h2>
-          <VitalsFields form={form} />
+          <VitalsFields form={form} patientAgeYears={patientBirthDate ? patientAgeYears(patientBirthDate) : null} />
         </section>
 
         <EscalasSection
@@ -470,6 +477,15 @@ export function ConsultaForm({
           />
         </FieldWrapper>
 
+        <EmisionDocumentos
+          accessToken={accessToken}
+          encounterId={encounter.id}
+          patientId={encounter.patientId}
+          defaultDiagnosis={diagnoses.find((d) => d.diagnosisType === "PRINCIPAL")?.description ?? ""}
+          hasPatientInstructions={false}
+          onOpenStateChange={setPlanPanelOpen}
+        />
+
         {/* Prompt 37 (F4): lo que el PACIENTE se lleva — lenguaje
             llano, separado de la nota técnica; se imprime como PDF
             propio desde la nota firmada. */}
@@ -517,9 +533,14 @@ export function ConsultaForm({
 
       <div className="fixed inset-x-0 bottom-0 z-20 border-t border-gray-300 bg-white p-4">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-2">
-          <IndicadorGuardado state={saveState} lastSavedAt={lastSavedAt} />
-          <Button type="button" isLoading={isSigning} onClick={handleSignClick} className="px-6">
-            Firmar consulta <span className="ml-1 opacity-70">⌘/Ctrl+Enter</span>
+          <div className="flex items-center gap-3">
+            <IndicadorGuardado state={saveState} lastSavedAt={lastSavedAt} />
+            {planPanelOpen ? (
+              <span className="text-sm text-warn-600">Cierra el panel de receta/estudios para firmar.</span>
+            ) : null}
+          </div>
+          <Button type="button" isLoading={isSigning} disabled={planPanelOpen} onClick={handleSignClick} className="px-6">
+            Firmar y cerrar consulta <span className="ml-1 opacity-70">⌘/Ctrl+Enter</span>
           </Button>
         </div>
       </div>

@@ -3,21 +3,29 @@
 @tailwind utilities;
 
 :root {
-  /* Sistema de diseño "Parte A" (documento de UX, ago 2026). Mismos
-     nombres de token que antes — solo cambian los valores — para que
-     ninguna clase Tailwind existente (brand-*, gray-*, danger-*...)
-     necesite tocarse en cada pantalla ya construida. */
-  --brand-900: #0e2a5c;
-  --brand-700: #1b4db1;
-  --brand-500: #2e63ce;
-  --brand-100: #e4ecfb;
+  /* Sistema de diseño "Parte B" (rediseño teal/petróleo, ago 2026).
+     Mismos nombres de token que antes — solo cambian los valores —
+     para que ninguna clase Tailwind existente (brand-*, gray-*,
+     danger-*...) necesite tocarse en cada pantalla ya construida. */
+  --brand-900: #0f3d3d;
+  --brand-700: #0f766e;
+  --brand-500: #14b8a6;
+  --brand-100: #ccfbf1;
 
   --gray-900: #101623;
   --gray-700: #333d4f;
   --gray-500: #5c687c;
-  --gray-300: #d7dde7;
-  --gray-100: #f4f7fb;
+  --gray-300: #dde2e8;
+  --gray-100: #f3f5f7;
   --white: #ffffff;
+
+  /* Rail de íconos (nav lateral izquierda) — no existía como barra de
+     texto horizontal antes; es casi-negro, independiente de brand-*
+     para que un futuro cambio de acento no lo mueva sin querer. */
+  --rail-bg: #0b1626;
+  --rail-icon: #7c8ba1;
+  --rail-icon-active-bg: var(--brand-700);
+  --rail-icon-active: #ffffff;
 
   --danger-600: #b3261e;
   --danger-050: #fdecea;

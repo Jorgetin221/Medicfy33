@@ -130,7 +130,7 @@ describe("Fase 4 · Plan del paciente (prompt 38B)", () => {
     expect(res.status).toBe(201);
   }
 
-  it("32/38 previo — un borrador NO emite receta ni orden: exige nota firmada", async () => {
+  it("Fase 4b — un borrador (no abandonado) SÍ emite receta y orden: ya no exige nota firmada", async () => {
     const doctor = await registerDoctor();
     const patientId = await createPatient(doctor.accessToken);
     const draft = await request(app.getHttpServer())
@@ -143,15 +143,41 @@ describe("Fase 4 · Plan del paciente (prompt 38B)", () => {
       .post(`/prescriptions/encounters/${draft.body.id}`)
       .set("Authorization", `Bearer ${doctor.accessToken}`)
       .send({ signatureRoute: "HANDWRITTEN_AFTER_PRINT", diagnosisSnapshot: "Dx", items: [line(await medId("Paracetamol"))] });
+    expect(receta.status).toBe(201);
+
+    const orden = await request(app.getHttpServer())
+      .post(`/lab-orders/encounters/${draft.body.id}`)
+      .set("Authorization", `Bearer ${doctor.accessToken}`)
+      .send({ signatureRoute: "HANDWRITTEN_AFTER_PRINT", clinicalIndication: "Dx", items: [{ studyKey: "bh", motiveKey: "diagnostico_inicial" }] });
+    expect(orden.status).toBe(201);
+  });
+
+  it("Fase 4b — un borrador ABANDONADO (>72h sin firmar) sigue bloqueado para receta y orden", async () => {
+    const doctor = await registerDoctor();
+    const patientId = await createPatient(doctor.accessToken);
+    const draft = await request(app.getHttpServer())
+      .post(`/records/patients/${patientId}/encounters`)
+      .set("Authorization", `Bearer ${doctor.accessToken}`)
+      .send({ patientId, encounterType: "FIRST_VISIT" });
+    expect(draft.status).toBe(201);
+    await prisma.clinicalEncounter.update({
+      where: { id: draft.body.id },
+      data: { startedAt: new Date(Date.now() - 73 * 60 * 60 * 1000) },
+    });
+
+    const receta = await request(app.getHttpServer())
+      .post(`/prescriptions/encounters/${draft.body.id}`)
+      .set("Authorization", `Bearer ${doctor.accessToken}`)
+      .send({ signatureRoute: "HANDWRITTEN_AFTER_PRINT", diagnosisSnapshot: "Dx", items: [line(await medId("Paracetamol"))] });
     expect(receta.status).toBe(422);
-    expect(receta.body.error.code).toBe("PRESCRIPTION_REQUIRES_SIGNED_NOTE");
+    expect(receta.body.error.code).toBe("PRESCRIPTION_ENCOUNTER_NOT_EDITABLE");
 
     const orden = await request(app.getHttpServer())
       .post(`/lab-orders/encounters/${draft.body.id}`)
       .set("Authorization", `Bearer ${doctor.accessToken}`)
       .send({ signatureRoute: "HANDWRITTEN_AFTER_PRINT", clinicalIndication: "Dx", items: [{ studyKey: "bh", motiveKey: "diagnostico_inicial" }] });
     expect(orden.status).toBe(422);
-    expect(orden.body.error.code).toBe("LAB_ORDER_REQUIRES_SIGNED_NOTE");
+    expect(orden.body.error.code).toBe("LAB_ORDER_ENCOUNTER_NOT_EDITABLE");
   });
 
   it("38.1 — alergia a penicilinas + amoxicilina: bloquea, exige justificación clínica, y la justificación queda firmada y en bitácora", async () => {

@@ -123,6 +123,27 @@ describe("Resultados de laboratorio — listar y descargar lo ya subido", () => 
     expect(auditEntry).not.toBeNull();
   });
 
+  // Fase 4c: la especificación (M10, casos límite) solo acepta
+  // PDF/JPG para adjuntos de estudios — antes se subía cualquier tipo
+  // de archivo sin validación (upload-validation.util.ts).
+  it("rechaza formatos no permitidos (400 con código claro) y acepta JPG además de PDF", async () => {
+    const doctor = await registerDoctor();
+    const patientId = await createPatient(doctor.accessToken);
+
+    const rejected = await request(app.getHttpServer())
+      .post(`/lab-results/patients/${patientId}`)
+      .set("Authorization", `Bearer ${doctor.accessToken}`)
+      .attach("file", Buffer.from("no es un resultado clinico"), { filename: "notas.txt", contentType: "text/plain" });
+    expect(rejected.status).toBe(400);
+    expect(rejected.body.error.code).toBe("LAB_RESULT_FILE_TYPE_NOT_ALLOWED");
+
+    const jpgAccepted = await request(app.getHttpServer())
+      .post(`/lab-results/patients/${patientId}`)
+      .set("Authorization", `Bearer ${doctor.accessToken}`)
+      .attach("file", Buffer.from("contenido de imagen simulado"), { filename: "foto-resultado.jpg", contentType: "image/jpeg" });
+    expect(jpgAccepted.status).toBe(201);
+  });
+
   it("un médico sin vínculo con el paciente no puede descargar su resultado (403), y un resultId de otro paciente da 404", async () => {
     const ownerDoctor = await registerDoctor();
     const ownerPatientId = await createPatient(ownerDoctor.accessToken);

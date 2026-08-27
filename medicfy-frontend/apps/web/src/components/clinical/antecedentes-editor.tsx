@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { apiFetch } from "@/lib/api-client";
 import type { PatientHistoryItem } from "@/lib/use-patient-clinical";
-import { Card, ErrorState } from "@/components/ui/states";
+import { ErrorState } from "@/components/ui/states";
+import { CollapsibleCard } from "@/components/ui/collapsible-card";
 import { GinecoBlock, HeredofamiliarMatrix, PlantillasAntecedentes, SolicitarTermino, ToxicomaniasBlock } from "./historia-fase2";
 
 type Category = "HEREDOFAMILIAR" | "PERSONAL_NO_PATOLOGICO" | "PERSONAL_PATOLOGICO";
@@ -193,8 +194,7 @@ function PersonalSection({
   onChanged: () => void;
 }) {
   return (
-    <Card>
-      <h3 className="mb-1 text-base font-semibold text-gray-900">{title}</h3>
+    <CollapsibleCard title={title}>
       <div>
         {Object.entries(labels).map(([subtype, label]) => (
           <HistoryRow
@@ -209,7 +209,7 @@ function PersonalSection({
           />
         ))}
       </div>
-    </Card>
+    </CollapsibleCard>
   );
 }
 
@@ -274,36 +274,44 @@ export function AntecedentesEditor({
       <SolicitarTermino accessToken={accessToken} />
       <PlantillasAntecedentes patientId={patientId} accessToken={accessToken} onChanged={onChanged} />
 
-      <HeredofamiliarMatrix
-        patientId={patientId}
-        accessToken={accessToken}
-        historyItems={historyItems}
-        onChanged={onChanged}
-        filter={filter}
-      />
+      <div id="bloque-heredofamiliares" className="scroll-mt-20">
+        <HeredofamiliarMatrix
+          patientId={patientId}
+          accessToken={accessToken}
+          historyItems={historyItems}
+          onChanged={onChanged}
+          filter={filter}
+        />
+      </div>
 
-      <ToxicomaniasBlock patientId={patientId} accessToken={accessToken} filter={filter} />
-      <GinecoBlock patientId={patientId} accessToken={accessToken} />
+      <div id="bloque-no-patologicos" className="flex flex-col gap-6 scroll-mt-20">
+        <ToxicomaniasBlock patientId={patientId} accessToken={accessToken} filter={filter} />
+        <PersonalSection
+          title="Antecedentes personales no patológicos"
+          patientId={patientId}
+          accessToken={accessToken}
+          category="PERSONAL_NO_PATOLOGICO"
+          labels={PERSONAL_NO_PATOLOGICO_LABELS}
+          historyItems={historyItems}
+          onChanged={onChanged}
+        />
+      </div>
 
-      <PersonalSection
-        title="Antecedentes personales no patológicos"
-        patientId={patientId}
-        accessToken={accessToken}
-        category="PERSONAL_NO_PATOLOGICO"
-        labels={PERSONAL_NO_PATOLOGICO_LABELS}
-        historyItems={historyItems}
-        onChanged={onChanged}
-      />
+      <div id="bloque-patologicos" className="scroll-mt-20">
+        <PersonalSection
+          title="Antecedentes personales patológicos"
+          patientId={patientId}
+          accessToken={accessToken}
+          category="PERSONAL_PATOLOGICO"
+          labels={PERSONAL_PATOLOGICO_LABELS}
+          historyItems={historyItems}
+          onChanged={onChanged}
+        />
+      </div>
 
-      <PersonalSection
-        title="Antecedentes personales patológicos"
-        patientId={patientId}
-        accessToken={accessToken}
-        category="PERSONAL_PATOLOGICO"
-        labels={PERSONAL_PATOLOGICO_LABELS}
-        historyItems={historyItems}
-        onChanged={onChanged}
-      />
+      <div id="bloque-gineco" className="scroll-mt-20">
+        <GinecoBlock patientId={patientId} accessToken={accessToken} />
+      </div>
     </div>
   );
 }

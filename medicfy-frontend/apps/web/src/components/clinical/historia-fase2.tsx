@@ -6,6 +6,7 @@ import type { PatientHistoryItem } from "@/lib/use-patient-clinical";
 import { Card, ErrorState } from "@/components/ui/states";
 import { Button } from "@/components/ui/button";
 import { SelectInput, TextInput } from "@/components/ui/field";
+import { CollapsibleCard } from "@/components/ui/collapsible-card";
 
 // Fase 2 — bloques estructurados de la historia clínica (prompts
 // 19-23). Todo se captura MARCANDO contra el catálogo cerrado, nunca
@@ -139,8 +140,7 @@ export function HeredofamiliarMatrix({
   const rows = MATRIX_DISEASES.filter((d) => !filter || d.label.toLowerCase().includes(filter.toLowerCase()));
 
   return (
-    <Card>
-      <h3 className="mb-1 text-base font-semibold text-gray-900">Antecedentes heredofamiliares</h3>
+    <CollapsibleCard title="Antecedentes heredofamiliares">
       <p className="mb-3 text-sm text-gray-500">
         Una pulsación por celda: — no investigado · <span className="text-danger-600">✓ presente</span> ·{" "}
         <span className="text-success-600">✗ negado</span> · <span className="text-warn-600">? se desconoce</span>
@@ -189,7 +189,7 @@ export function HeredofamiliarMatrix({
         </table>
       </div>
       {error ? <ErrorState error={error} /> : null}
-    </Card>
+    </CollapsibleCard>
   );
 }
 
@@ -357,8 +357,7 @@ export function ToxicomaniasBlock({
   const visible = substances.filter((s) => !filter || s.preferredTerm.toLowerCase().includes(filter.toLowerCase()));
 
   return (
-    <Card>
-      <h3 className="mb-1 text-base font-semibold text-gray-900">Toxicomanías</h3>
+    <CollapsibleCard title="Toxicomanías">
       <p className="mb-2 text-sm text-gray-500">
         Cantidad y frecuencia son obligatorias con estado activo o suspendido — sin ellas no hay cálculo de riesgo. Los índices los
         calcula y guarda el servidor.
@@ -374,7 +373,7 @@ export function ToxicomaniasBlock({
         />
       ))}
       {error ? <ErrorState error={error} /> : null}
-    </Card>
+    </CollapsibleCard>
   );
 }
 
