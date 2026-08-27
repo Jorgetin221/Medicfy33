@@ -11,6 +11,7 @@ import { SignatureVerificationService } from "../../identity/services/signature-
 import { FILE_STORAGE_PORT, type FileStoragePort } from "../../doctors/services/file-storage.port";
 import { PrescriptionPdfService } from "./prescription-pdf.service";
 import { derivePrescriptionStatus } from "../prescription-status.util";
+import { crossCheckAllergies } from "../allergy-cross-check.util";
 
 // M9 — RECETA ELECTRÓNICA (Grupos III-VI). R5/M9-RN-012: Grupos I/II
 // bloqueados, bloqueo duro. M9-RN-006: nunca UPDATE, "cancelar" y
@@ -66,17 +67,38 @@ export class PrescriptionService {
     }
 
     // M8-RN-008/M9-RN-008a: cruce automático contra alergias activas.
+    // Por principio activo, nombre comercial Y grupo terapéutico
+    // (prompt 34). La comparación por subcadenas que había aquí antes
+    // dejaba pasar amoxicilina con alergia a penicilinas y disparaba
+    // con una alergia capturada como "no" — ver allergy-cross-check.util.ts.
     const activeAllergies = await this.prisma.patientAllergy.findMany({ where: { patientId, status: "ACTIVE" } });
-    const conflicts = input.items
-      .map((item) => ({ item, catalog: catalogById.get(item.medicationCatalogId) }))
-      .filter(({ catalog }) => catalog && activeAllergies.some((a) => catalog.genericName.toLowerCase().includes(a.substance.toLowerCase()) || a.substance.toLowerCase().includes(catalog.genericName.toLowerCase())));
+    const prescribedDrugs = input.items
+      .map((item) => catalogById.get(item.medicationCatalogId))
+      .filter((catalog): catalog is NonNullable<typeof catalog> => catalog !== undefined);
 
-    if (conflicts.length > 0 && !input.allergyOverrideConfirmed) {
+    const allergyCheck = crossCheckAllergies(activeAllergies, prescribedDrugs);
+
+    if (allergyCheck.matches.length > 0 && !input.allergyOverrideConfirmed) {
       throw new ApiException(
         "PRESCRIPTION_ALLERGY_CONFLICT",
         "El paciente tiene una alergia registrada a uno de estos medicamentos. Confirma explícitamente para continuar.",
         HttpStatus.CONFLICT,
-        { medications: conflicts.map(({ catalog }) => catalog?.genericName) }
+        {
+          medications: allergyCheck.matches.map((m) => m.genericName),
+          // El prompt 34 pide que el mensaje diga qué alergia, con qué
+          // reacción, quién la registró y cuándo, y por qué el fármaco
+          // coincide. Todo eso viaja aquí, no sólo el nombre.
+          conflicts: allergyCheck.matches.map((m) => ({
+            medication: m.genericName,
+            substance: m.substance,
+            reaction: m.reaction,
+            severity: m.severity,
+            registeredBy: m.source,
+            registeredAt: m.registeredAt,
+            basis: m.basis,
+            explanation: m.explanation,
+          })),
+        }
       );
     }
 
@@ -186,7 +208,19 @@ export class PrescriptionService {
       include: { items: true },
     });
 
-    return { prescription, warnings: { therapeuticDuplicates: duplicates, therapeuticClassDuplicates: classDuplicates } };
+    return {
+      prescription,
+      warnings: {
+        therapeuticDuplicates: duplicates,
+        therapeuticClassDuplicates: classDuplicates,
+        // Alergias activas que el cruce no pudo resolver a ningún
+        // principio activo ni a una familia conocida. No es "sin
+        // conflicto": es "no lo pude comprobar", y el médico tiene
+        // que verlo. Desaparece solo cuando `substance` se estructure
+        // contra catálogo (Fase 4, R3).
+        unverifiableAllergies: allergyCheck.unverifiable,
+      },
+    };
   }
 
   // Corrección v2.1 §17.4: "Firmada y entregada" es una declaración

@@ -72,6 +72,41 @@ export class AppointmentStateMachineService {
       throw new ApiException("PATIENT_NOT_FOUND", "Paciente no encontrado.", HttpStatus.NOT_FOUND);
     }
 
+    // R4 — HALLAZGO #1 DEL BLOQUE 0 (26 ago 2026), el más grave del
+    // inventario. Esta ruta aceptaba cualquier patientId del cuerpo y
+    // createOrRenew(..., "APPOINTMENT") le fabricaba al médico un
+    // vínculo ACTIVE de 18 meses en la misma transacción, sin que el
+    // paciente interviniera y sin pago. Bastaba agendar contra un
+    // servicio propio para que el expediente completo del paciente
+    // —timeline y texto íntegro de las notas— respondiera 200.
+    //
+    // Mientras eso existió, CareRelationshipGuard era decorativo en
+    // TODO el sistema: cualquiera podía emitirse la llave que el guard
+    // comprueba.
+    //
+    // La regla ahora: esta ruta RENUEVA un vínculo, nunca lo crea de
+    // cero. Tiene que existir uno previo, y las tres vías legítimas de
+    // crearlo siguen intactas:
+    //   CREATED_BY_DOCTOR  el médico da de alta al paciente (POST /patients)
+    //   PATIENT_GRANTED    el paciente autoriza
+    //   APPOINTMENT        agendamiento público iniciado por el paciente (M5b)
+    //
+    // EXPIRED sí cuenta: un paciente que el médico atendió hace dos
+    // años vuelve a agendar y el vínculo se renueva. REVOKED no, y esa
+    // es la diferencia que importa — si el paciente retiró el
+    // consentimiento, agendarle una cita no se lo devuelve.
+    const priorRelationship = await this.prisma.careRelationship.findFirst({
+      where: { patientId: input.patientId, doctorId: actingDoctorId, status: { in: ["ACTIVE", "EXPIRED"] } },
+      select: { id: true },
+    });
+    if (!priorRelationship) {
+      throw new ApiException(
+        "CARE_RELATIONSHIP_REQUIRED",
+        "No tienes un vínculo con este paciente. Regístralo desde tu lista de pacientes, o espera a que agende él mismo.",
+        HttpStatus.FORBIDDEN
+      );
+    }
+
     const doctor = await this.prisma.doctor.findUniqueOrThrow({ where: { id: actingDoctorId } });
 
     // M2-RN-004/M2-CA-006: "necesita >=1 consultorio activo o
@@ -132,6 +167,10 @@ export class AppointmentStateMachineService {
           data: { appointmentId: appointment.id, fromStatus: null, toStatus: "PENDING_PAYMENT", changedByUserId: actorUserId },
         });
 
+        // Renovación, no alta: la comprobación de vínculo previo de
+        // arriba garantiza que ya existe uno. createOrRenew extiende
+        // el ACTIVE si lo hay, y reabre el EXPIRED con origen
+        // APPOINTMENT — que es exactamente lo que acaba de pasar.
         await this.careRelationshipService.createOrRenew(input.patientId, actingDoctorId, "APPOINTMENT", tx);
 
         return appointment;

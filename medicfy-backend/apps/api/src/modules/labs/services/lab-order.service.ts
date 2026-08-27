@@ -166,9 +166,21 @@ export class LabOrderService {
     return this.fileStorage.retrieve(result.fileKey);
   }
 
-  async reviewResult(resultId: string, doctorId: string, doctorComment: string) {
+  // R4 — hallazgo #4 del Bloque 0 (26 ago 2026). Esto buscaba el
+  // resultado sólo por resultId y nunca comparaba result.patientId con
+  // el de la ruta, mientras getResultFile() —ocho líneas más arriba—
+  // sí lo hacía. El guard validaba un paciente y el servicio escribía
+  // en otro: con el patientId de un paciente propio y el resultId de
+  // uno ajeno se sobrescribían el comentario y la firma de revisión en
+  // el expediente del segundo, y la fila de bitácora quedaba con el
+  // patientId equivocado.
+  //
+  // patientId ahora es obligatorio y se compara, igual que en su
+  // gemelo. Es el mismo 404 a propósito: no confirma que el resultId
+  // exista.
+  async reviewResult(resultId: string, patientId: string, doctorId: string, doctorComment: string) {
     const result = await this.prisma.labResult.findUnique({ where: { id: resultId } });
-    if (!result) {
+    if (!result || result.patientId !== patientId) {
       throw new ApiException("LAB_RESULT_NOT_FOUND", "Resultado no encontrado.", HttpStatus.NOT_FOUND);
     }
     return this.prisma.labResult.update({

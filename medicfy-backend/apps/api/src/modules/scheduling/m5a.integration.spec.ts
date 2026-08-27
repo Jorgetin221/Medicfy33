@@ -183,6 +183,127 @@ describe("M5a — Pacientes y citas (núcleo)", () => {
     });
   });
 
+  // R4 — hallazgos #1 y #2 de la auditoría del Bloque 0 (26 ago 2026).
+  // Estas pruebas fallan si alguien vuelve a abrir cualquiera de las
+  // dos puertas.
+  describe("R4 — autorización por recurso en pacientes y citas", () => {
+    it("un médico sin vínculo NO puede agendarle una cita a un paciente ajeno, y no se le crea el vínculo", async () => {
+      const doctorA = await registerDoctor();
+      const atacante = await registerDoctor();
+      const paciente = await createAdultPatient(doctorA.accessToken);
+      const servicioPropio = await createService(atacante.accessToken);
+
+      const res = await request(app.getHttpServer())
+        .post("/appointments")
+        .set("Authorization", `Bearer ${atacante.accessToken}`)
+        .send({ patientId: paciente.id, serviceId: servicioPropio.id, startsAt: isoDaysFromNow(3) });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe("CARE_RELATIONSHIP_REQUIRED");
+
+      // Lo que de verdad importa: la cita rechazada no dejó atrás una
+      // llave. Antes, este mismo POST fabricaba un care_relationship
+      // ACTIVE de 18 meses, y con eso el expediente completo del
+      // paciente respondía 200.
+      const atacanteRecord = await prisma.doctor.findUniqueOrThrow({ where: { userId: atacante.userId } });
+      const vinculo = await prisma.careRelationship.findFirst({
+        where: { patientId: paciente.id, doctorId: atacanteRecord.id },
+      });
+      expect(vinculo).toBeNull();
+    });
+
+    it("el médico con vínculo sí agenda, y la cita renueva el vínculo en vez de crear otro", async () => {
+      const doctor = await registerDoctor();
+      const paciente = await createAdultPatient(doctor.accessToken);
+      const servicio = await createService(doctor.accessToken);
+
+      const cita = await bookAppointment(doctor.accessToken, paciente.id, servicio.id, isoDaysFromNow(4));
+      expect(cita.id).toBeTruthy();
+
+      const doctorRecord = await prisma.doctor.findUniqueOrThrow({ where: { userId: doctor.userId } });
+      const vinculos = await prisma.careRelationship.findMany({
+        where: { patientId: paciente.id, doctorId: doctorRecord.id },
+      });
+      expect(vinculos).toHaveLength(1);
+      expect(vinculos[0].origin).toBe("CREATED_BY_DOCTOR");
+    });
+
+    it("un vínculo REVOCADO no se reabre agendando una cita", async () => {
+      const doctor = await registerDoctor();
+      const paciente = await createAdultPatient(doctor.accessToken);
+      const servicio = await createService(doctor.accessToken);
+      const doctorRecord = await prisma.doctor.findUniqueOrThrow({ where: { userId: doctor.userId } });
+
+      const vinculo = await prisma.careRelationship.findFirstOrThrow({
+        where: { patientId: paciente.id, doctorId: doctorRecord.id },
+      });
+      await careRelationshipService.revoke(vinculo.id, doctor.userId);
+
+      const res = await request(app.getHttpServer())
+        .post("/appointments")
+        .set("Authorization", `Bearer ${doctor.accessToken}`)
+        .send({ patientId: paciente.id, serviceId: servicio.id, startsAt: isoDaysFromNow(5) });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe("CARE_RELATIONSHIP_REQUIRED");
+    });
+
+    it("GET /patients/:id no entrega el perfil de un paciente ajeno", async () => {
+      const doctorA = await registerDoctor();
+      const doctorB = await registerDoctor();
+      const paciente = await createAdultPatient(doctorA.accessToken);
+
+      const propio = await request(app.getHttpServer())
+        .get(`/patients/${paciente.id}`)
+        .set("Authorization", `Bearer ${doctorA.accessToken}`);
+      expect(propio.status).toBe(200);
+      expect(propio.body.id).toBe(paciente.id);
+
+      // 404 y no 403: un 403 confirmaría que ese id existe, y con eso
+      // se puede enumerar la base de pacientes aunque no se lea ninguno.
+      const ajeno = await request(app.getHttpServer())
+        .get(`/patients/${paciente.id}`)
+        .set("Authorization", `Bearer ${doctorB.accessToken}`);
+      expect(ajeno.status).toBe(404);
+      expect(ajeno.body).not.toHaveProperty("curp");
+      expect(ajeno.body).not.toHaveProperty("guardians");
+    });
+
+    it("R6 — toda lectura del perfil queda en bitácora, la que pasa y la que se rechaza", async () => {
+      const doctorA = await registerDoctor();
+      const doctorB = await registerDoctor();
+      const paciente = await createAdultPatient(doctorA.accessToken);
+
+      await request(app.getHttpServer()).get(`/patients/${paciente.id}`).set("Authorization", `Bearer ${doctorA.accessToken}`);
+      await request(app.getHttpServer()).get(`/patients/${paciente.id}`).set("Authorization", `Bearer ${doctorB.accessToken}`);
+
+      const entradas = await prisma.auditLog.findMany({
+        where: { action: "patient.profile.read", patientId: paciente.id },
+      });
+      expect(entradas.filter((e) => e.result === "SUCCESS" && e.actorUserId === doctorA.userId)).toHaveLength(1);
+      expect(entradas.filter((e) => e.result === "DENIED" && e.actorUserId === doctorB.userId)).toHaveLength(1);
+    });
+
+    it("un vínculo vencido deja de abrir el perfil, igual que dejó de aparecer en la lista", async () => {
+      const doctor = await registerDoctor();
+      const paciente = await createAdultPatient(doctor.accessToken);
+      const doctorRecord = await prisma.doctor.findUniqueOrThrow({ where: { userId: doctor.userId } });
+
+      const vinculo = await prisma.careRelationship.findFirstOrThrow({
+        where: { patientId: paciente.id, doctorId: doctorRecord.id },
+      });
+      await prisma.careRelationship.update({
+        where: { id: vinculo.id },
+        data: { expiresAt: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+      });
+
+      const res = await request(app.getHttpServer())
+        .get(`/patients/${paciente.id}`)
+        .set("Authorization", `Bearer ${doctor.accessToken}`);
+      expect(res.status).toBe(404);
+    });
+  });
+
   describe("Menores de edad — patient_guardians", () => {
     it("rejects creating a minor patient without guardian info (400)", async () => {
       const doctor = await registerDoctor();

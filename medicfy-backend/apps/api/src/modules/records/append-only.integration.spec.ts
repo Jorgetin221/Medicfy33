@@ -185,4 +185,45 @@ describe("append-only enforcement — clinical_notes, prescriptions, lab_orders"
       );
     });
   });
+
+  // Hallazgo #6 del Bloque 0 (26 ago 2026): estas cinco tablas
+  // llegaron en M8/M9/M10 con el GRANT completo por omisión, así que
+  // la base de datos permitía borrar un diagnóstico, una alergia, un
+  // medicamento vigente, un estudio de una orden ya emitida o un
+  // antecedente. La migración
+  // 20260827030000_r1_revoke_delete_on_clinical_tables lo cierra.
+  //
+  // UPDATE sí se conserva a propósito: estas tablas guardan el estado
+  // VIGENTE, no la bitácora — descartar un diagnóstico cambia su tipo,
+  // suspender un medicamento cambia su status, y un antecedente
+  // longitudinal actualiza su valor mientras patient_history_item_changes
+  // conserva el anterior. Lo que R1 prohíbe es que la fila desaparezca.
+  describe("tablas clínicas de M8/M9/M10 — DELETE revocado (R1)", () => {
+    it.each([
+      "encounter_diagnoses",
+      "patient_allergies",
+      "patient_medications",
+      "lab_order_items",
+      "patient_history_items",
+    ])("rechaza DELETE sobre %s para medicfy_app", async (tabla) => {
+      // Sin fila real a propósito: el permiso se evalúa antes que el
+      // WHERE, así que un id inexistente prueba el GRANT sin ensuciar
+      // la base de datos de dev.
+      await expect(appDb.$executeRawUnsafe(`DELETE FROM "${tabla}" WHERE id = 'no-existe'`)).rejects.toThrow(
+        /permission denied/i
+      );
+    });
+
+    it("conserva UPDATE — el estado vigente sí cambia, la fila no desaparece", async () => {
+      await expect(
+        appDb.$executeRawUnsafe(`UPDATE "patient_allergies" SET "severity" = 'LEVE' WHERE id = 'no-existe'`)
+      ).resolves.toBe(0);
+    });
+
+    // No entra en el REVOKE: es el atajo de redacción de un médico, no
+    // el expediente de un paciente, y DELETE /note-templates/:id lo usa.
+    it("note_templates conserva DELETE", async () => {
+      await expect(appDb.$executeRawUnsafe(`DELETE FROM "note_templates" WHERE id = 'no-existe'`)).resolves.toBe(0);
+    });
+  });
 });

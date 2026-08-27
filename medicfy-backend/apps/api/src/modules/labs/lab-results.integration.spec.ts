@@ -169,4 +169,37 @@ describe("Resultados de laboratorio — listar y descargar lo ya subido", () => 
     const stored = await prisma.labResult.findUniqueOrThrow({ where: { id: resultId } });
     expect(stored.fileHashSha256).toBe(fileHash);
   });
+
+  // R4 — hallazgo #4 del Bloque 0 (26 ago 2026). reviewResult() buscaba
+  // el resultado sólo por resultId y nunca comparaba result.patientId
+  // con el de la ruta, mientras getResultFile() —la prueba de arriba—
+  // sí lo hacía. El guard validaba un paciente y el servicio escribía
+  // en otro.
+  it("revisar con el resultId de OTRO paciente da 404 y no escribe nada en su expediente", async () => {
+    const doctorVictima = await registerDoctor();
+    const pacienteVictima = await createPatient(doctorVictima.accessToken);
+    const upload = await request(app.getHttpServer())
+      .post(`/lab-results/patients/${pacienteVictima}`)
+      .set("Authorization", `Bearer ${doctorVictima.accessToken}`)
+      .attach("file", Buffer.from("resultado ajeno"), { filename: "ajeno.pdf", contentType: "application/pdf" });
+    const resultIdAjeno = upload.body.id as string;
+
+    // El atacante tiene vínculo con SU paciente, así que el guard lo
+    // deja pasar: valida el patientId de la ruta, no el dueño del
+    // resultado.
+    const atacante = await registerDoctor();
+    const pacientePropio = await createPatient(atacante.accessToken);
+
+    const res = await request(app.getHttpServer())
+      .post(`/lab-results/patients/${pacientePropio}/${resultIdAjeno}/review`)
+      .set("Authorization", `Bearer ${atacante.accessToken}`)
+      .send({ doctorComment: "comentario inyectado" });
+
+    expect(res.status).toBe(404);
+
+    const intacto = await prisma.labResult.findUniqueOrThrow({ where: { id: resultIdAjeno } });
+    expect(intacto.doctorComment).toBeNull();
+    expect(intacto.reviewedByDoctorId).toBeNull();
+    expect(intacto.reviewedAt).toBeNull();
+  });
 });

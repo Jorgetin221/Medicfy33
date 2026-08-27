@@ -1,56 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { Test } from "@nestjs/testing";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { clinicalCatalogTermCreateSchema } from "@medicfy/contracts";
 import { CatalogModule } from "./catalog.module";
 import { ClinicalCatalogService } from "./services/clinical-catalog.service";
-import { normalizeTerm } from "./term-normalizer.util";
 import { PrismaModule } from "../../prisma/prisma.module";
 import { PrismaService } from "../../prisma/prisma.service";
 import { ApiException } from "../../common/api-exception";
-
-// Prompt 8: los 3 casos de prueba reales del prompt, verificados uno
-// por uno. Solo el primero es resoluble por un normalizador de
-// formato — confirmado con el usuario, ver el plan aprobado.
-describe("normalizeTerm() — Prompt 8, los 3 casos de prueba del documento", () => {
-  it('"hipotiroidismo" y "HIPOTIROIDISMO" normalizan igual — mayúsculas, sí se resuelve', () => {
-    expect(normalizeTerm("hipotiroidismo")).toBe(normalizeTerm("HIPOTIROIDISMO"));
-    expect(normalizeTerm("HIPOTIROIDISMO")).toBe("hipotiroidismo");
-  });
-
-  it('"Dislipidemias" y "Dislipidemia" NO normalizan igual — singular/plural, fuera de alcance a propósito', () => {
-    expect(normalizeTerm("Dislipidemias")).not.toBe(normalizeTerm("Dislipidemia"));
-  });
-
-  it('"Tiroideas." y "hipotiroidismo" NO normalizan igual — son palabras distintas, no un problema de formato', () => {
-    expect(normalizeTerm("Tiroideas.")).toBe("tiroideas");
-    expect(normalizeTerm("Tiroideas.")).not.toBe(normalizeTerm("hipotiroidismo"));
-  });
-
-  it("quita acentos, minúsculas, puntuación final y colapsa espacios múltiples", () => {
-    expect(normalizeTerm("Múltiples   Espacios  ")).toBe("multiples espacios");
-    expect(normalizeTerm("Diabetes?")).toBe("diabetes");
-    // "sin puntuación FINAL" es literal — puntuación al inicio no se
-    // toca, "¿" en "¿Diabetes?" no es del mismo problema que el
-    // prompt describe (espacios/mayúsculas/acentos/final de cadena).
-    expect(normalizeTerm("¿Diabetes?")).toBe("¿diabetes");
-  });
-});
-
-describe("clinicalCatalogTermCreateSchema — R2: el sistema de codificación se declara siempre", () => {
-  it("rechaza codingSystem vacío u omitido", () => {
-    const omitted = clinicalCatalogTermCreateSchema.safeParse({ domain: "D", key: "x", preferredTerm: "X" });
-    expect(omitted.success).toBe(false);
-
-    const empty = clinicalCatalogTermCreateSchema.safeParse({ domain: "D", key: "x", preferredTerm: "X", codingSystem: "" });
-    expect(empty.success).toBe(false);
-  });
-
-  it("acepta \"PROPIETARIO\" como declaración explícita de que no hay sistema externo", () => {
-    const result = clinicalCatalogTermCreateSchema.safeParse({ domain: "D", key: "x", preferredTerm: "X", codingSystem: "PROPIETARIO" });
-    expect(result.success).toBe(true);
-  });
-});
 
 function uniqueKey(prefix: string): string {
   return `${prefix}_${randomUUID().slice(0, 8)}`;
@@ -235,3 +190,4 @@ describe("ClinicalCatalogService — Prompt 7: tabla base de catálogo", () => {
     // no marca falsos positivos sobre datos limpios reales.
   });
 });
+

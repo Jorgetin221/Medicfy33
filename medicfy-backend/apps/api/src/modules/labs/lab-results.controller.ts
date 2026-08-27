@@ -98,7 +98,10 @@ export class LabResultsController {
     @Body(new ZodValidationPipe(labResultReviewSchema)) body: LabResultReviewInput,
     @Req() req: ClinicalRequest
   ) {
-    const result = await this.labOrders.reviewResult(resultId, req.actingDoctorId as string, body.doctorComment);
+    // patientId viaja al servicio para que compare contra
+    // result.patientId — el guard valida el paciente de la RUTA, no el
+    // dueño del resultado (hallazgo #4 del Bloque 0).
+    const result = await this.labOrders.reviewResult(resultId, patientId, req.actingDoctorId as string, body.doctorComment);
     await this.audit(req, patientId, "lab_results.review", resultId);
     return result;
   }

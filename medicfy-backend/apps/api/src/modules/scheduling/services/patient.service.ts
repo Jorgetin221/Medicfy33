@@ -74,8 +74,28 @@ export class PatientService {
     });
   }
 
-  async findById(patientId: string): Promise<Patient> {
-    const patient = await this.prisma.patient.findUnique({ where: { id: patientId } });
+  // R4 — AUTORIZACIÓN POR RECURSO. Hallazgo #2 del Bloque 0
+  // (26 ago 2026): esto era un findUnique por id, sin filtro alguno.
+  // Con sólo tener sesión válida —incluso una cuenta de rol PATIENT—
+  // se leía la fila completa de cualquier paciente: CURP, fecha de
+  // nacimiento, tipo de sangre, domicilio, contacto de emergencia, y
+  // después los tutores con su CURP y su documento de identidad.
+  //
+  // El filtro es el MISMO que list(): vínculo ACTIVE y no vencido. Un
+  // médico cuyo vínculo caducó deja de leer el perfil, igual que dejó
+  // de ver al paciente en su lista — antes este endpoint le seguía
+  // respondiendo 200 cuando todos los clínicos ya le daban 403.
+  //
+  // Devuelve 404, no 403, a propósito: un 403 confirmaría que ese id
+  // existe, y con eso se puede enumerar la base de pacientes aunque no
+  // se lea ninguno.
+  async findByIdForDoctor(patientId: string, doctorId: string): Promise<Patient> {
+    const patient = await this.prisma.patient.findFirst({
+      where: {
+        id: patientId,
+        careRelationships: { some: { doctorId, status: "ACTIVE", expiresAt: { gt: new Date() } } },
+      },
+    });
     if (!patient) {
       throw new ApiException("PATIENT_NOT_FOUND", "Paciente no encontrado.", HttpStatus.NOT_FOUND);
     }
