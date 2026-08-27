@@ -24,9 +24,10 @@ espera). Receta completa en la "Nota operativa" de abajo. Con eso:
 - Los cuatro arreglos del Bloque 0 quedaron **verificados ejecutando**:
   los tres IDOR (`m5a`, `lab-results`) y `REVOKE DELETE` (`append-only`).
 - Typecheck estricto y eslint limpios en backend y frontend.
-- `next build` del frontend no se pudo verificar aquí (Google Fonts
-  bloqueado en el contenedor — artefacto de red, no de código); typecheck
-  y lint del frontend sí pasan. Verificarlo en la Mac es un comando.
+- `next build` del frontend: **verificado** — compila y prerenderiza las
+  13 rutas usando el mecanismo oficial de mock de fuentes de next/font
+  (`NEXT_FONT_GOOGLE_MOCKED_RESPONSES`); en la Mac las fuentes se
+  descargan normal.
 
 ## Qué se construyó en la Fase 0 (prompts 7–11)
 
@@ -108,10 +109,9 @@ si quiere ampliar el vocabulario, el flujo del curador ya existe.
 
 ## Siguiente paso, en orden
 
-1. En la Mac: `pnpm install && npx prisma generate && npx prisma migrate deploy`
-   en `medicfy-backend` (aplica las 2 migraciones nuevas), `npx tsx prisma/seed.ts`,
-   y `pnpm test` para confirmar el verde localmente. En `medicfy-frontend`:
-   `pnpm install && pnpm --filter @medicfy/contracts build && pnpm build`.
+1. En la Mac (único paso que exige su terminal — su Postgres local no es
+   alcanzable desde la sesión): `bash scripts/sync-dev.sh` dentro de
+   `medicfy-backend/`. En `medicfy-frontend`: `pnpm install && pnpm build`.
 2. **Fase 1 (prompts 12–17): el Escritorio de Consulta.** P6 ya avisa:
    el trabajo restante ahí es sobre todo frontend (DOC-06), e incluye
    los hallazgos #18 (embarazo), #19 (diagnósticos vigentes) y #20
