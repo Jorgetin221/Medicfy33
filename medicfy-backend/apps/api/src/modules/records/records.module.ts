@@ -5,11 +5,13 @@ import { SchedulingModule } from "../scheduling/scheduling.module";
 import { CareRelationshipGuard } from "../../common/guards/care-relationship.guard";
 import { ClinicalEncounterService } from "./services/clinical-encounter.service";
 import { PatientClinicalService } from "./services/patient-clinical.service";
+import { AntecedentesTemplateService } from "./services/antecedentes-template.service";
 import { SpecialtyScaleService } from "./services/specialty-scale.service";
 import { PatientClinicalController } from "./patient-clinical.controller";
 import { EncountersController } from "./encounters.controller";
 import { Icd10Controller } from "./icd10.controller";
 import { NoteTemplatesController } from "./note-templates.controller";
+import { AntecedentesTemplatesController } from "./antecedentes-templates.controller";
 import { SpecialtyFieldSchemasController } from "./specialty-field-schemas.controller";
 
 // M8 — EXPEDIENTE CLÍNICO ELECTRÓNICO (núcleo, sin IA — ver el plan
@@ -18,8 +20,8 @@ import { SpecialtyFieldSchemasController } from "./specialty-field-schemas.contr
 // firmar) los necesitan.
 @Module({
   imports: [IdentityModule, DoctorsModule, SchedulingModule],
-  controllers: [PatientClinicalController, EncountersController, Icd10Controller, NoteTemplatesController, SpecialtyFieldSchemasController],
-  providers: [ClinicalEncounterService, PatientClinicalService, SpecialtyScaleService, CareRelationshipGuard],
+  controllers: [PatientClinicalController, EncountersController, Icd10Controller, NoteTemplatesController, AntecedentesTemplatesController, SpecialtyFieldSchemasController],
+  providers: [ClinicalEncounterService, PatientClinicalService, AntecedentesTemplateService, SpecialtyScaleService, CareRelationshipGuard],
   exports: [ClinicalEncounterService],
 })
 export class RecordsModule {}

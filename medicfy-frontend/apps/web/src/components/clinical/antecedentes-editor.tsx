@@ -4,6 +4,7 @@ import { useState } from "react";
 import { apiFetch } from "@/lib/api-client";
 import type { PatientHistoryItem } from "@/lib/use-patient-clinical";
 import { Card, ErrorState } from "@/components/ui/states";
+import { GinecoBlock, HeredofamiliarMatrix, PlantillasAntecedentes, SolicitarTermino, ToxicomaniasBlock } from "./historia-fase2";
 
 type Category = "HEREDOFAMILIAR" | "PERSONAL_NO_PATOLOGICO" | "PERSONAL_PATOLOGICO";
 type Status = "PRESENTE" | "NEGADO" | "DESCONOCIDO" | "NO_INVESTIGADO";
@@ -212,59 +213,6 @@ function PersonalSection({
   );
 }
 
-function FamilyCard({
-  patientId,
-  accessToken,
-  relationship,
-  label,
-  historyItems,
-  onChanged,
-}: {
-  patientId: string;
-  accessToken: string;
-  relationship: string;
-  label: string;
-  historyItems: PatientHistoryItem[];
-  onChanged: () => void;
-}) {
-  const [isOpen, setIsOpen] = useState(false);
-  const familyItems = historyItems.filter((i) => i.category === "HEREDOFAMILIAR" && i.familyRelationship === relationship);
-  const positives = familyItems.filter((i) => i.status === "PRESENTE");
-
-  return (
-    <div className="rounded-md border border-gray-300">
-      <button
-        type="button"
-        onClick={() => setIsOpen((v) => !v)}
-        className="flex min-h-11 w-full items-center justify-between gap-3 px-4 py-2 text-left"
-      >
-        <span className="text-base font-medium text-gray-900">{label}</span>
-        <span className="text-sm text-gray-500">
-          {positives.length > 0 ? positives.map((p) => HEREDOFAMILIAR_LABELS[p.subtype] ?? p.subtype).join(", ") : "Sin antecedentes registrados"}
-          {" · "}
-          {isOpen ? "Ocultar" : "Ver / editar"}
-        </span>
-      </button>
-      {isOpen && (
-        <div className="border-t border-gray-300 px-4">
-          {Object.entries(HEREDOFAMILIAR_LABELS).map(([subtype, label2]) => (
-            <HistoryRow
-              key={subtype}
-              patientId={patientId}
-              accessToken={accessToken}
-              category="HEREDOFAMILIAR"
-              subtype={subtype}
-              label={label2}
-              familyRelationship={relationship}
-              existing={findItem(historyItems, "HEREDOFAMILIAR", subtype, relationship)}
-              onChanged={onChanged}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 // M8-RN-012/§10: antecedentes heredofamiliares, personales no
 // patológicos y personales patológicos — se capturan una vez en el
@@ -275,6 +223,26 @@ function FamilyCard({
 // ya usa AddAllergyForm/AddMedicationForm, cada acción guarda de
 // inmediato contra /records/patients/:id/history, no depende del
 // ciclo draft/firma del encuentro.
+// Prompt 19: "el objetivo de diseño es que documentar una primera
+// consulta sea marcar, no redactar". Interacciones por bloque típico:
+// matriz heredofamiliar = 1 pulsación por celda (8 filas × lo
+// relevante); personales = 1 pulsación por renglón + comentario
+// opcional. El avance se mide por bloques completos (sin
+// NO_INVESTIGADO pendiente en sus renglones base).
+function blockProgress(historyItems: PatientHistoryItem[]): { done: number; total: number } {
+  const investigated = (category: Category, keys: string[]) =>
+    keys.every((k) => historyItems.some((i) => i.category === category && i.subtype === k && i.status !== "NO_INVESTIGADO"));
+  const blocks = [
+    // Matriz heredofamiliar: al menos una celda investigada por fila núcleo.
+    ["diabetes", "hipertension", "cancer"].every((k) =>
+      historyItems.some((i) => i.category === "HEREDOFAMILIAR" && i.subtype === k && i.status !== "NO_INVESTIGADO")
+    ),
+    investigated("PERSONAL_NO_PATOLOGICO", Object.keys(PERSONAL_NO_PATOLOGICO_LABELS)),
+    investigated("PERSONAL_PATOLOGICO", Object.keys(PERSONAL_PATOLOGICO_LABELS)),
+  ];
+  return { done: blocks.filter(Boolean).length, total: blocks.length };
+}
+
 export function AntecedentesEditor({
   patientId,
   accessToken,
@@ -286,24 +254,36 @@ export function AntecedentesEditor({
   historyItems: PatientHistoryItem[];
   onChanged: () => void;
 }) {
+  const [filter, setFilter] = useState("");
+  const progress = blockProgress(historyItems);
   return (
     <div className="flex flex-col gap-6">
-      <Card>
-        <h3 className="mb-3 text-base font-semibold text-gray-900">Antecedentes heredofamiliares</h3>
-        <div className="flex flex-col gap-2">
-          {FAMILY_RELATIONSHIPS.map((rel) => (
-            <FamilyCard
-              key={rel.value}
-              patientId={patientId}
-              accessToken={accessToken}
-              relationship={rel.value}
-              label={rel.label}
-              historyItems={historyItems}
-              onChanged={onChanged}
-            />
-          ))}
-        </div>
-      </Card>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm font-medium text-gray-700" data-testid="antecedentes-progress">
+          Avance: {progress.done} de {progress.total} bloques base completos
+        </p>
+        <input
+          type="search"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder="Buscar en el catálogo de antecedentes…"
+          aria-label="Buscar antecedente"
+          className="min-h-11 w-72 rounded-md border border-gray-300 px-3 text-base text-gray-900"
+        />
+      </div>
+      <SolicitarTermino accessToken={accessToken} />
+      <PlantillasAntecedentes patientId={patientId} accessToken={accessToken} onChanged={onChanged} />
+
+      <HeredofamiliarMatrix
+        patientId={patientId}
+        accessToken={accessToken}
+        historyItems={historyItems}
+        onChanged={onChanged}
+        filter={filter}
+      />
+
+      <ToxicomaniasBlock patientId={patientId} accessToken={accessToken} filter={filter} />
+      <GinecoBlock patientId={patientId} accessToken={accessToken} />
 
       <PersonalSection
         title="Antecedentes personales no patológicos"

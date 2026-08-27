@@ -134,6 +134,21 @@ export class ClinicalEncounterService {
   async sign(encounterId: string, doctorUserId: string, input: ClinicalNoteSignInput) {
     const encounter = await this.assertDraft(encounterId);
 
+    // Prompt 23B: la nota NO se firma mientras existan antecedentes
+    // heredados de plantilla sin revisar — el error dice CUÁLES.
+    const pendingInherited = await this.prisma.patientHistoryItem.findMany({
+      where: { patientId: encounter.patientId, inheritedFromTemplate: true, inheritedReviewedAt: null },
+      select: { id: true, category: true, subtype: true, familyRelationship: true },
+    });
+    if (pendingInherited.length > 0) {
+      throw new ApiException(
+        "ENCOUNTER_INHERITED_UNREVIEWED",
+        `Hay ${pendingInherited.length} antecedente(s) heredados de plantilla sin revisar — revísalos antes de firmar.`,
+        HttpStatus.UNPROCESSABLE_ENTITY,
+        { pendingItems: pendingInherited }
+      );
+    }
+
     const previous = await this.prisma.clinicalEncounter.findFirst({
       where: { patientId: encounter.patientId, status: "SIGNED", id: { not: encounterId } },
       orderBy: { signedAt: "desc" },

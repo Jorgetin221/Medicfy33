@@ -87,7 +87,8 @@ export default async function globalSetup(): Promise<void> {
     method: "POST",
     token,
     body: JSON.stringify({
-      substance: "Penicilinas",
+      // Prompt 23A: el agente viene del catálogo (clave), no texto libre.
+      agentKey: "penicilinas",
       allergyType: "MEDICAMENTO",
       severity: "GRAVE",
       certainty: "CONFIRMED",

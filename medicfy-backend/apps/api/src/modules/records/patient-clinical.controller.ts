@@ -1,7 +1,9 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import {
-  patientAllergyCreateSchema,
+  antecedentesTemplateCreateSchema,
+  gynecoHistoryUpsertSchema,
+  patientAllergyCatalogCreateSchema,
   patientAllergyUpdateSchema,
   patientMedicationCreateSchema,
   patientMedicationUpdateSchema,
@@ -9,13 +11,17 @@ import {
   patientHistoryListQuerySchema,
   patientPregnancyCreateSchema,
   patientPregnancyUpdateSchema,
-  type PatientAllergyCreateInput,
+  substanceUseUpsertSchema,
+  type AntecedentesTemplateCreateInput,
+  type GynecoHistoryUpsertInput,
+  type PatientAllergyCatalogCreateInput,
   type PatientAllergyUpdateInput,
   type PatientMedicationCreateInput,
   type PatientMedicationUpdateInput,
   type PatientHistoryItemUpsertInput,
   type PatientPregnancyCreateInput,
   type PatientPregnancyUpdateInput,
+  type SubstanceUseUpsertInput,
 } from "@medicfy/contracts";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { JwtAuthGuard } from "../identity/guards/jwt-auth.guard";
@@ -23,6 +29,7 @@ import { CareRelationshipGuard, type ClinicalRequest } from "../../common/guards
 import { AuditService } from "../identity/services/audit.service";
 import { getRequestMeta } from "../identity/request-meta";
 import { PatientClinicalService } from "./services/patient-clinical.service";
+import { AntecedentesTemplateService } from "./services/antecedentes-template.service";
 
 const historyQueryPipe = new ZodValidationPipe(patientHistoryListQuerySchema);
 
@@ -36,6 +43,7 @@ const historyQueryPipe = new ZodValidationPipe(patientHistoryListQuerySchema);
 export class PatientClinicalController {
   constructor(
     private readonly patientClinical: PatientClinicalService,
+    private readonly antecedentesTemplates: AntecedentesTemplateService,
     private readonly auditService: AuditService
   ) {}
 
@@ -47,14 +55,14 @@ export class PatientClinicalController {
   }
 
   @Post("allergies")
-  @ApiOperation({ summary: "Registrar una alergia — se captura una vez y se arrastra (M8-RN-012)" })
+  @ApiOperation({ summary: "Prompt 23A: registrar alergia con agente DEL CATÁLOGO (M8-RN-012)" })
   async createAllergy(
     @Param("patientId") patientId: string,
-    @Body(new ZodValidationPipe(patientAllergyCreateSchema)) body: PatientAllergyCreateInput,
+    @Body(new ZodValidationPipe(patientAllergyCatalogCreateSchema)) body: PatientAllergyCatalogCreateInput,
     @Req() req: ClinicalRequest
   ) {
     await this.auditWrite(req, patientId, "records.allergies.create");
-    return this.patientClinical.createAllergy(patientId, body);
+    return this.patientClinical.createAllergyFromCatalog(patientId, body);
   }
 
   @Patch("allergies/:allergyId")
@@ -113,6 +121,83 @@ export class PatientClinicalController {
   ) {
     await this.auditWrite(req, patientId, "records.history.upsert");
     return this.patientClinical.upsertHistoryItem(patientId, req.user.sub, body);
+  }
+
+  // ── Fase 2 · Prompt 21: toxicomanías ─────────────────────────────
+
+  @Get("substance-uses")
+  @ApiOperation({ summary: "Toxicomanías del paciente, con índices calculados en servidor" })
+  async listSubstanceUses(@Param("patientId") patientId: string, @Req() req: ClinicalRequest) {
+    await this.auditRead(req, patientId, "records.substanceUses.list");
+    return this.patientClinical.listSubstanceUses(patientId);
+  }
+
+  @Post("substance-uses")
+  @ApiOperation({ summary: "Alta/actualización de toxicomanía — cantidad obligatoria si activo/suspendido; índices con fórmula y versión" })
+  async upsertSubstanceUse(
+    @Param("patientId") patientId: string,
+    @Body(new ZodValidationPipe(substanceUseUpsertSchema)) body: SubstanceUseUpsertInput,
+    @Req() req: ClinicalRequest
+  ) {
+    await this.auditWrite(req, patientId, "records.substanceUses.upsert");
+    return this.patientClinical.upsertSubstanceUse(patientId, req.user.sub, body);
+  }
+
+  // ── Fase 2 · Prompt 22: gineco-obstétricos condicionados ─────────
+
+  @Get("gyneco-history")
+  @ApiOperation({ summary: "Bloque gineco-obstétrico — oculto para sexo M sin habilitación explícita" })
+  async getGyneco(@Param("patientId") patientId: string, @Req() req: ClinicalRequest) {
+    await this.auditRead(req, patientId, "records.gyneco.read");
+    return this.patientClinical.getGynecoHistory(patientId);
+  }
+
+  @Post("gyneco-history/enable")
+  @ApiOperation({ summary: "Habilita manualmente el bloque gineco-obstétrico cuando corresponda" })
+  async enableGyneco(@Param("patientId") patientId: string, @Req() req: ClinicalRequest) {
+    await this.auditWrite(req, patientId, "records.gyneco.enable");
+    return this.patientClinical.enableGynecoHistory(patientId, req.user.sub);
+  }
+
+  @Post("gyneco-history")
+  async upsertGyneco(
+    @Param("patientId") patientId: string,
+    @Body(new ZodValidationPipe(gynecoHistoryUpsertSchema)) body: GynecoHistoryUpsertInput,
+    @Req() req: ClinicalRequest
+  ) {
+    await this.auditWrite(req, patientId, "records.gyneco.upsert");
+    return this.patientClinical.upsertGynecoHistory(patientId, req.user.sub, body);
+  }
+
+  // ── Fase 2 · Prompt 23B: heredados y plantillas ──────────────────
+
+  @Post("history/:itemId/confirm-inherited")
+  @ApiOperation({ summary: "Marca como revisado un antecedente heredado de plantilla" })
+  async confirmInherited(
+    @Param("patientId") patientId: string,
+    @Param("itemId") itemId: string,
+    @Req() req: ClinicalRequest
+  ) {
+    await this.auditWrite(req, patientId, "records.history.confirmInherited");
+    return this.patientClinical.confirmInheritedHistoryItem(patientId, itemId, req.user.sub);
+  }
+
+  @Get("history-pending-inherited")
+  @ApiOperation({ summary: "Antecedentes heredados sin revisar — bloquean la firma" })
+  async pendingInherited(@Param("patientId") patientId: string, @Req() req: ClinicalRequest) {
+    await this.auditRead(req, patientId, "records.history.pendingInherited");
+    return this.patientClinical.pendingInheritedItems(patientId);
+  }
+
+  @Post("antecedentes-templates/:templateId/apply")
+  @ApiOperation({ summary: "Aplica una plantilla — cada dato queda HEREDADO y la firma se bloquea hasta revisarlos" })
+  async applyTemplate(
+    @Param("patientId") patientId: string,
+    @Param("templateId") templateId: string,
+    @Req() req: ClinicalRequest
+  ) {
+    await this.auditWrite(req, patientId, "records.antecedentesTemplate.apply");
+    return this.antecedentesTemplates.apply(templateId, patientId, req.user.sub);
   }
 
   // ── Fase 1 / #18: embarazo (Zona 1 de DOC-06) ────────────────────

@@ -244,12 +244,18 @@ export const PERSONAL_PATOLOGICO_SUBTYPES = [
   "salud_mental",
 ] as const;
 
-export const FAMILY_RELATIONSHIPS = ["MADRE", "PADRE", "HERMANOS", "HIJOS", "ABUELOS", "OTRO"] as const;
+// Prompt 20: columnas de la matriz heredofamiliar — abuelos separados
+// por línea paterna/materna (permite calcular riesgo familiar por
+// rama). "ABUELOS" (unificado) queda solo por las filas previas.
+export const FAMILY_RELATIONSHIPS = ["MADRE", "PADRE", "ABUELOS_PATERNOS", "ABUELOS_MATERNOS", "HERMANOS", "HIJOS", "ABUELOS", "OTRO"] as const;
 
 export const patientHistoryItemUpsertSchema = z
   .object({
     category: patientHistoryCategorySchema,
-    subtype: z.enum([...HEREDOFAMILIAR_SUBTYPES, ...PERSONAL_NO_PATOLOGICO_SUBTYPES, ...PERSONAL_PATOLOGICO_SUBTYPES]),
+    // Prompt 18: forma de clave; la EXISTENCIA se valida en servidor
+    // contra el catálogo ANTECEDENTE (un término aprobado por el
+    // curador es usable de inmediato; uno inventado se rechaza).
+    subtype: z.string().min(1).max(100).regex(/^[a-z0-9_]+$/, "Clave de catálogo inválida."),
     familyRelationship: z.enum(FAMILY_RELATIONSHIPS).optional(),
     familyRelationshipDetail: z.string().max(200).optional(),
     status: patientHistoryStatusSchema,
@@ -335,3 +341,105 @@ export const patientPregnancyUpdateSchema = z
   })
   .strict();
 export type PatientPregnancyUpdateInput = z.infer<typeof patientPregnancyUpdateSchema>;
+
+
+// ── Fase 2 · Prompt 21: toxicomanías con cuantificación ────────────
+export const SUBSTANCE_USE_STATUSES = ["ACTIVO", "SUSPENDIDO", "NEGADO"] as const;
+export const SUBSTANCE_USE_UNITS = ["CIGARROS_POR_DIA", "UNIDADES_POR_SEMANA", "UNIDADES_POR_DIA", "OTRA"] as const;
+
+export const substanceUseUpsertSchema = z
+  .object({
+    // Clave del catálogo SUSTANCIA_PSICOACTIVA — existencia validada
+    // en servidor (R2/R3).
+    substanceKey: z.string().min(1).max(100).regex(/^[a-z0-9_]+$/),
+    status: z.enum(SUBSTANCE_USE_STATUSES),
+    quantity: z.number().positive().max(1000).optional(),
+    unit: z.enum(SUBSTANCE_USE_UNITS).optional(),
+    ageOfOnset: z.number().int().min(0).max(120).optional(),
+    suspendedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    comment: z.string().max(500).optional(),
+  })
+  .strict()
+  // Prompt 21: "cantidad y frecuencia son obligatorias cuando el
+  // estado es activo o suspendido — un sí-fuma sin cantidad no sirve
+  // para ningún cálculo de riesgo".
+  .refine((v) => v.status === "NEGADO" || (v.quantity !== undefined && v.unit !== undefined), {
+    message: "Con estado activo o suspendido, cantidad y unidad/frecuencia son obligatorias.",
+    path: ["quantity"],
+  });
+export type SubstanceUseUpsertInput = z.infer<typeof substanceUseUpsertSchema>;
+
+// ── Fase 2 · Prompt 22: gineco-obstétricos ─────────────────────────
+export const CYCLE_AMOUNTS = ["LEVE", "MODERADA", "ABUNDANTE"] as const;
+export const CONTRACEPTIVE_METHODS = [
+  "NINGUNO",
+  "CONDON",
+  "DIU",
+  "HORMONAL_ORAL",
+  "HORMONAL_INYECTABLE",
+  "IMPLANTE",
+  "OTB",
+  "VASECTOMIA_PAREJA",
+  "NATURAL",
+  "OTRO",
+] as const;
+
+export const gynecoHistoryUpsertSchema = z
+  .object({
+    menarcheAge: z.number().int().min(6).max(25).nullable().optional(),
+    cycleDurationDays: z.number().int().min(1).max(15).nullable().optional(),
+    cycleFrequencyDays: z.number().int().min(15).max(120).nullable().optional(),
+    cycleAmount: z.enum(CYCLE_AMOUNTS).nullable().optional(),
+    dysmenorrhea: z.boolean().nullable().optional(),
+    otherDischarge: z.string().max(200).nullable().optional(),
+    sexualOnsetAge: z.number().int().min(5).max(100).nullable().optional(),
+    sexualPartners: z.number().int().min(0).max(500).nullable().optional(),
+    contraceptiveMethod: z.enum(CONTRACEPTIVE_METHODS).nullable().optional(),
+    sexualFrequency: z.string().max(120).nullable().optional(),
+    stiHistory: z.string().max(300).nullable().optional(),
+    gestas: z.number().int().min(0).max(30).nullable().optional(),
+    partos: z.number().int().min(0).max(30).nullable().optional(),
+    cesareas: z.number().int().min(0).max(30).nullable().optional(),
+    abortos: z.number().int().min(0).max(30).nullable().optional(),
+    perinatalHistory: z.string().max(500).nullable().optional(),
+  })
+  .strict();
+export type GynecoHistoryUpsertInput = z.infer<typeof gynecoHistoryUpsertSchema>;
+
+// ── Fase 2 · Prompt 23A: alergias ancladas al catálogo ─────────────
+// El agente viene del catálogo ALERGIA_AGENTE (por clave); si es
+// alergia a fármaco, opcionalmente se ancla al catálogo de
+// medicamentos para el cruce de la Fase 4.
+export const patientAllergyCatalogCreateSchema = z
+  .object({
+    agentKey: z.string().min(1).max(100).regex(/^[a-z0-9_]+$/),
+    medicationCatalogId: z.string().uuid().optional(),
+    allergyType: z.enum(ALLERGY_TYPES),
+    reaction: z.string().max(500).optional(),
+    severity: z.enum(ALLERGY_SEVERITIES),
+    ageOfOnset: z.string().optional(),
+    certainty: z.enum(["CONFIRMED", "LIKELY", "UNCERTAIN"]),
+    source: z.enum(CLINICAL_DATA_SOURCES),
+  })
+  .strict();
+export type PatientAllergyCatalogCreateInput = z.infer<typeof patientAllergyCatalogCreateSchema>;
+
+// ── Fase 2 · Prompt 23B: plantillas de antecedentes ────────────────
+export const antecedentesTemplateItemSchema = z
+  .object({
+    category: patientHistoryCategorySchema,
+    subtype: z.string().min(1).max(100).regex(/^[a-z0-9_]+$/),
+    familyRelationship: z.enum(FAMILY_RELATIONSHIPS).optional(),
+    status: patientHistoryStatusSchema,
+    freeText: z.string().max(1000).optional(),
+  })
+  .strict();
+
+export const antecedentesTemplateCreateSchema = z
+  .object({
+    name: z.string().min(1).max(80),
+    specialtyCode: z.string().min(1).max(30).optional(),
+    items: z.array(antecedentesTemplateItemSchema).min(1).max(100),
+  })
+  .strict();
+export type AntecedentesTemplateCreateInput = z.infer<typeof antecedentesTemplateCreateSchema>;

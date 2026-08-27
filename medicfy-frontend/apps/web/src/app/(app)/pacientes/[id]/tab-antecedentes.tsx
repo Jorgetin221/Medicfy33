@@ -12,9 +12,9 @@ import {
   ALLERGY_TYPE_LABELS,
   CLINICAL_DATA_SOURCES,
   CLINICAL_DATA_SOURCE_LABELS,
-  patientAllergyCreateSchema,
+  patientAllergyCatalogCreateSchema,
   patientMedicationCreateSchema,
-  type PatientAllergyCreateInput,
+  type PatientAllergyCatalogCreateInput,
   type PatientMedicationCreateInput,
 } from "@medicfy/contracts";
 import { apiFetch } from "@/lib/api-client";
@@ -24,6 +24,8 @@ import { Button } from "@/components/ui/button";
 import { FieldWrapper, TextInput, SelectInput } from "@/components/ui/field";
 import { AllergySummary } from "@/components/clinical/allergy-summary";
 import { AntecedentesEditor } from "@/components/clinical/antecedentes-editor";
+import { SolicitarTermino } from "@/components/clinical/historia-fase2";
+import { useEffect } from "react";
 
 // M8-RN-012: "los antecedentes se capturan una vez y se arrastran; no
 // se recapturan nunca" — este tab es el único lugar donde se
@@ -94,18 +96,24 @@ export function TabAntecedentes({
 }
 
 function AddAllergyForm({ patientId, accessToken, onCreated }: { patientId: string; accessToken: string; onCreated: () => void }) {
+  const [agentOptions, setAgentOptions] = useState<{ key: string; preferredTerm: string }[]>([]);
+  useEffect(() => {
+    apiFetch<{ key: string; preferredTerm: string }[]>("/catalogs/ALERGIA_AGENTE", { accessToken })
+      .then(setAgentOptions)
+      .catch(() => setAgentOptions([]));
+  }, [accessToken]);
   const [isOpen, setIsOpen] = useState(false);
   const [submitError, setSubmitError] = useState<unknown>(null);
-  const form = useForm<PatientAllergyCreateInput>({
-    resolver: zodResolver(patientAllergyCreateSchema),
+  const form = useForm<PatientAllergyCatalogCreateInput>({
+    resolver: zodResolver(patientAllergyCatalogCreateSchema),
     defaultValues: { certainty: "CONFIRMED" },
   });
 
-  async function onSubmit(values: PatientAllergyCreateInput) {
+  async function onSubmit(values: PatientAllergyCatalogCreateInput) {
     setSubmitError(null);
     try {
       await apiFetch(`/records/patients/${patientId}/allergies`, { method: "POST", accessToken, body: values });
-      form.reset({ certainty: "CONFIRMED" } as PatientAllergyCreateInput);
+      form.reset({ certainty: "CONFIRMED" } as PatientAllergyCatalogCreateInput);
       setIsOpen(false);
       onCreated();
     } catch (error) {
@@ -124,8 +132,17 @@ function AddAllergyForm({ patientId, accessToken, onCreated }: { patientId: stri
   return (
     <form onSubmit={form.handleSubmit(onSubmit)} className="mt-4 flex flex-col gap-3 border-t border-gray-300 pt-4" noValidate>
       <div className="grid grid-cols-2 gap-3">
-        <FieldWrapper label="Sustancia" htmlFor="allergy-substance" error={form.formState.errors.substance?.message}>
-          <TextInput id="allergy-substance" error={!!form.formState.errors.substance} {...form.register("substance")} />
+        <FieldWrapper label="Agente (del catálogo)" htmlFor="allergy-agent" error={form.formState.errors.agentKey?.message}>
+          {/* Prompt 23A: el agente viene del catálogo cerrado — nunca
+              texto libre. ¿Falta uno? Se solicita al curador. */}
+          <SelectInput id="allergy-agent" error={!!form.formState.errors.agentKey} {...form.register("agentKey")}>
+            <option value="">Elige un agente…</option>
+            {agentOptions.map((a) => (
+              <option key={a.key} value={a.key}>
+                {a.preferredTerm}
+              </option>
+            ))}
+          </SelectInput>
         </FieldWrapper>
         <FieldWrapper label="Tipo" htmlFor="allergy-type" error={form.formState.errors.allergyType?.message}>
           {/* P4 §6.1: vocabulario cerrado — el hint ya contenía la lista */}
@@ -167,6 +184,7 @@ function AddAllergyForm({ patientId, accessToken, onCreated }: { patientId: stri
           </SelectInput>
         </FieldWrapper>
       </div>
+      <SolicitarTermino accessToken={accessToken} domain="ALERGIA_AGENTE" />
       {submitError ? <ErrorState error={submitError} /> : null}
       <div className="flex gap-3">
         <Button type="button" variant="secondary" onClick={() => setIsOpen(false)}>

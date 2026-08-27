@@ -262,6 +262,8 @@ model Doctor {
   labOrders              LabOrder[]
   noteTemplates          NoteTemplate[]
 
+  antecedentesTemplates AntecedentesTemplate[]
+
   @@map("doctors")
 }
 
@@ -279,6 +281,8 @@ model Specialty {
 
   doctors      Doctor[]
   fieldSchemas SpecialtyFieldSchema[]
+
+  antecedentesTemplates AntecedentesTemplate[]
 
   @@map("specialties")
 }
@@ -502,6 +506,8 @@ model Patient {
   medications       PatientMedication[]
   historyItems      PatientHistoryItem[]
   pregnancies       PatientPregnancy[]
+  substanceUses     PatientSubstanceUse[]
+  gynecoHistory     PatientGynecoHistory?
   encounters        ClinicalEncounter[]
   attachments       ClinicalAttachment[]
   prescriptions     Prescription[]
@@ -984,9 +990,17 @@ enum AllergyCertainty {
 // M8-RN-008: cruzada automáticamente contra cada prescripción
 // (M9-RN-008a). Vive en el paciente, no en el encuentro — se captura
 // una vez y se arrastra (M8-RN-012).
+// Prompt 23A (FHIR R7): AllergyIntolerance — catalogTermId →
+// AllergyIntolerance.code; medicationCatalogId ancla las alergias a
+// fármaco al catálogo de medicamentos para el cruce de la Fase 4;
+// severity → reaction.severity; certainty → verificationStatus.
 model PatientAllergy {
   id             String           @id @default(uuid())
   patientId      String
+  // FK al catálogo ALERGIA_AGENTE (nullable por filas previas).
+  catalogTermId        String?
+  // Para alergias a fármaco: ancla al catálogo de medicamentos.
+  medicationCatalogId  String?
   substance      String
   allergyType    String
   reaction       String?
@@ -999,7 +1013,9 @@ model PatientAllergy {
   createdAt      DateTime         @default(now()) @db.Timestamptz(3)
   updatedAt      DateTime         @updatedAt @db.Timestamptz(3)
 
-  patient Patient @relation(fields: [patientId], references: [id])
+  patient           Patient              @relation(fields: [patientId], references: [id])
+  catalogTerm       ClinicalCatalogTerm? @relation("AllergyTerm", fields: [catalogTermId], references: [id])
+  medicationCatalog MedicationCatalog?   @relation(fields: [medicationCatalogId], references: [id])
 
   @@map("patient_allergies")
 }
@@ -1109,11 +1125,33 @@ model PatientPregnancy {
   @@map("patient_pregnancies")
 }
 
+// EQUIVALENCIA FHIR (R7), declarada campo por campo (prompt 18):
+//   category=HEREDOFAMILIAR        → FamilyMemberHistory
+//     familyRelationship           → FamilyMemberHistory.relationship
+//     status PRESENTE/NEGADO       → FamilyMemberHistory.condition /
+//                                    absentReason (negation)
+//   category=PERSONAL_*            → Condition (problema) u
+//                                    Observation (hábito), según subtipo
+//     subtype (término de catálogo)→ Condition.code / Observation.code
+//     status                       → Condition.verificationStatus
+//     freeText (comentario)        → .note
+//     changeLog                    → provenance/versioning (Provenance)
+//   inheritedFromTemplate          → SIN equivalente FHIR directo:
+//     es control de calidad de captura (marca de copy-forward), se
+//     documenta aquí como razón (R7 permite "razón documentada").
 model PatientHistoryItem {
   id                       String                 @id @default(uuid())
   patientId                String
   category                 PatientHistoryCategory
   subtype                  String
+  // Prompt 18: el subtipo queda REFERENCIADO al catálogo — el
+  // servidor resuelve subtype→término ANTECEDENTE vigente y guarda su
+  // id. Nullable solo por las filas previas a la Fase 2.
+  catalogTermId            String?
+  // Prompt 23B: "heredado de plantilla, sin revisar". La nota no se
+  // puede firmar mientras exista un heredado sin revisar.
+  inheritedFromTemplate    Boolean                @default(false)
+  inheritedReviewedAt      DateTime?              @db.Timestamptz(3)
   // "NONE" (no null) para PERSONAL_NO_PATOLOGICO/PERSONAL_PATOLOGICO
   // — Postgres no compara NULL=NULL en el índice único de abajo, así
   // que un valor centinela no nulo es lo que hace que "una fila
@@ -1128,8 +1166,9 @@ model PatientHistoryItem {
   createdAt                DateTime               @default(now()) @db.Timestamptz(3)
   updatedAt                DateTime               @updatedAt @db.Timestamptz(3)
 
-  patient   Patient                    @relation(fields: [patientId], references: [id])
-  changeLog PatientHistoryItemChange[]
+  patient     Patient                    @relation(fields: [patientId], references: [id])
+  catalogTerm ClinicalCatalogTerm?       @relation("HistoryItemTerm", fields: [catalogTermId], references: [id])
+  changeLog   PatientHistoryItemChange[]
 
   @@unique([patientId, category, subtype, familyRelationship])
   @@map("patient_history_items")
@@ -1142,6 +1181,142 @@ model PatientHistoryItem {
 // PatientHistoryItem inserta aquí una foto del valor ANTERIOR antes
 // de sobrescribir — nunca se actualiza ni se borra una fila de esta
 // tabla.
+// Prompt 21 — toxicomanías sobre el catálogo de sustancias.
+// FHIR (R7): Observation con code=sustancia (SNOMED cuando se
+// licencie), components cantidad/frecuencia; packYears →
+// Observation 401201003-like (índice tabáquico); estados → status.
+// Los índices se calculan y ALMACENAN en servidor con fórmula y
+// versión — nunca viajan del cliente (regla de cálculos derivados).
+enum SubstanceUseStatus {
+  ACTIVO
+  SUSPENDIDO
+  NEGADO
+
+  @@map("substance_use_status")
+}
+
+enum SubstanceUseUnit {
+  CIGARROS_POR_DIA
+  UNIDADES_POR_SEMANA
+  UNIDADES_POR_DIA
+  OTRA
+
+  @@map("substance_use_unit")
+}
+
+model PatientSubstanceUse {
+  id                 String              @id @default(uuid())
+  patientId          String
+  // FK real al catálogo SUSTANCIA_PSICOACTIVA (R2/R3).
+  substanceTermId    String
+  status             SubstanceUseStatus
+  quantity           Decimal?            @db.Decimal(8, 2)
+  unit               SubstanceUseUnit?
+  ageOfOnset         Int?
+  suspendedAt        DateTime?           @db.Date
+  comment            String?
+  // Calculados y almacenados con su fórmula y versión (prompt 21):
+  // índice tabáquico (cigarros/día × años / 20) y unidades estándar
+  // de alcohol por semana.
+  packYears          Decimal?            @db.Decimal(8, 2)
+  stdDrinksPerWeek   Decimal?            @db.Decimal(8, 2)
+  computeFormula     String?
+  computeVersion     String?
+  updatedByUserId    String
+  createdAt          DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime            @updatedAt @db.Timestamptz(3)
+
+  patient       Patient                     @relation(fields: [patientId], references: [id])
+  substanceTerm ClinicalCatalogTerm         @relation("SubstanceTerm", fields: [substanceTermId], references: [id])
+  changeLog     PatientSubstanceUseChange[]
+
+  @@unique([patientId, substanceTermId])
+  @@map("patient_substance_uses")
+}
+
+// R1: cada actualización conserva el valor anterior con fecha y autor.
+model PatientSubstanceUseChange {
+  id               String   @id @default(uuid())
+  substanceUseId   String
+  previousValue    Json
+  changedByUserId  String
+  changedAt        DateTime @default(now()) @db.Timestamptz(3)
+
+  substanceUse PatientSubstanceUse @relation(fields: [substanceUseId], references: [id])
+
+  @@map("patient_substance_use_changes")
+}
+
+// Prompt 22 — bloque gineco-obstétrico. Se MUESTRA según el sexo
+// registrado y puede habilitarse manualmente (manuallyEnabled) — el
+// servidor lo oculta para sexAtBirth=M sin habilitación explícita.
+// FHIR (R7): menarca/ciclo/actividad → Observations; fórmula
+// obstétrica G/P/C/A → Observations 11996-6, 11977-6, 68499-3,
+// 11612-9 (LOINC); antecedentes perinatales → .note (texto corto,
+// razón documentada: narrativa perinatal sin catálogo estándar aún).
+model PatientGynecoHistory {
+  id                     String    @id @default(uuid())
+  patientId              String    @unique
+  manuallyEnabled        Boolean   @default(false)
+  menarcheAge            Int?
+  cycleDurationDays      Int?
+  cycleFrequencyDays     Int?
+  cycleAmount            String?
+  dysmenorrhea           Boolean?
+  otherDischarge         String?
+  sexualOnsetAge         Int?
+  sexualPartners         Int?
+  contraceptiveMethod    String?
+  sexualFrequency        String?
+  stiHistory             String?
+  gestas                 Int?
+  partos                 Int?
+  cesareas               Int?
+  abortos                Int?
+  perinatalHistory       String?
+  updatedByUserId        String
+  createdAt              DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime  @updatedAt @db.Timestamptz(3)
+
+  patient   Patient                      @relation(fields: [patientId], references: [id])
+  changeLog PatientGynecoHistoryChange[]
+
+  @@map("patient_gyneco_histories")
+}
+
+model PatientGynecoHistoryChange {
+  id              String   @id @default(uuid())
+  gynecoHistoryId String
+  previousValue   Json
+  changedByUserId String
+  changedAt       DateTime @default(now()) @db.Timestamptz(3)
+
+  gynecoHistory PatientGynecoHistory @relation(fields: [gynecoHistoryId], references: [id])
+
+  @@map("patient_gyneco_history_changes")
+}
+
+// Prompt 23B — plantillas de antecedentes por especialidad, propiedad
+// del médico. Aplicarla marca cada dato como heredado; la firma se
+// bloquea mientras haya heredados sin revisar.
+model AntecedentesTemplate {
+  id          String   @id @default(uuid())
+  doctorId    String
+  specialtyId String?
+  name        String
+  // Lista de {category, subtype, familyRelationship?, status, freeText?}
+  // validada por contrato al crear; se aplica vía el MISMO upsert de
+  // antecedentes (nunca un camino aparte que evada validaciones).
+  items       Json
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+
+  doctor    Doctor     @relation(fields: [doctorId], references: [id])
+  specialty Specialty? @relation(fields: [specialtyId], references: [id])
+
+  @@map("antecedentes_templates")
+}
+
 model PatientHistoryItemChange {
   id                      String                @id @default(uuid())
   historyItemId           String
@@ -1200,6 +1375,8 @@ model MedicationCatalog {
   createdAt                    DateTime     @default(now()) @db.Timestamptz(3)
 
   prescriptionItems PrescriptionItem[]
+
+  patientAllergies PatientAllergy[]
 
   @@map("medications_catalog")
 }
@@ -1624,6 +1801,9 @@ model ClinicalCatalogTerm {
   mergedFrom ClinicalCatalogTerm[] @relation("CatalogTermMerge")
   curator    User?                 @relation("CatalogTermCurator", fields: [curatedBy], references: [id])
   requests   CatalogTermRequest[]
+  historyItems PatientHistoryItem[] @relation("HistoryItemTerm")
+  allergyTerms  PatientAllergy[]      @relation("AllergyTerm")
+  substanceUses PatientSubstanceUse[] @relation("SubstanceTerm")
 
   @@unique([domain, key])
   @@unique([domain, normalizedTerm])

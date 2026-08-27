@@ -1,6 +1,9 @@
 import { HttpStatus, Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import type {
+  AntecedentesTemplateCreateInput,
+  GynecoHistoryUpsertInput,
+  PatientAllergyCatalogCreateInput,
   PatientAllergyCreateInput,
   PatientAllergyUpdateInput,
   PatientMedicationCreateInput,
@@ -9,6 +12,7 @@ import type {
   PatientHistoryItemUpsertInput,
   PatientPregnancyCreateInput,
   PatientPregnancyUpdateInput,
+  SubstanceUseUpsertInput,
 } from "@medicfy/contracts";
 import { ApiException } from "../../../common/api-exception";
 import { PrismaService } from "../../../prisma/prisma.service";
@@ -91,17 +95,64 @@ export class PatientClinicalService {
   // se dejan con el valor viejo por accidente. La clave (patientId,
   // category, subtype, familyRelationship) es lo que define "una fila
   // vigente" por antecedente.
-  async upsertHistoryItem(patientId: string, userId: string, input: PatientHistoryItemUpsertInput) {
+  // Prompt 24.1: "ningún campo de antecedente acepta un término que no
+  // exista en catálogo" — el subtipo se resuelve contra el dominio
+  // ANTECEDENTE (siguiendo fusiones al término vigente) y se guarda su
+  // id. Un término inventado se rechaza aquí, no en un enum estático:
+  // lo que el curador aprueba (prompt 10) es usable de inmediato.
+  // Público para AntecedentesTemplateService (valida plantillas al crearlas).
+  async resolveAntecedenteTermPublic(subtype: string) {
+    return this.resolveAntecedenteTerm(subtype);
+  }
+
+  private async resolveAntecedenteTerm(subtype: string) {
+    const term = await this.prisma.clinicalCatalogTerm.findFirst({ where: { domain: "ANTECEDENTE", key: subtype } });
+    if (!term) {
+      throw new ApiException(
+        "HISTORY_SUBTYPE_NOT_IN_CATALOG",
+        `El antecedente "${subtype}" no existe en el catálogo. Solicítalo al curador desde "solicitar término nuevo".`,
+        HttpStatus.UNPROCESSABLE_ENTITY,
+        { subtype }
+      );
+    }
+    if (term.status === "MERGED" && term.mergedIntoId) {
+      const current = await this.prisma.clinicalCatalogTerm.findUnique({ where: { id: term.mergedIntoId } });
+      if (current) return current;
+    }
+    if (term.status === "OBSOLETE") {
+      throw new ApiException(
+        "HISTORY_SUBTYPE_OBSOLETE",
+        `El antecedente "${subtype}" quedó obsoleto en el catálogo.`,
+        HttpStatus.UNPROCESSABLE_ENTITY,
+        { subtype }
+      );
+    }
+    return term;
+  }
+
+  async upsertHistoryItem(
+    patientId: string,
+    userId: string,
+    input: PatientHistoryItemUpsertInput,
+    options?: { inheritedFromTemplate?: boolean }
+  ) {
+    const catalogTerm = await this.resolveAntecedenteTerm(input.subtype);
     const familyRelationship = input.familyRelationship ?? "NONE";
     // input.structuredValue ya está validado por Zod (patientHistoryItemUpsertSchema)
     // como un record de valores JSON-serializables — el cast es solo
     // para el tipo de Prisma.InputJsonValue, más estricto de lo que
     // TS puede verificar estructuralmente contra un Record genérico.
+    const inherited = options?.inheritedFromTemplate === true;
     const data = {
       status: input.status,
       structuredValue: input.structuredValue ? (input.structuredValue as Prisma.InputJsonValue) : Prisma.DbNull,
       freeText: input.freeText ?? null,
       familyRelationshipDetail: input.familyRelationshipDetail ?? null,
+      catalogTermId: catalogTerm.id,
+      // Prompt 23B: aplicar plantilla marca heredado; una captura
+      // MANUAL del médico es, por definición, dato revisado.
+      inheritedFromTemplate: inherited,
+      inheritedReviewedAt: inherited ? null : new Date(),
     };
 
     return this.prisma.$transaction(async (tx) => {
@@ -133,6 +184,200 @@ export class PatientClinicalService {
       });
 
       return tx.patientHistoryItem.update({ where: { id: existing.id }, data: { updatedByUserId: userId, ...data } });
+    });
+  }
+
+  // Prompt 23B: revisar un heredado sin cambiarlo — lo confirma.
+  async confirmInheritedHistoryItem(patientId: string, itemId: string, userId: string) {
+    const item = await this.prisma.patientHistoryItem.findUnique({ where: { id: itemId } });
+    if (!item || item.patientId !== patientId) {
+      throw new ApiException("HISTORY_ITEM_NOT_FOUND", "Antecedente no encontrado.", HttpStatus.NOT_FOUND);
+    }
+    return this.prisma.patientHistoryItem.update({
+      where: { id: itemId },
+      data: { inheritedReviewedAt: new Date(), updatedByUserId: userId },
+    });
+  }
+
+  pendingInheritedItems(patientId: string) {
+    return this.prisma.patientHistoryItem.findMany({
+      where: { patientId, inheritedFromTemplate: true, inheritedReviewedAt: null },
+      select: { id: true, category: true, subtype: true, familyRelationship: true },
+      orderBy: { createdAt: "asc" },
+    });
+  }
+
+  // ── Prompt 21: toxicomanías con cuantificación ───────────────────
+  // Índices calculados y ALMACENADOS en servidor, con fórmula y
+  // versión — mismo principio que IMC/escalas.
+  private static readonly SUBSTANCE_FORMULA_VERSION = "v1";
+
+  private computeSubstanceIndices(substanceKey: string, input: SubstanceUseUpsertInput, birthDate: Date) {
+    if (input.status === "NEGADO" || input.quantity === undefined) {
+      return { packYears: null, stdDrinksPerWeek: null, computeFormula: null, computeVersion: null };
+    }
+    // Años de consumo: de la edad de inicio a la suspensión (o a hoy).
+    const endDate = input.suspendedAt ? new Date(input.suspendedAt) : new Date();
+    const endAgeYears = (endDate.getTime() - birthDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
+    const years = input.ageOfOnset !== undefined ? Math.max(0, endAgeYears - input.ageOfOnset) : null;
+
+    if (substanceKey === "tabaco" && input.unit === "CIGARROS_POR_DIA" && years !== null) {
+      return {
+        packYears: Math.round(((input.quantity * years) / 20) * 100) / 100,
+        stdDrinksPerWeek: null,
+        computeFormula: "paquetes_anio = (cigarros_por_dia * anios_de_consumo) / 20",
+        computeVersion: PatientClinicalService.SUBSTANCE_FORMULA_VERSION,
+      };
+    }
+    if (substanceKey === "alcohol" && (input.unit === "UNIDADES_POR_SEMANA" || input.unit === "UNIDADES_POR_DIA")) {
+      const weekly = input.unit === "UNIDADES_POR_DIA" ? input.quantity * 7 : input.quantity;
+      return {
+        packYears: null,
+        stdDrinksPerWeek: Math.round(weekly * 100) / 100,
+        computeFormula: "unidades_estandar_semana = unidades_por_dia * 7 | unidades_por_semana",
+        computeVersion: PatientClinicalService.SUBSTANCE_FORMULA_VERSION,
+      };
+    }
+    return { packYears: null, stdDrinksPerWeek: null, computeFormula: null, computeVersion: null };
+  }
+
+  listSubstanceUses(patientId: string) {
+    return this.prisma.patientSubstanceUse.findMany({
+      where: { patientId },
+      include: { substanceTerm: { select: { key: true, preferredTerm: true } } },
+      orderBy: { createdAt: "asc" },
+    });
+  }
+
+  async upsertSubstanceUse(patientId: string, userId: string, input: SubstanceUseUpsertInput) {
+    const term = await this.prisma.clinicalCatalogTerm.findFirst({
+      where: { domain: "SUSTANCIA_PSICOACTIVA", key: input.substanceKey, status: "ACTIVE" },
+    });
+    if (!term) {
+      throw new ApiException(
+        "SUBSTANCE_NOT_IN_CATALOG",
+        `La sustancia "${input.substanceKey}" no existe en el catálogo.`,
+        HttpStatus.UNPROCESSABLE_ENTITY
+      );
+    }
+    const patient = await this.prisma.patient.findUniqueOrThrow({ where: { id: patientId }, select: { birthDate: true } });
+    const indices = this.computeSubstanceIndices(term.key, input, patient.birthDate);
+    const data = {
+      status: input.status,
+      quantity: input.quantity ?? null,
+      unit: input.unit ?? null,
+      ageOfOnset: input.ageOfOnset ?? null,
+      suspendedAt: input.suspendedAt ? new Date(input.suspendedAt) : null,
+      comment: input.comment ?? null,
+      ...indices,
+      updatedByUserId: userId,
+    };
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.patientSubstanceUse.findUnique({
+        where: { patientId_substanceTermId: { patientId, substanceTermId: term.id } },
+      });
+      if (!existing) {
+        return tx.patientSubstanceUse.create({ data: { patientId, substanceTermId: term.id, ...data } });
+      }
+      // R1 / prompt 24.4: el valor anterior se conserva con fecha y autor.
+      await tx.patientSubstanceUseChange.create({
+        data: {
+          substanceUseId: existing.id,
+          previousValue: {
+            status: existing.status,
+            quantity: existing.quantity,
+            unit: existing.unit,
+            ageOfOnset: existing.ageOfOnset,
+            suspendedAt: existing.suspendedAt,
+            comment: existing.comment,
+            packYears: existing.packYears,
+            stdDrinksPerWeek: existing.stdDrinksPerWeek,
+          } as Prisma.InputJsonValue,
+          changedByUserId: userId,
+        },
+      });
+      return tx.patientSubstanceUse.update({ where: { id: existing.id }, data });
+    });
+  }
+
+  // ── Prompt 22: gineco-obstétricos condicionados por sexo ─────────
+  private async gynecoVisibility(patientId: string) {
+    const patient = await this.prisma.patient.findUniqueOrThrow({ where: { id: patientId }, select: { sexAtBirth: true } });
+    const existing = await this.prisma.patientGynecoHistory.findUnique({ where: { patientId } });
+    const visible = patient.sexAtBirth === "F" || existing?.manuallyEnabled === true;
+    return { visible, existing };
+  }
+
+  async getGynecoHistory(patientId: string) {
+    const { visible, existing } = await this.gynecoVisibility(patientId);
+    // El bloque NO se muestra por omisión a todos (prompt 22): para un
+    // paciente masculino sin habilitación explícita, no hay bloque.
+    if (!visible) return { visible: false as const, history: null };
+    return { visible: true as const, history: existing ?? null };
+  }
+
+  async enableGynecoHistory(patientId: string, userId: string) {
+    const existing = await this.prisma.patientGynecoHistory.findUnique({ where: { patientId } });
+    if (existing) {
+      return this.prisma.patientGynecoHistory.update({ where: { patientId }, data: { manuallyEnabled: true, updatedByUserId: userId } });
+    }
+    return this.prisma.patientGynecoHistory.create({ data: { patientId, manuallyEnabled: true, updatedByUserId: userId } });
+  }
+
+  async upsertGynecoHistory(patientId: string, userId: string, input: GynecoHistoryUpsertInput) {
+    const { visible, existing } = await this.gynecoVisibility(patientId);
+    if (!visible) {
+      throw new ApiException(
+        "GYNECO_BLOCK_NOT_ENABLED",
+        "El bloque gineco-obstétrico no está habilitado para este paciente — habilítalo explícitamente primero.",
+        HttpStatus.UNPROCESSABLE_ENTITY
+      );
+    }
+    const data = { ...omitUndefined(input as Record<string, unknown>), updatedByUserId: userId };
+    return this.prisma.$transaction(async (tx) => {
+      if (!existing) {
+        return tx.patientGynecoHistory.create({ data: { patientId, ...data } });
+      }
+      await tx.patientGynecoHistoryChange.create({
+        data: {
+          gynecoHistoryId: existing.id,
+          previousValue: JSON.parse(JSON.stringify(existing)) as Prisma.InputJsonValue,
+          changedByUserId: userId,
+        },
+      });
+      return tx.patientGynecoHistory.update({ where: { patientId }, data });
+    });
+  }
+
+  // ── Prompt 23A: alergias ancladas al catálogo ────────────────────
+  async createAllergyFromCatalog(patientId: string, input: PatientAllergyCatalogCreateInput) {
+    const term = await this.prisma.clinicalCatalogTerm.findFirst({
+      where: { domain: "ALERGIA_AGENTE", key: input.agentKey, status: "ACTIVE" },
+    });
+    if (!term) {
+      throw new ApiException(
+        "ALLERGY_AGENT_NOT_IN_CATALOG",
+        `El agente "${input.agentKey}" no existe en el catálogo de alergias — solicítalo al curador.`,
+        HttpStatus.UNPROCESSABLE_ENTITY
+      );
+    }
+    if (input.medicationCatalogId) {
+      const med = await this.prisma.medicationCatalog.findUnique({ where: { id: input.medicationCatalogId } });
+      if (!med) {
+        throw new ApiException("MEDICATION_NOT_FOUND", "El medicamento anclado no existe en el catálogo.", HttpStatus.UNPROCESSABLE_ENTITY);
+      }
+    }
+    const { agentKey, medicationCatalogId, reaction, ageOfOnset, ...rest } = input;
+    return this.prisma.patientAllergy.create({
+      data: {
+        patientId,
+        // substance se conserva (con el término preferido) para el
+        // cruce actual de recetas; catalogTermId es la referencia dura.
+        substance: term.preferredTerm,
+        catalogTermId: term.id,
+        ...rest,
+        ...omitUndefined({ medicationCatalogId, reaction, ageOfOnset }),
+      },
     });
   }
 

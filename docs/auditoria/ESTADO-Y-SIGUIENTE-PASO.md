@@ -10,6 +10,7 @@
 | **Bloque 0 · Diagnóstico** (prompts 1–6) | **Terminado.** Informes en `docs/auditoria/P1`…`P6`. |
 | **Remediación previa a la Fase 0** | **Terminada y VERIFICADA: la suite completa corrió en verde.** |
 | **Fase 0 · Catálogos** (prompts 7–11) | **TERMINADA POR LA LETRA** — con el doc de 58 prompts ya en el repo: bandeja de solicitudes de término (prompt 10) y catálogos poblados (prompt 9, 120 términos en 8 dominios con fuente declarada); prueba 11.4 (cero duplicados) en verde. |
+| **Fase 2 · Historia clínica estructurada** (prompts 18–24) | **Construida y verificada — las CINCO pruebas del prompt 24 pasan.** Falta solo el criterio de los 10 minutos, que exige el material clínico real de Jorge (🔒). |
 | **Fase 1 · Escritorio de Consulta** (prompts 12–17) | **TERMINADA POR LA LETRA** — las cinco pruebas del prompt 17 pasan (agenda en 2 clics, recarga con borrador+scroll, alergia sin scroll, cajón táctil de la Zona 3, otro médico→403). Zona 1 en orden de prominencia, Zona 3 esqueleto con carga diferida, autoguardado con rebote de 2s+blur+hora, encadenar consultas. |
 
 ## Verificación de la suite (esta sesión)
@@ -125,8 +126,7 @@ espera). Receta completa en la "Nota operativa" de abajo. Con eso:
 - Verificado en esta sesión: 2/2 e2e en verde contra la pila completa
   (Postgres real + API real + build de producción del web).
 
-Suite total tras la Fase 1 parcial: **227 API + 30 contratos + 5 UI +
-3 e2e**, typecheck y lint limpios en ambos árboles.
+Suite total: **236 API + 30 contratos + 5 UI + 6 e2e**, typecheck y lint limpios en ambos árboles.
 
 **Segundo bloque de la Fase 1 (misma sesión):**
 - **Consulta sin ratón, probada**: `e2e/doc06-teclado.spec.ts` ejecuta
@@ -178,6 +178,64 @@ Con él se cerraron los huecos de letra de las fases 0 y 1:
 - **Prompt 16**: "siguiente paciente" al firmar — salta a la siguiente
   cita CONFIRMADA del día o regresa a la agenda; R4 se revalúa al
   abrir la siguiente.
+
+## Fase 2 — Historia clínica estructurada (misma sesión)
+
+**Prompt 18** — el modelo longitudinal ya existía (upsert + change log
+con autor y fecha); se completó: `catalogTermId` (el subtipo se
+resuelve contra el dominio ANTECEDENTE — un término aprobado por el
+curador es usable al instante, uno inventado se rechaza 422), marca
+`inheritedFromTemplate`/`inheritedReviewedAt`, y la equivalencia FHIR
+declarada campo por campo en el schema (FamilyMemberHistory /
+Condition / Observation).
+
+**Prompt 19/20** — captura marcando, no redactando: matriz
+heredofamiliar (filas = padecimientos del catálogo; columnas = padre,
+madre, abuelos paternos, abuelos maternos, hermanos, hijos; cada celda
+cicla —/✓/✗/? en UNA pulsación; "se desconoce" ≠ "negado"), indicador
+de avance por bloques, buscador sobre el catálogo y enlace "solicitar
+término nuevo" (flujo del prompt 10). ABUELOS_PATERNOS/MATERNOS
+agregados al contrato (ABUELOS unificado queda por filas previas).
+
+**Prompt 21** — `PatientSubstanceUse` sobre el catálogo
+SUSTANCIA_PSICOACTIVA: estado/cantidad/unidad/edad de inicio/fecha de
+suspensión; cantidad+unidad OBLIGATORIAS si activo/suspendido; índice
+tabáquico y unidades estándar/semana calculados y ALMACENADOS en
+servidor con fórmula y versión (v1). Caso verificado: 6 cigarros/día ×
+12 años = 3.6 paquetes-año. Change log R1 propio.
+
+**Prompt 22** — `PatientGynecoHistory`: menarca, ciclo, actividad
+sexual, método anticonceptivo (lista cerrada), fórmula obstétrica
+G/P/C/A, perinatales. El servidor lo OCULTA para sexo M sin
+habilitación explícita (`manuallyEnabled`), y rechaza escrituras (422).
+Versionado con change log.
+
+**Prompt 23A** — la alergia nace del catálogo: `agentKey` →
+`catalogTermId` (+ `medicationCatalogId` opcional para fármacos, listo
+para el cruce de la Fase 4). La ruta de texto libre del alta se cerró
+(P4 §2.1 resuelto de raíz); el formulario usa selector del catálogo +
+solicitar término.
+
+**Prompt 23B** — `AntecedentesTemplate` por especialidad, del médico:
+aplicar corre el MISMO upsert (nunca un camino aparte) marcando cada
+dato heredado; **la firma se bloquea** (422 con la lista exacta)
+mientras haya heredados sin revisar; se revisan confirmando (✓) o
+recapturando. Una plantilla con términos fuera de catálogo se rechaza
+al crearla.
+
+**Prompt 24** — las cinco pruebas literales en verde
+(`fase2-historia.integration.spec.ts`): término fuera de catálogo
+rechazado, gineco oculto para sexo M sin habilitación, 6×12=3.6
+almacenado, valor previo consultable con fecha y autor, y plantilla +
+firma sin revisar → error con pendientes.
+
+**Pendiente de la Fase 2 (🔒 Jorge):** el criterio de los DIEZ MINUTOS
+exige su material clínico real — necesito: (1) el texto completo de
+una primera consulta y uno de seguimiento reales (anonimizados), (2)
+el ORDEN en que llena los campos, (3) las frases que repite (para las
+plantillas). Con eso se mide el tiempo y se calibran las plantillas.
+También pendiente: UI para CREAR plantillas (hoy se crean por API) y
+su revisión de los vocabularios sembrados con pendingMedicalReview.
 
 ## Decisiones tomadas por delegación (revisar cuando Jorge quiera)
 
