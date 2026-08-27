@@ -10,7 +10,7 @@
 | **Bloque 0 · Diagnóstico** (prompts 1–6) | **Terminado.** Informes en `docs/auditoria/P1`…`P6`. |
 | **Remediación previa a la Fase 0** | **Terminada y VERIFICADA: la suite completa corrió en verde.** |
 | **Fase 0 · Catálogos** (prompts 7–11) | **Terminada** (con dos piezas que esperan decisión de Jorge, ver abajo). |
-| **Fase 1 · Escritorio de Consulta** (prompts 12–17) | No empezada. Es el siguiente paso. |
+| **Fase 1 · Escritorio de Consulta** (prompts 12–17) | **En curso — los tres hallazgos que P6 le asigna (#18, #19, #20) están cerrados y verificados.** |
 
 ## Verificación de la suite (esta sesión)
 
@@ -86,6 +86,55 @@ espera). Receta completa en la "Nota operativa" de abajo. Con eso:
   (idénticos otra vez; la divergencia de P1 quedó cerrada — la
   consolidación física en un solo paquete sigue pendiente, #10).
 
+## Qué se construyó de la Fase 1 (27 ago, misma sesión)
+
+**#18 — Embarazo** (no existía en ninguna parte del repositorio):
+- Modelo `PatientPregnancy` + migración `20260827050000`: FUM opcional,
+  FPP siempre presente (servidor: FUM+280 por Naegele, o la capturada
+  por ultrasonido), método de datación explícito, un solo ACTIVE por
+  paciente (índice único parcial de Postgres), DELETE revocado.
+- Las SDG se calculan al LEER a partir de la FPP y nunca se almacenan.
+- Endpoints bajo `/records/patients/:id/pregnancy` (GET/POST/PATCH/close),
+  todos tras CareRelationshipGuard y con bitácora. Una FUM recordada
+  tarde no degrada una datación por ultrasonido.
+- Zona 1: banner "🤰 Embarazo: X.Y SDG · FPP …" bajo el encabezado.
+
+**#19 — Diagnósticos vigentes** (no había lista de problemas activos):
+- `GET /records/patients/:id/active-diagnoses`: vista DERIVADA de los
+  diagnósticos de consultas firmadas — deduplicada por CIE-10, o por
+  descripción normalizada (el normalizador del catálogo) cuando no hay
+  código; con conteo de repeticiones y orden por más reciente. Sin
+  tabla nueva y sin ciclo de vida inventado: marcar un problema como
+  "resuelto" es una regla clínica que queda para Jorge.
+- Zona 1: sección "Diagnósticos vigentes" (top 5) antes de Antecedentes.
+
+**#20 — Infraestructura de pruebas de frontend** (había CERO pruebas de UI):
+- Vitest + Testing Library (`apps/web/vitest.config.ts`): primeras 5
+  pruebas de componente, sobre la Zona 1 (banner de embarazo,
+  diagnósticos vigentes, últimas 3 firmadas, estados vacíos).
+- **Playwright a 1280×800** (`playwright.config.ts`, proyecto
+  "tableta"): el criterio duro de DOC-06 ahora es una prueba que corre
+  — `e2e/doc06-tableta.spec.ts` verifica la Zona 1 COMPLETA visible
+  sin scroll ni clic (nombre, embarazo, diagnósticos, antecedentes,
+  alergias, últimas 3 consultas, cada caja dentro de los 800px) y los
+  objetivos táctiles de 44px (R8). `e2e/global-setup.ts` siembra
+  doctora verificada + paciente con la Zona 1 poblada por la API real.
+- Para correrlo: API en :3001, web en :3000 (`next start` tras build),
+  `npx playwright test` en apps/web. En entornos con Chromium
+  preinstalado: `E2E_CHROMIUM_PATH=<binario>`.
+- Verificado en esta sesión: 2/2 e2e en verde contra la pila completa
+  (Postgres real + API real + build de producción del web).
+
+Suite total tras la Fase 1 parcial: **226 API + 30 contratos + 5 UI +
+2 e2e**, typecheck y lint limpios en ambos árboles.
+
+**Qué le queda a la Fase 1** (contra CLAUDE.md §6, sin el texto exacto
+de los prompts 12-17): consulta de seguimiento completa sin ratón
+(prueba de teclado e2e), autoguardado sin conexión (IndexedDB),
+verificación de los dos modos con sus tiempos objetivo, y la métrica
+abrir→firmar (el cronómetro ya se pinta; falta persistirla como métrica
+de negocio, M8-RN-013).
+
 ## Decisiones tomadas por delegación (revisar cuando Jorge quiera)
 
 1. Valores exactos de los enums clínicos (tipos de alergia, severidades
@@ -112,10 +161,10 @@ si quiere ampliar el vocabulario, el flujo del curador ya existe.
 1. En la Mac (único paso que exige su terminal — su Postgres local no es
    alcanzable desde la sesión): `bash scripts/sync-dev.sh` dentro de
    `medicfy-backend/`. En `medicfy-frontend`: `pnpm install && pnpm build`.
-2. **Fase 1 (prompts 12–17): el Escritorio de Consulta.** P6 ya avisa:
-   el trabajo restante ahí es sobre todo frontend (DOC-06), e incluye
-   los hallazgos #18 (embarazo), #19 (diagnósticos vigentes) y #20
-   (infraestructura de pruebas de frontend — hoy hay CERO pruebas de UI).
+2. **Continuar la Fase 1**: consulta de seguimiento sin ratón (prueba
+   de teclado e2e), autoguardado sin conexión y métrica abrir→firmar
+   persistida — de preferencia con el texto de los prompts 12-17 a la
+   mano.
 
 ## Historial de git
 

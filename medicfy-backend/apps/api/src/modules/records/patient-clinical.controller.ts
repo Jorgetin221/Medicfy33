@@ -7,11 +7,15 @@ import {
   patientMedicationUpdateSchema,
   patientHistoryItemUpsertSchema,
   patientHistoryListQuerySchema,
+  patientPregnancyCreateSchema,
+  patientPregnancyUpdateSchema,
   type PatientAllergyCreateInput,
   type PatientAllergyUpdateInput,
   type PatientMedicationCreateInput,
   type PatientMedicationUpdateInput,
   type PatientHistoryItemUpsertInput,
+  type PatientPregnancyCreateInput,
+  type PatientPregnancyUpdateInput,
 } from "@medicfy/contracts";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { JwtAuthGuard } from "../identity/guards/jwt-auth.guard";
@@ -109,6 +113,57 @@ export class PatientClinicalController {
   ) {
     await this.auditWrite(req, patientId, "records.history.upsert");
     return this.patientClinical.upsertHistoryItem(patientId, req.user.sub, body);
+  }
+
+  // ── Fase 1 / #18: embarazo (Zona 1 de DOC-06) ────────────────────
+
+  @Get("pregnancy")
+  @ApiOperation({ summary: "Embarazo activo de la paciente, con SDG/FPP calculadas en servidor" })
+  async getPregnancy(@Param("patientId") patientId: string, @Req() req: ClinicalRequest) {
+    await this.auditRead(req, patientId, "records.pregnancy.read");
+    return { pregnancy: await this.patientClinical.getActivePregnancy(patientId) };
+  }
+
+  @Post("pregnancy")
+  @ApiOperation({ summary: "Registra un embarazo — FPP = FUM+280 salvo FPP por ultrasonido; un solo ACTIVE por paciente" })
+  async createPregnancy(
+    @Param("patientId") patientId: string,
+    @Body(new ZodValidationPipe(patientPregnancyCreateSchema)) body: PatientPregnancyCreateInput,
+    @Req() req: ClinicalRequest
+  ) {
+    await this.auditWrite(req, patientId, "records.pregnancy.create");
+    return this.patientClinical.createPregnancy(patientId, req.user.sub, body);
+  }
+
+  @Patch("pregnancy/:pregnancyId")
+  async updatePregnancy(
+    @Param("patientId") patientId: string,
+    @Param("pregnancyId") pregnancyId: string,
+    @Body(new ZodValidationPipe(patientPregnancyUpdateSchema)) body: PatientPregnancyUpdateInput,
+    @Req() req: ClinicalRequest
+  ) {
+    await this.auditWrite(req, patientId, "records.pregnancy.update");
+    return this.patientClinical.updatePregnancy(patientId, pregnancyId, body);
+  }
+
+  @Post("pregnancy/:pregnancyId/close")
+  @ApiOperation({ summary: "Cierra el embarazo activo — la fila nunca se borra; el desenlace se documenta en la nota" })
+  async closePregnancy(
+    @Param("patientId") patientId: string,
+    @Param("pregnancyId") pregnancyId: string,
+    @Req() req: ClinicalRequest
+  ) {
+    await this.auditWrite(req, patientId, "records.pregnancy.close");
+    return this.patientClinical.closePregnancy(patientId, pregnancyId);
+  }
+
+  // ── Fase 1 / #19: diagnósticos vigentes (problemas activos) ──────
+
+  @Get("active-diagnoses")
+  @ApiOperation({ summary: "Vista derivada de los diagnósticos de consultas firmadas, deduplicados (Zona 1)" })
+  async activeDiagnoses(@Param("patientId") patientId: string, @Req() req: ClinicalRequest) {
+    await this.auditRead(req, patientId, "records.activeDiagnoses.read");
+    return this.patientClinical.activeDiagnoses(patientId);
   }
 
   @Get("timeline")

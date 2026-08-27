@@ -77,6 +77,8 @@ export function PacienteConsultaScreen({ patientId, accessToken }: { patientId: 
     medications,
     historyItems,
     timeline,
+    pregnancy,
+    activeDiagnoses,
     isLoading: isLoadingClinical,
     reload: reloadClinical,
   } = usePatientClinical(patientId, accessToken);
@@ -135,6 +137,8 @@ export function PacienteConsultaScreen({ patientId, accessToken }: { patientId: 
         medications={medications}
         historyItems={historyItems}
         timeline={timeline}
+        pregnancy={pregnancy}
+        activeDiagnoses={activeDiagnoses}
         isLoadingClinical={isLoadingClinical}
       />
       {phase === "readonly" ? (

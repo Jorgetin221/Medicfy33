@@ -139,17 +139,43 @@ export interface PatientHistoryItem {
   updatedAt: string;
 }
 
+// Fase 1 / Zona 1 — #18 embarazo y #19 diagnósticos vigentes. SDG y
+// FPP llegan CALCULADAS del servidor; el cliente solo las pinta.
+export interface PatientPregnancy {
+  id: string;
+  patientId: string;
+  status: "ACTIVE" | "CLOSED";
+  lmpDate: string | null;
+  eddDate: string;
+  eddMethod: "FUM" | "ULTRASONIDO";
+  gestationalAge: { weeks: number; days: number };
+  isPostTerm: boolean;
+}
+
+export interface ActiveDiagnosis {
+  icd10Code: string | null;
+  description: string;
+  diagnosisType: "PRINCIPAL" | "SECONDARY";
+  certainty: "SUSPECTED" | "CONFIRMED";
+  firstRecordedAt: string;
+  lastRecordedAt: string;
+  timesRecorded: number;
+  lastEncounterId: string;
+}
+
 interface State {
   patient: PatientSummary | null;
   allergies: PatientAllergy[];
   medications: PatientMedication[];
   historyItems: PatientHistoryItem[];
   timeline: PatientTimeline | null;
+  pregnancy: PatientPregnancy | null;
+  activeDiagnoses: ActiveDiagnosis[];
   isLoading: boolean;
   error: unknown;
 }
 
-const EMPTY_STATE: State = { patient: null, allergies: [], medications: [], historyItems: [], timeline: null, isLoading: true, error: null };
+const EMPTY_STATE: State = { patient: null, allergies: [], medications: [], historyItems: [], timeline: null, pregnancy: null, activeDiagnoses: [], isLoading: true, error: null };
 
 // Compartido por /consulta/[appointmentId] (antecedentes visibles sin
 // scroll/clic — CLAUDE.md §6) y /pacientes/[id] (expediente completo)
@@ -170,9 +196,22 @@ export function usePatientClinical(patientId: string | null, accessToken: string
       apiFetch<PatientMedication[]>(`/records/patients/${patientId}/medications`, { accessToken }),
       apiFetch<PatientHistoryItem[]>(`/records/patients/${patientId}/history`, { accessToken }),
       apiFetch<PatientTimeline>(`/records/patients/${patientId}/timeline`, { accessToken }),
+      apiFetch<{ pregnancy: PatientPregnancy | null }>(`/records/patients/${patientId}/pregnancy`, { accessToken }),
+      apiFetch<ActiveDiagnosis[]>(`/records/patients/${patientId}/active-diagnoses`, { accessToken }),
     ])
-      .then(([patient, allergies, medications, historyItems, timeline]) => {
-        if (!cancelled) setState({ patient, allergies, medications, historyItems, timeline, isLoading: false, error: null });
+      .then(([patient, allergies, medications, historyItems, timeline, pregnancyRes, activeDiagnoses]) => {
+        if (!cancelled)
+          setState({
+            patient,
+            allergies,
+            medications,
+            historyItems,
+            timeline,
+            pregnancy: pregnancyRes.pregnancy,
+            activeDiagnoses,
+            isLoading: false,
+            error: null,
+          });
       })
       .catch((error: unknown) => {
         if (!cancelled) setState((prev) => ({ ...prev, isLoading: false, error }));

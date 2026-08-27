@@ -2,7 +2,7 @@ import Link from "next/link";
 import { AllergySummary } from "@/components/clinical/allergy-summary";
 import { AntecedentesSummary } from "@/components/clinical/antecedentes-editor";
 import { LoadingState } from "@/components/ui/states";
-import type { PatientAllergy, PatientMedication, PatientHistoryItem, PatientTimeline } from "@/lib/use-patient-clinical";
+import type { ActiveDiagnosis, PatientAllergy, PatientMedication, PatientHistoryItem, PatientPregnancy, PatientTimeline } from "@/lib/use-patient-clinical";
 import { patientAgeYears, patientFullName, type AppointmentDetail } from "./types";
 
 const MX_TIME_ZONE = "America/Mexico_City";
@@ -25,6 +25,8 @@ export function ConsultaSidebar({
   medications,
   historyItems,
   timeline,
+  pregnancy,
+  activeDiagnoses,
   isLoadingClinical,
 }: {
   patientId: string;
@@ -33,6 +35,8 @@ export function ConsultaSidebar({
   medications: PatientMedication[];
   historyItems: PatientHistoryItem[];
   timeline: PatientTimeline | null;
+  pregnancy: PatientPregnancy | null;
+  activeDiagnoses: ActiveDiagnosis[];
   isLoadingClinical: boolean;
 }) {
   const activeMedications = medications.filter((m) => m.status === "ACTIVE");
@@ -49,10 +53,40 @@ export function ConsultaSidebar({
         </p>
       </div>
 
+      {pregnancy ? (
+        // #18 — CLAUDE.md §5: el color nunca es el único portador de
+        // significado (icono + texto), y el dato clínico va en 16px.
+        <p
+          data-testid="pregnancy-banner"
+          className="rounded-md border border-brand-500 bg-brand-100 px-3 py-2 text-base font-medium text-brand-900"
+        >
+          🤰 Embarazo: {pregnancy.gestationalAge.weeks}.{pregnancy.gestationalAge.days} SDG · FPP{" "}
+          {formatMxDate(pregnancy.eddDate)}
+          {pregnancy.eddMethod === "ULTRASONIDO" ? " (USG)" : " (FUM)"}
+        </p>
+      ) : null}
+
       {isLoadingClinical ? (
         <LoadingState label="Cargando antecedentes…" />
       ) : (
         <>
+          <section data-testid="active-diagnoses">
+            <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-gray-500">Diagnósticos vigentes</h2>
+            {activeDiagnoses.length === 0 ? (
+              <p className="text-sm text-gray-500">Sin diagnósticos de consultas firmadas.</p>
+            ) : (
+              <ul className="flex flex-col gap-1">
+                {activeDiagnoses.slice(0, 5).map((d) => (
+                  <li key={`${d.icd10Code ?? d.description}`} className="text-sm text-gray-700">
+                    {d.icd10Code ? <span className="font-mono text-gray-500">{d.icd10Code} · </span> : null}
+                    {d.description}
+                    {d.certainty === "SUSPECTED" ? <span className="text-gray-500"> (sospecha)</span> : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
           <section>
             <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-gray-500">Antecedentes</h2>
             <AntecedentesSummary historyItems={historyItems} />

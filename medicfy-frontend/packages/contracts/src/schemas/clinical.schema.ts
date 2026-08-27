@@ -306,3 +306,32 @@ export const noteTemplateCreateSchema = z
   })
   .strict();
 export type NoteTemplateCreateInput = z.infer<typeof noteTemplateCreateSchema>;
+
+// ── Fase 1 / hallazgo #18: embarazo (Zona 1 de DOC-06) ─────────────
+// FUM y/o FPP en fecha civil (YYYY-MM-DD). El servidor deriva:
+//  - eddDate = lmpDate + 280 días cuando no llega una FPP explícita
+//    (regla de Naegele; método FUM)
+//  - eddMethod = ULTRASONIDO cuando la FPP llega capturada
+//  - las SDG se calculan al LEER a partir de eddDate y nunca se
+//    almacenan ni viajan del cliente (mismo principio que IMC/escalas)
+const civilDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Usa el formato YYYY-MM-DD.");
+
+export const patientPregnancyCreateSchema = z
+  .object({
+    lmpDate: civilDateSchema.optional(),
+    eddDate: civilDateSchema.optional(),
+  })
+  .strict()
+  .refine((p) => p.lmpDate !== undefined || p.eddDate !== undefined, {
+    message: "Captura la FUM, la FPP por ultrasonido, o ambas.",
+    path: ["lmpDate"],
+  });
+export type PatientPregnancyCreateInput = z.infer<typeof patientPregnancyCreateSchema>;
+
+export const patientPregnancyUpdateSchema = z
+  .object({
+    lmpDate: civilDateSchema.nullable().optional(),
+    eddDate: civilDateSchema.optional(),
+  })
+  .strict();
+export type PatientPregnancyUpdateInput = z.infer<typeof patientPregnancyUpdateSchema>;

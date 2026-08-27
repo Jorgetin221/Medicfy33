@@ -500,6 +500,7 @@ model Patient {
   allergies         PatientAllergy[]
   medications       PatientMedication[]
   historyItems      PatientHistoryItem[]
+  pregnancies       PatientPregnancy[]
   encounters        ClinicalEncounter[]
   attachments       ClinicalAttachment[]
   prescriptions     Prescription[]
@@ -1055,6 +1056,52 @@ enum PatientHistoryStatus {
 // vocabulario fijo validado por Zod en los contratos, no en el schema.
 // Alergias y medicamentos actuales NO se duplican aquí: ya viven en
 // los dos modelos de arriba.
+// P1 hallazgo #18 / Fase 1 Zona 1: el embarazo no existía en ninguna
+// parte del repositorio. Estado del paciente (como alergias y
+// medicamentos): UPDATE permitido, DELETE revocado por GRANT — lo que
+// la regla "nada se borra" prohíbe es que la fila desaparezca.
+// Máximo UN embarazo ACTIVE por paciente (índice único parcial en la
+// migración — Prisma no modela índices parciales).
+// FPP (eddDate): calculada en servidor como FUM+280 días salvo que se
+// capture una FPP por ultrasonido; las SDG NUNCA se almacenan — se
+// derivan de eddDate al leer (cálculo derivado siempre en servidor,
+// mismo principio que IMC/escalas).
+enum PregnancyStatus {
+  ACTIVE
+  CLOSED
+
+  @@map("pregnancy_status")
+}
+
+enum PregnancyDatingMethod {
+  FUM
+  ULTRASONIDO
+
+  @@map("pregnancy_dating_method")
+}
+
+model PatientPregnancy {
+  id               String                @id @default(uuid())
+  patientId        String
+  status           PregnancyStatus       @default(ACTIVE)
+  // FUM — puede faltar si la paciente no la recuerda y la datación
+  // vino por ultrasonido.
+  lmpDate          DateTime?             @db.Date
+  // FPP — siempre presente: o FUM+280 (method=FUM) o la capturada por
+  // ultrasonido (method=ULTRASONIDO).
+  eddDate          DateTime              @db.Date
+  eddMethod        PregnancyDatingMethod
+  recordedByUserId String
+  closedAt         DateTime?             @db.Timestamptz(3)
+  createdAt        DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime              @updatedAt @db.Timestamptz(3)
+
+  patient Patient @relation(fields: [patientId], references: [id])
+
+  @@index([patientId, status])
+  @@map("patient_pregnancies")
+}
+
 model PatientHistoryItem {
   id                       String                 @id @default(uuid())
   patientId                String

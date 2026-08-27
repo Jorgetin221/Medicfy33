@@ -97,6 +97,8 @@ export function ConsultaScreen({ appointmentId, accessToken }: { appointmentId: 
     medications,
     historyItems,
     timeline,
+    pregnancy,
+    activeDiagnoses,
     isLoading: isLoadingClinical,
     reload: reloadClinical,
   } = usePatientClinical(appointment?.patientId ?? null, accessToken);
@@ -176,6 +178,8 @@ export function ConsultaScreen({ appointmentId, accessToken }: { appointmentId: 
         medications={medications}
         historyItems={historyItems}
         timeline={timeline}
+        pregnancy={pregnancy}
+        activeDiagnoses={activeDiagnoses}
         isLoadingClinical={isLoadingClinical}
       />
       {phase === "readonly" ? (

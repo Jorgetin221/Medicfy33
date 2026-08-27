@@ -1,0 +1,5 @@
+
+# Fase 1 e2e — estado sembrado y artefactos de Playwright
+e2e/.e2e-state.json
+test-results/
+playwright-report/

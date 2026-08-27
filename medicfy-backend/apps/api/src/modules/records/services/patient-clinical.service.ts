@@ -7,11 +7,14 @@ import type {
   PatientMedicationUpdateInput,
   PatientHistoryCategory,
   PatientHistoryItemUpsertInput,
+  PatientPregnancyCreateInput,
+  PatientPregnancyUpdateInput,
 } from "@medicfy/contracts";
 import { ApiException } from "../../../common/api-exception";
 import { PrismaService } from "../../../prisma/prisma.service";
 import { omitUndefined } from "../../../common/omit-undefined";
 import { derivePrescriptionStatus } from "../../prescriptions/prescription-status.util";
+import { normalizeTerm } from "../../catalog/term-normalizer.util";
 
 // M8-RN-008/M8-RN-012: alergias y medicamentos habituales viven en el
 // paciente, se capturan una vez y se arrastran a cada consulta — no
@@ -135,6 +138,173 @@ export class PatientClinicalService {
 
   // §6.5.8: expediente cronológico — encuentros, recetas y órdenes en
   // una sola línea de tiempo, cada uno con tipo/fecha/autor/estado.
+  // ── Fase 1 / #18: embarazo (Zona 1 de DOC-06) ────────────────────
+  // Regla de Naegele: FPP = FUM + 280 días. Las SDG se derivan de la
+  // FPP al leer (40 semanas menos lo que falta para la FPP) y NUNCA se
+  // almacenan — cálculo derivado siempre en servidor, como IMC/escalas.
+  private static readonly GESTATION_DAYS = 280;
+  private static readonly MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+  private withGestationalAge<T extends { eddDate: Date }>(pregnancy: T) {
+    const msToEdd = pregnancy.eddDate.getTime() - Date.now();
+    const daysGestation = PatientClinicalService.GESTATION_DAYS - Math.ceil(msToEdd / PatientClinicalService.MS_PER_DAY);
+    const clamped = Math.max(0, daysGestation);
+    return {
+      ...pregnancy,
+      gestationalAge: { weeks: Math.floor(clamped / 7), days: clamped % 7 },
+      isPostTerm: daysGestation > PatientClinicalService.GESTATION_DAYS + 14,
+    };
+  }
+
+  private resolveEdd(lmpDate: string | null | undefined, eddDate: string | undefined) {
+    if (eddDate !== undefined) {
+      // FPP capturada explícitamente = datación por ultrasonido.
+      return { eddDate: new Date(eddDate), eddMethod: "ULTRASONIDO" as const };
+    }
+    if (lmpDate === undefined || lmpDate === null) return null;
+    return {
+      eddDate: new Date(new Date(lmpDate).getTime() + PatientClinicalService.GESTATION_DAYS * PatientClinicalService.MS_PER_DAY),
+      eddMethod: "FUM" as const,
+    };
+  }
+
+  async getActivePregnancy(patientId: string) {
+    const pregnancy = await this.prisma.patientPregnancy.findFirst({ where: { patientId, status: "ACTIVE" } });
+    return pregnancy ? this.withGestationalAge(pregnancy) : null;
+  }
+
+  async createPregnancy(patientId: string, recordedByUserId: string, input: PatientPregnancyCreateInput) {
+    const patient = await this.prisma.patient.findUniqueOrThrow({ where: { id: patientId }, select: { sexAtBirth: true } });
+    if (patient.sexAtBirth !== "F") {
+      throw new ApiException(
+        "PREGNANCY_REQUIRES_FEMALE_SEX_AT_BIRTH",
+        "El registro de embarazo requiere sexo al nacer F.",
+        HttpStatus.UNPROCESSABLE_ENTITY
+      );
+    }
+    const dating = this.resolveEdd(input.lmpDate, input.eddDate);
+    if (!dating) {
+      throw new ApiException("PREGNANCY_DATING_REQUIRED", "Captura la FUM o la FPP por ultrasonido.", HttpStatus.BAD_REQUEST);
+    }
+    try {
+      const created = await this.prisma.patientPregnancy.create({
+        data: {
+          patientId,
+          recordedByUserId,
+          lmpDate: input.lmpDate !== undefined ? new Date(input.lmpDate) : null,
+          ...dating,
+        },
+      });
+      return this.withGestationalAge(created);
+    } catch (error) {
+      // Índice único parcial (un ACTIVE por paciente) — la barrera real
+      // es Postgres, esto solo lo traduce a un error legible.
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        throw new ApiException(
+          "PREGNANCY_ALREADY_ACTIVE",
+          "La paciente ya tiene un embarazo activo registrado — ciérralo antes de registrar otro.",
+          HttpStatus.CONFLICT
+        );
+      }
+      throw error;
+    }
+  }
+
+  async updatePregnancy(patientId: string, pregnancyId: string, patch: PatientPregnancyUpdateInput) {
+    const existing = await this.prisma.patientPregnancy.findUnique({ where: { id: pregnancyId } });
+    if (!existing || existing.patientId !== patientId) {
+      throw new ApiException("PREGNANCY_NOT_FOUND", "Embarazo no encontrado para esta paciente.", HttpStatus.NOT_FOUND);
+    }
+    if (existing.status !== "ACTIVE") {
+      throw new ApiException("PREGNANCY_ALREADY_CLOSED", "Un embarazo cerrado no se edita.", HttpStatus.CONFLICT);
+    }
+    const nextLmp = patch.lmpDate !== undefined ? patch.lmpDate : (existing.lmpDate?.toISOString().slice(0, 10) ?? null);
+    const dating = this.resolveEdd(nextLmp, patch.eddDate);
+    // Si la datación previa era por ultrasonido y el parche no trae una
+    // FPP nueva, la FPP capturada se conserva (una FUM recordada tarde
+    // no degrada la datación por ultrasonido).
+    const keepUltrasound = patch.eddDate === undefined && existing.eddMethod === "ULTRASONIDO";
+    const updated = await this.prisma.patientPregnancy.update({
+      where: { id: pregnancyId },
+      data: {
+        lmpDate: patch.lmpDate !== undefined ? (patch.lmpDate === null ? null : new Date(patch.lmpDate)) : existing.lmpDate,
+        ...(keepUltrasound || !dating ? {} : dating),
+      },
+    });
+    return this.withGestationalAge(updated);
+  }
+
+  async closePregnancy(patientId: string, pregnancyId: string) {
+    const existing = await this.prisma.patientPregnancy.findUnique({ where: { id: pregnancyId } });
+    if (!existing || existing.patientId !== patientId) {
+      throw new ApiException("PREGNANCY_NOT_FOUND", "Embarazo no encontrado para esta paciente.", HttpStatus.NOT_FOUND);
+    }
+    if (existing.status !== "ACTIVE") {
+      throw new ApiException("PREGNANCY_ALREADY_CLOSED", "Este embarazo ya está cerrado.", HttpStatus.CONFLICT);
+    }
+    // El desenlace clínico se documenta en la nota del encuentro — aquí
+    // solo se cierra el estado (la fila nunca se borra).
+    return this.prisma.patientPregnancy.update({
+      where: { id: pregnancyId },
+      data: { status: "CLOSED", closedAt: new Date() },
+    });
+  }
+
+  // ── Fase 1 / #19: diagnósticos vigentes (problemas activos) ──────
+  // Vista DERIVADA de los diagnósticos firmados: sin tabla nueva y sin
+  // ciclo de vida inventado (marcar un problema como resuelto llega
+  // cuando Jorge decida esa regla clínica). Deduplica por código
+  // CIE-10, o por descripción normalizada cuando no hay código — el
+  // mismo normalizador del catálogo.
+  async activeDiagnoses(patientId: string) {
+    const rows = await this.prisma.encounterDiagnosis.findMany({
+      where: { encounter: { patientId, status: "SIGNED" } },
+      orderBy: { createdAt: "asc" },
+      select: {
+        icd10Code: true,
+        description: true,
+        diagnosisType: true,
+        certainty: true,
+        createdAt: true,
+        encounterId: true,
+      },
+    });
+    const groups = new Map<string, {
+      icd10Code: string | null;
+      description: string;
+      diagnosisType: string;
+      certainty: string;
+      firstRecordedAt: Date;
+      lastRecordedAt: Date;
+      timesRecorded: number;
+      lastEncounterId: string;
+    }>();
+    for (const d of rows) {
+      const key = d.icd10Code ?? `desc:${normalizeTerm(d.description)}`;
+      const existing = groups.get(key);
+      if (existing) {
+        existing.description = d.description;
+        existing.diagnosisType = d.diagnosisType;
+        existing.certainty = d.certainty;
+        existing.lastRecordedAt = d.createdAt;
+        existing.lastEncounterId = d.encounterId;
+        existing.timesRecorded += 1;
+      } else {
+        groups.set(key, {
+          icd10Code: d.icd10Code,
+          description: d.description,
+          diagnosisType: d.diagnosisType,
+          certainty: d.certainty,
+          firstRecordedAt: d.createdAt,
+          lastRecordedAt: d.createdAt,
+          timesRecorded: 1,
+          lastEncounterId: d.encounterId,
+        });
+      }
+    }
+    return [...groups.values()].sort((a, b) => b.lastRecordedAt.getTime() - a.lastRecordedAt.getTime());
+  }
+
   async timeline(patientId: string) {
     const [encounters, prescriptions, labOrders, standaloneResults] = await Promise.all([
       this.prisma.clinicalEncounter.findMany({
