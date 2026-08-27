@@ -150,6 +150,7 @@ export function PacienteConsultaScreen({ patientId, accessToken }: { patientId: 
           accessToken={accessToken}
           encounter={encounter}
           historyItems={historyItems}
+          patientBirthDate={patient.birthDate}
           onHistoryChanged={reloadClinical}
           onSigned={() => router.push(`/pacientes/${patientId}?justSigned=1`)}
           onAbandoned={() => setPhase("abandoned")}
