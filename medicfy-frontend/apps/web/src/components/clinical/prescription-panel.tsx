@@ -5,13 +5,21 @@ import type { PrescriptionCreateInput, PrescriptionItemCreateInput } from "@medi
 import { apiFetch, apiFetchBlob, ApiError } from "@/lib/api-client";
 import { Panel } from "@/components/ui/panel";
 import { Button } from "@/components/ui/button";
-import { FieldWrapper, TextInput } from "@/components/ui/field";
+import { FieldWrapper, TextInput, Textarea } from "@/components/ui/field";
 import { Aviso } from "@/components/ui/alert";
 import { MedicationPicker, type MedicationCatalogEntry, type PrescriptionDraftItem } from "@/components/clinical/medication-picker";
+
 
 interface TherapeuticClassDuplicate {
   prescribedMedication: string;
   existingMedication: string;
+}
+
+interface InteractionWarning {
+  severity: string;
+  medications: [string, string];
+  description: string;
+  source: string;
 }
 
 interface IssuedPrescription {
@@ -21,6 +29,7 @@ interface IssuedPrescription {
   signatureRoute: "HANDWRITTEN_AFTER_PRINT" | "ELECTRONIC";
   therapeuticDuplicates: string[];
   therapeuticClassDuplicates: TherapeuticClassDuplicate[];
+  interactionWarnings: InteractionWarning[];
 }
 
 type SignatureRoute = "HANDWRITTEN_AFTER_PRINT" | "ELECTRONIC";
@@ -32,8 +41,14 @@ function toWireItem(item: PrescriptionDraftItem): PrescriptionItemCreateInput {
     route: item.route,
     frequency: item.frequency,
     duration: item.duration,
+    origin: item.origin,
+    ...(item.doseUnit ? { doseUnit: item.doseUnit } : {}),
+    ...(item.indication ? { indication: item.indication } : {}),
     ...(item.quantity ? { quantity: item.quantity } : {}),
     ...(item.specialInstructions ? { specialInstructions: item.specialInstructions } : {}),
+    // Prompt 36: la procedencia lleva su receta de origen — el
+    // servidor la revalida y fija la fecha de origen por su cuenta.
+    ...(item.sourcePrescriptionId ? { sourcePrescriptionId: item.sourcePrescriptionId } : {}),
   };
 }
 
@@ -46,6 +61,7 @@ export function PrescriptionPanel({
   onClose,
   accessToken,
   encounterId,
+  patientId,
   defaultDiagnosis,
   onIssued,
 }: {
@@ -53,6 +69,8 @@ export function PrescriptionPanel({
   onClose: () => void;
   accessToken: string;
   encounterId: string;
+  // Prompt 36 (F4): habilita "traer última receta" del mismo médico.
+  patientId?: string;
   defaultDiagnosis: string;
   onIssued: () => void;
 }) {
@@ -66,7 +84,14 @@ export function PrescriptionPanel({
   const [password, setPassword] = useState("");
   const [totpCode, setTotpCode] = useState("");
   const [allergyConflict, setAllergyConflict] = useState<string[] | null>(null);
-  const [allergyOverrideConfirmed, setAllergyOverrideConfirmed] = useState(false);
+  // Prompt 34 (F4): el bloqueo por alergia se libera SOLO con una
+  // justificación clínica escrita — nunca con un checkbox.
+  const [allergyJustification, setAllergyJustification] = useState("");
+  // Prompt 35 (F4): interacción GRAVE exige confirmación explícita.
+  const [graveInteractions, setGraveInteractions] = useState<InteractionWarning[] | null>(null);
+  const [interactionConfirmed, setInteractionConfirmed] = useState(false);
+  const [isLoadingLast, setIsLoadingLast] = useState(false);
+  const [lastError, setLastError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<unknown>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [issued, setIssued] = useState<IssuedPrescription | null>(null);
@@ -91,7 +116,10 @@ export function PrescriptionPanel({
     setPassword("");
     setTotpCode("");
     setAllergyConflict(null);
-    setAllergyOverrideConfirmed(false);
+    setAllergyJustification("");
+    setGraveInteractions(null);
+    setInteractionConfirmed(false);
+    setLastError(null);
     setSubmitError(null);
     setIssued(null);
     setBlockedMedication(null);
@@ -118,7 +146,8 @@ export function PrescriptionPanel({
         diagnosisSnapshot,
         items: items.map(toWireItem),
         ...(generalInstructions ? { generalInstructions } : {}),
-        ...(allergyOverrideConfirmed ? { allergyOverrideConfirmed: true } : {}),
+        ...(allergyJustification.trim().length >= 15 ? { allergyOverrideJustification: allergyJustification.trim() } : {}),
+        ...(interactionConfirmed ? { interactionOverrideConfirmed: true } : {}),
       };
       const body: PrescriptionCreateInput =
         signatureRoute === "HANDWRITTEN_AFTER_PRINT"
@@ -127,6 +156,7 @@ export function PrescriptionPanel({
       const result = await apiFetch<{
         prescription: { id: string; folio: string; qrVerificationToken: string | null; signatureRoute: SignatureRoute };
         warnings: { therapeuticDuplicates: string[]; therapeuticClassDuplicates: TherapeuticClassDuplicate[] };
+        interactionWarnings: InteractionWarning[];
       }>(`/prescriptions/encounters/${encounterId}`, { method: "POST", accessToken, body });
       setIssued({
         id: result.prescription.id,
@@ -135,12 +165,16 @@ export function PrescriptionPanel({
         signatureRoute: result.prescription.signatureRoute,
         therapeuticDuplicates: result.warnings.therapeuticDuplicates,
         therapeuticClassDuplicates: result.warnings.therapeuticClassDuplicates,
+        interactionWarnings: result.interactionWarnings ?? [],
       });
       onIssued();
     } catch (error) {
       if (error instanceof ApiError && error.code === "PRESCRIPTION_ALLERGY_CONFLICT") {
         const details = error.details as { medications?: string[] } | undefined;
         setAllergyConflict(details?.medications ?? []);
+      } else if (error instanceof ApiError && error.code === "PRESCRIPTION_INTERACTION_GRAVE") {
+        const details = error.details as { interactions?: InteractionWarning[] } | undefined;
+        setGraveInteractions(details?.interactions ?? []);
       } else {
         setSubmitError(error);
       }
@@ -154,6 +188,63 @@ export function PrescriptionPanel({
   // React, nunca en una cookie), así que hay que traer los bytes con
   // fetch autenticado y abrirlos como blob. Mismo patrón que ya usa
   // Perfil para logo/firma (apiFetchBlob).
+  // Prompt 36 (F4): "traer última receta" — las líneas de la última
+  // receta del MISMO médico llegan como líneas EDITABLES, con su
+  // procedencia y fecha de origen visibles. Nunca texto pegado.
+  async function loadLastPrescription() {
+    if (!patientId) return;
+    setLastError(null);
+    setIsLoadingLast(true);
+    try {
+      const result = await apiFetch<{
+        prescription: { id: string; folio: string; issuedAt: string } | null;
+        lines: {
+          medicationCatalogId: string;
+          genericName: string;
+          presentation: string;
+          dose: string;
+          doseUnit: string | null;
+          indication: string | null;
+          route: string;
+          frequency: string;
+          duration: string;
+          quantity: string | null;
+          specialInstructions: string | null;
+          origin: "HEREDADA";
+          sourcePrescriptionId: string;
+          sourceIssuedAt: string;
+        }[];
+      }>(`/prescriptions/patients/${patientId}/last`, { accessToken });
+      if (!result.prescription || result.lines.length === 0) {
+        setLastError("No hay una receta anterior tuya con este paciente.");
+        return;
+      }
+      setItems([
+        ...items,
+        ...result.lines.map((l) => ({
+          medicationCatalogId: l.medicationCatalogId,
+          genericName: l.genericName,
+          presentation: l.presentation,
+          dose: l.dose,
+          doseUnit: l.doseUnit ?? "",
+          route: l.route,
+          frequency: l.frequency,
+          duration: l.duration,
+          quantity: l.quantity ?? "",
+          specialInstructions: l.specialInstructions ?? "",
+          indication: l.indication ?? "",
+          origin: l.origin,
+          sourcePrescriptionId: l.sourcePrescriptionId,
+          sourceIssuedAt: l.sourceIssuedAt,
+        })),
+      ]);
+    } catch {
+      setLastError("No se pudo traer la última receta.");
+    } finally {
+      setIsLoadingLast(false);
+    }
+  }
+
   async function downloadPdf() {
     if (!issued) return;
     setPdfError(null);
@@ -165,6 +256,8 @@ export function PrescriptionPanel({
         return;
       }
       window.open(URL.createObjectURL(blob), "_blank");
+      // Prompt 38A: la impresión queda en bitácora, por documento.
+      void apiFetch(`/prescriptions/${issued.id}/register-printed`, { method: "POST", accessToken }).catch(() => undefined);
     } catch (error) {
       setPdfError(error);
     } finally {
@@ -219,6 +312,17 @@ export function PrescriptionPanel({
             <Aviso variant="advertencia" title="Firma pendiente">
               Imprime esta receta y fírmala a mano antes de entregarla al paciente. Cuando la hayas entregado, márcalo en la pestaña de Recetas del
               expediente.
+            </Aviso>
+          )}
+          {issued.interactionWarnings.length > 0 && (
+            <Aviso variant="advertencia" title="Interacciones informadas">
+              <ul className="list-disc pl-5">
+                {issued.interactionWarnings.map((w, i) => (
+                  <li key={i}>
+                    [{w.severity}] {w.medications[0]} + {w.medications[1]}: {w.description}
+                  </li>
+                ))}
+              </ul>
             </Aviso>
           )}
           {issued.therapeuticDuplicates.length > 0 && (
@@ -310,6 +414,15 @@ export function PrescriptionPanel({
             <TextInput id="rx-diagnosis" value={diagnosisSnapshot} onChange={(e) => setDiagnosisSnapshot(e.target.value)} />
           </FieldWrapper>
 
+          {patientId ? (
+            <div className="flex flex-col gap-1">
+              <Button type="button" variant="secondary" isLoading={isLoadingLast} onClick={() => void loadLastPrescription()} className="w-fit">
+                Traer última receta
+              </Button>
+              {lastError ? <p className="text-sm text-gray-500">{lastError}</p> : null}
+            </div>
+          ) : null}
+
           <MedicationPicker accessToken={accessToken} items={items} onChange={setItems} onBlockedSelected={setBlockedMedication} />
 
           <FieldWrapper label="Indicaciones generales (opcional)" htmlFor="rx-instructions">
@@ -317,16 +430,38 @@ export function PrescriptionPanel({
           </FieldWrapper>
 
           {allergyConflict && (
-            <Aviso variant="critico" title="Alergia registrada">
+            <Aviso variant="critico" title="Alergia registrada — bloqueado">
               <p>El paciente tiene alergia a: {allergyConflict.join(", ")}.</p>
-              <label className="mt-2 flex min-h-11 cursor-pointer items-center gap-2 text-base">
-                <input
-                  type="checkbox"
-                  checked={allergyOverrideConfirmed}
-                  onChange={(e) => setAllergyOverrideConfirmed(e.target.checked)}
-                  className="h-5 w-5"
+              <p className="mt-1">
+                El bloqueo solo se libera con una justificación clínica, que queda registrada y firmada en el expediente (mínimo 15 caracteres).
+              </p>
+              <FieldWrapper label="Justificación clínica" htmlFor="rx-allergy-justification">
+                <Textarea
+                  id="rx-allergy-justification"
+                  rows={3}
+                  value={allergyJustification}
+                  onChange={(e) => setAllergyJustification(e.target.value)}
+                  placeholder="p. ej. alergia referida dudosa; sin alternativa terapéutica; bajo vigilancia…"
                 />
-                Confirmo que deseo continuar a pesar de la alergia registrada.
+              </FieldWrapper>
+            </Aviso>
+          )}
+
+          {graveInteractions && (
+            <Aviso variant="critico" title="Interacción GRAVE detectada">
+              <ul className="list-disc pl-5">
+                {graveInteractions.map((w, i) => (
+                  <li key={i}>
+                    <strong>
+                      {w.medications[0]} + {w.medications[1]}
+                    </strong>
+                    : {w.description} <span className="text-sm">({w.source})</span>
+                  </li>
+                ))}
+              </ul>
+              <label className="mt-2 flex min-h-11 cursor-pointer items-center gap-2 text-base">
+                <input type="checkbox" checked={interactionConfirmed} onChange={(e) => setInteractionConfirmed(e.target.checked)} className="h-5 w-5" />
+                Revisé la interacción y confirmo que deseo continuar. Mi confirmación queda en bitácora.
               </label>
             </Aviso>
           )}
@@ -390,7 +525,11 @@ export function PrescriptionPanel({
           <Button
             type="button"
             isLoading={isSubmitting}
-            disabled={!canSubmit || (allergyConflict !== null && !allergyOverrideConfirmed)}
+            disabled={
+              !canSubmit ||
+              (allergyConflict !== null && allergyJustification.trim().length < 15) ||
+              (graveInteractions !== null && !interactionConfirmed)
+            }
             onClick={() => void submitPrescription()}
           >
             {signatureRoute === "HANDWRITTEN_AFTER_PRINT" ? "Generar receta para firma" : "Firmar y emitir receta"}

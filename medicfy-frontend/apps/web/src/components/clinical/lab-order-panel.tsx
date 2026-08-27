@@ -1,12 +1,29 @@
 "use client";
 
-import { useState } from "react";
-import type { LabOrderCreateInput, LabOrderItemCreateInput } from "@medicfy/contracts";
+import { useEffect, useState } from "react";
+import type { LabOrderCreateInput } from "@medicfy/contracts";
 import { apiFetch, apiFetchBlob, ApiError } from "@/lib/api-client";
 import { Panel } from "@/components/ui/panel";
 import { Button } from "@/components/ui/button";
 import { FieldWrapper, TextInput } from "@/components/ui/field";
 import { Aviso } from "@/components/ui/alert";
+
+// Prompt 37 (F4): el estudio viene del catálogo en DOS niveles (el
+// tipo vive en externalCode del término) y cada estudio lleva su
+// MOTIVO, también de catálogo — sin motivo, la orden no se emite.
+interface CatalogTerm {
+  key: string;
+  preferredTerm: string;
+  externalCode?: string | null;
+}
+
+interface DraftStudy {
+  studyKey: string;
+  studyLabel: string;
+  motiveKey: string;
+  motiveLabel: string;
+  notes?: string;
+}
 
 interface IssuedLabOrder {
   id: string;
@@ -36,8 +53,13 @@ export function LabOrderPanel({
   encounterId: string;
   onIssued: () => void;
 }) {
-  const [items, setItems] = useState<LabOrderItemCreateInput[]>([]);
-  const [studyName, setStudyName] = useState("");
+  const [items, setItems] = useState<DraftStudy[]>([]);
+  const [tipos, setTipos] = useState<CatalogTerm[]>([]);
+  const [estudios, setEstudios] = useState<CatalogTerm[]>([]);
+  const [motivos, setMotivos] = useState<CatalogTerm[]>([]);
+  const [tipoKey, setTipoKey] = useState("");
+  const [studyKey, setStudyKey] = useState("");
+  const [motiveKey, setMotiveKey] = useState("");
   const [clinicalIndication, setClinicalIndication] = useState("");
   const [fastingRequired, setFastingRequired] = useState(false);
   // Igual que en PrescriptionPanel: null hasta que el médico elige,
@@ -51,9 +73,18 @@ export function LabOrderPanel({
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const [pdfError, setPdfError] = useState<unknown>(null);
 
+  useEffect(() => {
+    if (!open) return;
+    apiFetch<CatalogTerm[]>("/catalogs/TIPO_ESTUDIO", { accessToken }).then(setTipos).catch(() => setTipos([]));
+    apiFetch<CatalogTerm[]>("/catalogs/ESTUDIO_LABORATORIO", { accessToken }).then(setEstudios).catch(() => setEstudios([]));
+    apiFetch<CatalogTerm[]>("/catalogs/MOTIVO_ESTUDIO", { accessToken }).then(setMotivos).catch(() => setMotivos([]));
+  }, [open, accessToken]);
+
   function resetAll() {
     setItems([]);
-    setStudyName("");
+    setTipoKey("");
+    setStudyKey("");
+    setMotiveKey("");
     setClinicalIndication("");
     setFastingRequired(false);
     setSignatureRoute(null);
@@ -70,9 +101,12 @@ export function LabOrderPanel({
   }
 
   function addStudy() {
-    if (!studyName.trim()) return;
-    setItems([...items, { studyName: studyName.trim() }]);
-    setStudyName("");
+    const study = estudios.find((e) => e.key === studyKey);
+    const motive = motivos.find((m) => m.key === motiveKey);
+    if (!study || !motive) return;
+    setItems([...items, { studyKey: study.key, studyLabel: study.preferredTerm, motiveKey: motive.key, motiveLabel: motive.preferredTerm }]);
+    setStudyKey("");
+    setMotiveKey("");
   }
 
   function removeStudy(index: number) {
@@ -84,7 +118,11 @@ export function LabOrderPanel({
     setSubmitError(null);
     setIsSubmitting(true);
     try {
-      const base = { items, clinicalIndication, ...(fastingRequired ? { fastingRequired: true } : {}) };
+      const base = {
+        items: items.map((i) => ({ studyKey: i.studyKey, motiveKey: i.motiveKey, ...(i.notes ? { notes: i.notes } : {}) })),
+        clinicalIndication,
+        ...(fastingRequired ? { fastingRequired: true } : {}),
+      };
       const body: LabOrderCreateInput =
         signatureRoute === "HANDWRITTEN_AFTER_PRINT"
           ? { ...base, signatureRoute: "HANDWRITTEN_AFTER_PRINT" }
@@ -165,8 +203,11 @@ export function LabOrderPanel({
           {items.length > 0 && (
             <ul className="flex flex-col gap-2">
               {items.map((item, index) => (
-                <li key={`${item.studyName}-${index}`} className="flex items-center justify-between rounded-md border border-gray-300 px-3 py-2">
-                  <span className="text-base text-gray-900">{item.studyName}</span>
+                <li key={`${item.studyKey}-${index}`} className="flex items-center justify-between rounded-md border border-gray-300 px-3 py-2">
+                  <span>
+                    <span className="block text-base text-gray-900">{item.studyLabel}</span>
+                    <span className="block text-sm text-gray-500">Motivo: {item.motiveLabel}</span>
+                  </span>
                   <Button type="button" variant="danger" onClick={() => removeStudy(index)} className="min-h-11 px-3 text-sm">
                     Quitar
                   </Button>
@@ -175,12 +216,62 @@ export function LabOrderPanel({
             </ul>
           )}
 
-          <div className="flex items-end gap-2">
-            <FieldWrapper label="Estudio" htmlFor="lab-study" hint="p. ej. Biometría hemática completa">
-              <TextInput id="lab-study" value={studyName} onChange={(e) => setStudyName(e.target.value)} />
+          {/* Dos niveles: tipo (laboratorio / imagen / gabinete) y
+              estudio del catálogo; sin texto libre (R2: si falta un
+              estudio, se solicita el término al curador). */}
+          <div className="grid grid-cols-1 gap-3">
+            <FieldWrapper label="Tipo de estudio" htmlFor="lab-tipo">
+              <select
+                id="lab-tipo"
+                value={tipoKey}
+                onChange={(e) => {
+                  setTipoKey(e.target.value);
+                  setStudyKey("");
+                }}
+                className="min-h-11 w-full rounded-md border border-gray-300 px-3 text-base"
+              >
+                <option value="">Todos los tipos</option>
+                {tipos.map((t) => (
+                  <option key={t.key} value={t.key}>
+                    {t.preferredTerm}
+                  </option>
+                ))}
+              </select>
             </FieldWrapper>
-            <Button type="button" variant="secondary" onClick={addStudy} disabled={!studyName.trim()} className="mb-1 min-h-11 px-3 text-sm">
-              Agregar
+            <FieldWrapper label="Estudio (del catálogo)" htmlFor="lab-study">
+              <select
+                id="lab-study"
+                value={studyKey}
+                onChange={(e) => setStudyKey(e.target.value)}
+                className="min-h-11 w-full rounded-md border border-gray-300 px-3 text-base"
+              >
+                <option value="">Selecciona un estudio…</option>
+                {estudios
+                  .filter((e) => !tipoKey || e.externalCode === tipoKey)
+                  .map((e) => (
+                    <option key={e.key} value={e.key}>
+                      {e.preferredTerm}
+                    </option>
+                  ))}
+              </select>
+            </FieldWrapper>
+            <FieldWrapper label="Motivo del estudio (obligatorio)" htmlFor="lab-motive" hint="Sin motivo, la orden no se emite.">
+              <select
+                id="lab-motive"
+                value={motiveKey}
+                onChange={(e) => setMotiveKey(e.target.value)}
+                className="min-h-11 w-full rounded-md border border-gray-300 px-3 text-base"
+              >
+                <option value="">Selecciona el motivo…</option>
+                {motivos.map((m) => (
+                  <option key={m.key} value={m.key}>
+                    {m.preferredTerm}
+                  </option>
+                ))}
+              </select>
+            </FieldWrapper>
+            <Button type="button" variant="secondary" onClick={addStudy} disabled={!studyKey || !motiveKey} className="w-fit min-h-11 px-3 text-sm">
+              Agregar estudio
             </Button>
           </div>
 

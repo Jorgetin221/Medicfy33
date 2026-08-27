@@ -117,10 +117,19 @@ describe("Verificación de médico — enforcement real en las rutas de emisión
     return res.body.id as string;
   }
 
+  // Fase 4 / prompt 32: receta y orden se emiten desde una nota
+  // FIRMADA — este helper firma directo SOLO para las pruebas de las
+  // rutas emisoras; las de borrador siguen usando createEncounter.
+  async function signedEncounter(accessToken: string, patientId: string): Promise<string> {
+    const encounterId = await createEncounter(accessToken, patientId);
+    await prisma.clinicalEncounter.update({ where: { id: encounterId }, data: { status: "SIGNED", signedAt: new Date() } });
+    return encounterId;
+  }
+
   it("bloquea POST /prescriptions/encounters/:id para un médico sin verificar, y lo permite tras verificarlo", async () => {
     const doctor = await registerUnverifiedDoctor();
     const patientId = await createPatient(doctor.accessToken);
-    const encounterId = await createEncounter(doctor.accessToken, patientId);
+    const encounterId = await signedEncounter(doctor.accessToken, patientId);
 
     const body = {
       signatureRoute: "HANDWRITTEN_AFTER_PRINT",
@@ -153,7 +162,7 @@ describe("Verificación de médico — enforcement real en las rutas de emisión
   it("bloquea POST /prescriptions/encounters/:id/external-physical para un médico sin verificar, y lo permite tras verificarlo", async () => {
     const doctor = await registerUnverifiedDoctor();
     const patientId = await createPatient(doctor.accessToken);
-    const encounterId = await createEncounter(doctor.accessToken, patientId);
+    const encounterId = await signedEncounter(doctor.accessToken, patientId);
 
     const body = {
       physicalFolio: "COFEPRIS-0001",
@@ -220,12 +229,12 @@ describe("Verificación de médico — enforcement real en las rutas de emisión
   it("bloquea POST /lab-orders/encounters/:id para un médico sin verificar, y lo permite tras verificarlo", async () => {
     const doctor = await registerUnverifiedDoctor();
     const patientId = await createPatient(doctor.accessToken);
-    const encounterId = await createEncounter(doctor.accessToken, patientId);
+    const encounterId = await signedEncounter(doctor.accessToken, patientId);
 
     const body = {
       signatureRoute: "HANDWRITTEN_AFTER_PRINT",
       clinicalIndication: "Sospecha de anemia",
-      items: [{ studyName: "Biometría hemática completa" }],
+      items: [{ studyKey: "bh", motiveKey: "diagnostico_inicial" }],
     };
     const blocked = await request(app.getHttpServer())
       .post(`/lab-orders/encounters/${encounterId}`)

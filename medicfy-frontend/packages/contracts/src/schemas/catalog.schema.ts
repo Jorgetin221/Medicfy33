@@ -33,6 +33,8 @@ export const CATALOG_DOMAINS = [
   "ESTADO_CIVIL",
   "TIPO_NOTA",
   "TIPO_DOCUMENTO",
+  "TIPO_ESTUDIO",
+  "MOTIVO_ESTUDIO",
 ] as const;
 export const catalogDomainSchema = z.enum(CATALOG_DOMAINS);
 export type CatalogDomain = z.infer<typeof catalogDomainSchema>;

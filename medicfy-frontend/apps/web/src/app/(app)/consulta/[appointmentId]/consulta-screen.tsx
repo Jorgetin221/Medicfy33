@@ -11,6 +11,7 @@ import { ConsultaSidebar } from "./consulta-sidebar";
 import { ConsultaZona3 } from "./consulta-zona3";
 import { ConsultaForm } from "./consulta-form";
 import { ConsultaReadonly } from "./consulta-readonly";
+import { EmisionDocumentos } from "@/components/clinical/emision-documentos";
 import { patientFullName, type AppointmentDetail, type EncounterDetail } from "./types";
 
 type Phase = "loading" | "ready" | "readonly" | "blocked" | "abandoned" | "error";
@@ -32,6 +33,10 @@ export function ConsultaScreen({ appointmentId, accessToken }: { appointmentId: 
   const [error, setError] = useState<unknown>(null);
   const [appointment, setAppointment] = useState<AppointmentDetail | null>(null);
   const [encounter, setEncounter] = useState<EncounterDetail | null>(null);
+  // Fase 4 / prompt 32: al firmar, la vista pasa a solo-lectura CON el
+  // bloque de emisión (receta, órdenes, indicaciones) y el botón de
+  // "Siguiente paciente" (prompt 16 — encadenar).
+  const [justSigned, setJustSigned] = useState(false);
   // React StrictMode (desarrollo) monta/desmonta/remonta este efecto
   // una vez para detectar impurezas — sin este guard, bootstrap()
   // corre dos veces en paralelo y ambas llamadas pueden intentar
@@ -171,10 +176,25 @@ export function ConsultaScreen({ appointmentId, accessToken }: { appointmentId: 
     );
   }
 
-  // Prompt 16 — encadenar consultas: al firmar, salta directo a la
-  // siguiente cita CONFIRMADA del día del mismo médico (la
-  // autorización R4 se revalúa al abrir la siguiente: /start vuelve a
-  // verificar al médico asignado); sin siguiente, regresa a la agenda.
+  // Fase 4 / prompt 32: la firma NO saca al médico de la pantalla —
+  // primero emite los documentos desde la nota firmada; "Siguiente
+  // paciente" encadena cuando él decide (prompt 16).
+  async function handleSigned() {
+    if (!appointment?.encounter && !encounter) return;
+    try {
+      const encounterDetail = await apiFetch<EncounterDetail>(`/records/encounters/${encounter?.id}`, { accessToken });
+      setEncounter(encounterDetail);
+    } catch {
+      // si la relectura falla, la vista readonly usa lo que ya hay
+    }
+    setJustSigned(true);
+    setPhase("readonly");
+  }
+
+  // Prompt 16 — encadenar consultas: salta directo a la siguiente cita
+  // CONFIRMADA del día del mismo médico (la autorización R4 se revalúa
+  // al abrir la siguiente: /start vuelve a verificar al médico
+  // asignado); sin siguiente, regresa a la agenda.
   async function goToNextPatient() {
     if (!appointment) {
       router.push("/agenda");
@@ -205,15 +225,24 @@ export function ConsultaScreen({ appointmentId, accessToken }: { appointmentId: 
         isLoadingClinical={isLoadingClinical}
       />
       {phase === "readonly" ? (
-        <ConsultaReadonly encounter={encounter} patientId={appointment.patientId} historyItems={historyItems} />
+        <div className="flex flex-1 flex-col gap-4">
+          <EmisionDocumentos
+            accessToken={accessToken}
+            encounterId={encounter.id}
+            patientId={appointment.patientId}
+            defaultDiagnosis={encounter.diagnoses.find((d) => d.diagnosisType === "PRINCIPAL")?.description ?? ""}
+            hasPatientInstructions={Boolean(encounter.notes[0]?.patientInstructions)}
+            {...(justSigned ? { onNextPatient: () => void goToNextPatient() } : {})}
+          />
+          <ConsultaReadonly encounter={encounter} patientId={appointment.patientId} historyItems={historyItems} />
+        </div>
       ) : (
         <ConsultaForm
           accessToken={accessToken}
           encounter={encounter}
           historyItems={historyItems}
-          patientBirthDate={appointment.patient.birthDate}
           onHistoryChanged={reloadClinical}
-          onSigned={() => void goToNextPatient()}
+          onSigned={() => void handleSigned()}
           onAbandoned={() => setPhase("abandoned")}
         />
       )}

@@ -99,6 +99,23 @@ export class PrescriptionsController {
     return confirmation;
   }
 
+  // Prompt 36 (F4) — "traer última receta": líneas EDITABLES de la
+  // última receta del MISMO médico, con procedencia y fecha de origen.
+  @Get("prescriptions/patients/:patientId/last")
+  @UseGuards(DoctorVerifiedGuard)
+  @ApiOperation({ summary: "Fase 4 / prompt 36: última receta del médico con este paciente, como líneas editables" })
+  async last(@Param("patientId") patientId: string, @Req() req: ClinicalRequest) {
+    return this.prescriptions.lastPrescriptionLines(patientId, req.actingDoctorId as string);
+  }
+
+  // Prompt 38A (F4) — bitácora de impresión: quién imprimió qué
+  // documento y cuándo; cuántas veces se deriva contando eventos.
+  @Post("prescriptions/:prescriptionId/register-printed")
+  @ApiOperation({ summary: "Fase 4 / prompt 38A: registra la impresión del documento en bitácora" })
+  async registerPrinted(@Param("prescriptionId") prescriptionId: string, @Req() req: ClinicalRequest) {
+    return this.prescriptions.registerPrinted(prescriptionId, req.clinicalPatientId as string, req.user.sub);
+  }
+
   private async audit(req: ClinicalRequest, action: string, resourceId: string) {
     const meta = getRequestMeta(req);
     await this.auditService.log({

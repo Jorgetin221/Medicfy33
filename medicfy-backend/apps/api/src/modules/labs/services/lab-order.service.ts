@@ -35,6 +35,17 @@ export class LabOrderService {
       await this.signatureVerification.verify(doctorUserId, input.password, input.totpCode);
     }
 
+    // Prompt 32/37 letra: los documentos se emiten desde una nota
+    // FIRMADA — un borrador no emite órdenes.
+    const encounter = await this.prisma.clinicalEncounter.findUnique({ where: { id: encounterId }, select: { status: true } });
+    if (!encounter || encounter.status !== "SIGNED") {
+      throw new ApiException(
+        "LAB_ORDER_REQUIRES_SIGNED_NOTE",
+        "La orden de estudios se emite desde una nota FIRMADA — firma la consulta primero.",
+        HttpStatus.UNPROCESSABLE_ENTITY
+      );
+    }
+
     const [doctor, patient] = await Promise.all([
       this.prisma.doctor.findUnique({ where: { id: doctorId }, include: { primarySpecialty: true, locations: { where: { isPrimary: true }, take: 1 } } }),
       this.prisma.patient.findUnique({ where: { id: patientId } }),
@@ -43,14 +54,52 @@ export class LabOrderService {
       throw new ApiException("LAB_ORDER_MISSING_LEGAL_FIELD", "No se pudo resolver médico o paciente para la orden.", HttpStatus.UNPROCESSABLE_ENTITY);
     }
 
+    // Prompt 37 (Fase 4): el estudio viene del catálogo en dos niveles
+    // (tipo en externalCode del término) y CADA estudio lleva su
+    // motivo, también de catálogo — "sin motivo, la orden no se emite".
+    const studyKeys = [...new Set(input.items.map((i) => i.studyKey))];
+    const motiveKeys = [...new Set(input.items.map((i) => i.motiveKey))];
+    const [studyTerms, motiveTerms] = await Promise.all([
+      this.prisma.clinicalCatalogTerm.findMany({ where: { domain: "ESTUDIO_LABORATORIO", key: { in: studyKeys }, status: "ACTIVE" } }),
+      this.prisma.clinicalCatalogTerm.findMany({ where: { domain: "MOTIVO_ESTUDIO", key: { in: motiveKeys }, status: "ACTIVE" } }),
+    ]);
+    const studyByKey = new Map(studyTerms.map((t) => [t.key, t]));
+    const motiveByKey = new Map(motiveTerms.map((t) => [t.key, t]));
+    const missingStudies = studyKeys.filter((k) => !studyByKey.has(k));
+    if (missingStudies.length > 0) {
+      throw new ApiException(
+        "LAB_ORDER_STUDY_NOT_IN_CATALOG",
+        "Uno de los estudios no existe en el catálogo — solicita el término al curador (R2), no hay texto libre.",
+        HttpStatus.UNPROCESSABLE_ENTITY,
+        { missingStudies }
+      );
+    }
+    const missingMotives = motiveKeys.filter((k) => !motiveByKey.has(k));
+    if (missingMotives.length > 0) {
+      throw new ApiException(
+        "LAB_ORDER_MOTIVE_REQUIRED",
+        "Cada estudio lleva su motivo del catálogo (diagnóstico inicial, control, tamizaje, preoperatorio, urgencia) — sin motivo, la orden no se emite.",
+        HttpStatus.UNPROCESSABLE_ENTITY,
+        { missingMotives }
+      );
+    }
+
     const folio = await nextLabOrderFolio(this.prisma);
     const issuedAt = new Date();
     const snapshot = buildLegalSnapshot(doctor, patient);
     const fastingRequired = input.fastingRequired ?? false;
-    const items = input.items.map((item) => ({
-      studyName: item.studyName,
-      ...omitUndefined({ loincCode: item.loincCode, notes: item.notes }),
-    }));
+    const items = input.items.map((item) => {
+      const study = studyByKey.get(item.studyKey);
+      const motive = motiveByKey.get(item.motiveKey);
+      if (!study || !motive) throw new Error("unreachable: validated above");
+      return {
+        // El nombre viaja del CATÁLOGO, nunca del cliente.
+        studyName: study.preferredTerm,
+        studyTermId: study.id,
+        motiveTermId: motive.id,
+        ...omitUndefined({ notes: item.notes }),
+      };
+    });
 
     // Conveniencia impresa (ver LabOrderPdfService) — nunca una firma
     // con validez legal electrónica, mismo principio que ya declara
@@ -75,7 +124,7 @@ export class LabOrderService {
       ...snapshot,
       clinicalIndication: input.clinicalIndication,
       fastingRequired,
-      items,
+      items: items.map((i) => ({ studyName: i.studyName, ...(i.notes !== undefined ? { notes: i.notes } : {}) })),
       qrVerificationToken,
       ...omitUndefined({ visualSignatureImage }),
     });

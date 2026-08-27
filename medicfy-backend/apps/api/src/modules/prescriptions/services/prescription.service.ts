@@ -2,6 +2,7 @@ import { HttpStatus, Inject, Injectable } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import type { ExternalPhysicalPrescriptionCreateInput, PrescriptionCreateInput } from "@medicfy/contracts";
 import { ApiException } from "../../../common/api-exception";
+import { AuditService } from "../../identity/services/audit.service";
 import { PrismaService } from "../../../prisma/prisma.service";
 import { sha256Hex } from "../../../common/content-hash.util";
 import { nextPrescriptionFolio } from "../../../common/folio.util";
@@ -22,7 +23,8 @@ export class PrescriptionService {
     private readonly prisma: PrismaService,
     private readonly signatureVerification: SignatureVerificationService,
     private readonly pdfService: PrescriptionPdfService,
-    @Inject(FILE_STORAGE_PORT) private readonly fileStorage: FileStoragePort
+    @Inject(FILE_STORAGE_PORT) private readonly fileStorage: FileStoragePort,
+    private readonly audit: AuditService
   ) {}
 
   // Corrección v2.1 de especificacion-plataforma-clinica-con-ia.md
@@ -34,6 +36,19 @@ export class PrescriptionService {
   async create(encounterId: string, doctorId: string, doctorUserId: string, patientId: string, input: PrescriptionCreateInput) {
     if (input.signatureRoute === "ELECTRONIC") {
       await this.signatureVerification.verify(doctorUserId, input.password, input.totpCode);
+    }
+
+    // Prompt 32 (Fase 4, letra del doc de 58 prompts): "la receta
+    // pertenece a una nota firmada. Un borrador no emite recetas." La
+    // línea se compone durante la consulta, pero la EMISIÓN (folio,
+    // snapshot legal, PDF) exige el encuentro FIRMADO.
+    const encounter = await this.prisma.clinicalEncounter.findUnique({ where: { id: encounterId }, select: { status: true } });
+    if (!encounter || encounter.status !== "SIGNED") {
+      throw new ApiException(
+        "PRESCRIPTION_REQUIRES_SIGNED_NOTE",
+        "La receta se emite desde una nota FIRMADA — firma la consulta primero; un borrador no emite documentos.",
+        HttpStatus.UNPROCESSABLE_ENTITY
+      );
     }
 
     const [doctor, patient] = await Promise.all([
@@ -78,10 +93,21 @@ export class PrescriptionService {
 
     const allergyCheck = crossCheckAllergies(activeAllergies, prescribedDrugs);
 
-    if (allergyCheck.matches.length > 0 && !input.allergyOverrideConfirmed) {
+    if (allergyCheck.matches.length > 0) {
+      // Prompt 35: "toda advertencia mostrada queda en bitácora".
+      await this.audit.log({
+        actorUserId: doctorUserId,
+        action: "PRESCRIPTION_ALLERGY_CONFLICT_SHOWN",
+        resourceType: "PRESCRIPTION_ATTEMPT",
+        patientId,
+        result: "DENIED",
+        metadata: { medications: allergyCheck.matches.map((m) => m.genericName) },
+      });
+    }
+    if (allergyCheck.matches.length > 0 && !input.allergyOverrideJustification) {
       throw new ApiException(
         "PRESCRIPTION_ALLERGY_CONFLICT",
-        "El paciente tiene una alergia registrada a uno de estos medicamentos. Confirma explícitamente para continuar.",
+        "El paciente tiene una alergia registrada a uno de estos medicamentos. El bloqueo solo se libera capturando una justificación clínica, que queda registrada y firmada en el expediente.",
         HttpStatus.CONFLICT,
         {
           medications: allergyCheck.matches.map((m) => m.genericName),
@@ -101,6 +127,28 @@ export class PrescriptionService {
         }
       );
     }
+
+    if (allergyCheck.matches.length > 0 && input.allergyOverrideJustification) {
+      // Prompt 34: la liberación del bloqueo queda en bitácora con la
+      // justificación (y además firmada dentro del snapshot de la
+      // receta, ver allergyOverrideJustification en el insert).
+      await this.audit.log({
+        actorUserId: doctorUserId,
+        action: "PRESCRIPTION_ALLERGY_OVERRIDE",
+        resourceType: "PRESCRIPTION_ATTEMPT",
+        patientId,
+        result: "SUCCESS",
+        justification: input.allergyOverrideJustification,
+        metadata: { medications: allergyCheck.matches.map((m) => m.genericName) },
+      });
+    }
+
+    // Prompt 35 — interacciones fármaco-fármaco (motor; datos reales
+    // con la base licenciada 🔒). Se verifica la receta en curso MÁS
+    // la medicación crónica vigente, no solo lo que se está
+    // escribiendo. GRAVE → confirmación explícita obligatoria;
+    // MODERADA → informa sin bloquear. Todo a bitácora.
+    const interactionWarnings = await this.checkInteractions(patientId, doctorUserId, catalogEntries, input.interactionOverrideConfirmed === true);
 
     // M9-RN-008c: duplicidad terapéutica — advertencia, no bloquea.
     const activeMedications = await this.prisma.patientMedication.findMany({ where: { patientId, status: "ACTIVE" } });
@@ -144,9 +192,32 @@ export class PrescriptionService {
     const signatureTimestamp = new Date();
     const snapshot = buildLegalSnapshot(doctor, patient);
 
+    // Prompt 36: si una línea declara procedencia heredada, la receta
+    // de origen debe existir, ser de ESTE paciente y este médico — y
+    // la fecha de origen la fija el servidor desde esa fila.
+    const sourceIds = [...new Set(input.items.map((i) => i.sourcePrescriptionId).filter((v): v is string => v !== undefined))];
+    const sourcePrescriptions = new Map(
+      (
+        await this.prisma.prescription.findMany({
+          where: { id: { in: sourceIds }, patientId, doctorId },
+          select: { id: true, issuedAt: true },
+        })
+      ).map((sp) => [sp.id, sp])
+    );
+    const invalidSources = sourceIds.filter((id) => !sourcePrescriptions.has(id));
+    if (invalidSources.length > 0) {
+      throw new ApiException(
+        "PRESCRIPTION_SOURCE_INVALID",
+        "La receta de origen de una línea heredada no existe o no pertenece a este paciente y médico.",
+        HttpStatus.UNPROCESSABLE_ENTITY,
+        { invalidSources }
+      );
+    }
+
     const items = input.items.map((item) => {
       const catalog = catalogById.get(item.medicationCatalogId);
       if (!catalog) throw new Error("unreachable: validated above");
+      const source = item.sourcePrescriptionId ? sourcePrescriptions.get(item.sourcePrescriptionId) : undefined;
       return {
         genericName: catalog.genericName,
         presentation: (catalog.presentations as { label?: string }[] | null)?.[0]?.label ?? "N/A",
@@ -156,10 +227,15 @@ export class PrescriptionService {
         duration: item.duration,
         medicationCatalogId: catalog.id,
         controlGroup: catalog.controlGroup,
+        origin: item.origin ?? "NUEVA",
         ...omitUndefined({
           brandName: catalog.brandNames[0],
           quantity: item.quantity,
           specialInstructions: item.specialInstructions,
+          doseUnit: item.doseUnit,
+          indication: item.indication,
+          sourcePrescriptionId: source?.id,
+          sourceIssuedAt: source?.issuedAt,
         }),
       };
     });
@@ -200,6 +276,7 @@ export class PrescriptionService {
         pdfFileKey,
         ...omitUndefined({
           generalInstructions: input.generalInstructions,
+          allergyOverrideJustification: input.allergyOverrideJustification,
           signatureMethod: input.signatureRoute === "ELECTRONIC" ? ("INTERNAL_SYSTEM" as const) : undefined,
           signatureTimestamp: input.signatureRoute === "ELECTRONIC" ? signatureTimestamp : undefined,
         }),
@@ -208,7 +285,50 @@ export class PrescriptionService {
       include: { items: true },
     });
 
+    // Prompt 32: "la medicación vigente del paciente se actualiza
+    // automáticamente con cada receta emitida" — es lo que la barra de
+    // contexto (Zona 1) muestra. Anclada al catálogo (P4 #11).
+    for (const item of items) {
+      const existing = await this.prisma.patientMedication.findFirst({
+        where: { patientId, genericName: item.genericName, status: "ACTIVE" },
+      });
+      const doseText = item.doseUnit ? `${item.dose} ${item.doseUnit}` : item.dose;
+      if (existing) {
+        await this.prisma.patientMedication.update({
+          where: { id: existing.id },
+          data: { dose: doseText, route: item.route, frequency: item.frequency, prescriber: "Receta Medicfy", source: "MEDICO" },
+        });
+      } else {
+        await this.prisma.patientMedication.create({
+          data: {
+            patientId,
+            genericName: item.genericName,
+            dose: doseText,
+            route: item.route,
+            frequency: item.frequency,
+            status: "ACTIVE",
+            source: "MEDICO",
+            prescriber: "Receta Medicfy",
+            startedAt: signatureTimestamp,
+          },
+        });
+      }
+    }
+
+    // Prompt 38A: bitácora de emisión por documento — quién, cuándo,
+    // y el folio queda registrado.
+    await this.audit.log({
+      actorUserId: doctorUserId,
+      action: "DOCUMENT_EMITTED",
+      resourceType: "PRESCRIPTION",
+      resourceId: prescription.id,
+      patientId,
+      result: "SUCCESS",
+      metadata: { folio, documentType: "RECETA" },
+    });
+
     return {
+      interactionWarnings,
       prescription,
       warnings: {
         therapeuticDuplicates: duplicates,
@@ -264,6 +384,19 @@ export class PrescriptionService {
   }
 
   async createExternalPhysical(encounterId: string, doctorId: string, patientId: string, input: ExternalPhysicalPrescriptionCreateInput) {
+    // Prompt 32 (Fase 4, letra del doc de 58 prompts): "la receta
+    // pertenece a una nota firmada. Un borrador no emite recetas." La
+    // línea se compone durante la consulta, pero la EMISIÓN (folio,
+    // snapshot legal, PDF) exige el encuentro FIRMADO.
+    const encounter = await this.prisma.clinicalEncounter.findUnique({ where: { id: encounterId }, select: { status: true } });
+    if (!encounter || encounter.status !== "SIGNED") {
+      throw new ApiException(
+        "PRESCRIPTION_REQUIRES_SIGNED_NOTE",
+        "La receta se emite desde una nota FIRMADA — firma la consulta primero; un borrador no emite documentos.",
+        HttpStatus.UNPROCESSABLE_ENTITY
+      );
+    }
+
     const [doctor, patient] = await Promise.all([
       this.prisma.doctor.findUnique({ where: { id: doctorId }, include: { primarySpecialty: true, locations: { where: { isPrimary: true }, take: 1 } } }),
       this.prisma.patient.findUnique({ where: { id: patientId } }),
@@ -309,7 +442,8 @@ export class PrescriptionService {
     });
     if (!prescription) {
       throw new ApiException("PRESCRIPTION_NOT_FOUND", "Receta no encontrada.", HttpStatus.NOT_FOUND);
-    }
+    
+}
     // M9-RN-010: nunca el contenido de la receta — solo folio, fecha,
     // médico y nombre del paciente parcialmente enmascarado.
     // "PENDING_HANDWRITTEN_SIGNATURE" no es contenido clínico, es el
@@ -333,6 +467,126 @@ export class PrescriptionService {
     }
     return this.fileStorage.retrieve(prescription.pdfFileKey);
   }
+
+  // Prompt 35 — motor de interacciones: receta en curso + medicación
+  // crónica vigente. GRAVE sin confirmación → 409; MODERADA → se
+  // informa y se audita. Los DATOS de producción llegan con la base
+  // licenciada (🔒 prompt 33) — hoy hay pares de demostración marcados.
+  private async checkInteractions(
+    patientId: string,
+    doctorUserId: string,
+    prescribed: { id: string; genericName: string }[],
+    overrideConfirmed: boolean
+  ): Promise<{ severity: string; medications: [string, string]; description: string; source: string }[]> {
+    // Universo: lo prescrito + la medicación vigente anclable al catálogo.
+    const activeMeds = await this.prisma.patientMedication.findMany({ where: { patientId, status: "ACTIVE" } });
+    const activeCatalog = await this.prisma.medicationCatalog.findMany({
+      where: { genericName: { in: activeMeds.map((m) => m.genericName) } },
+      select: { id: true, genericName: true },
+    });
+    const universe = new Map<string, string>();
+    for (const med of [...prescribed, ...activeCatalog]) universe.set(med.id, med.genericName);
+    const ids = [...universe.keys()];
+    if (ids.length < 2) return [];
+    const prescribedIds = new Set(prescribed.map((p) => p.id));
+    const interactions = await this.prisma.medicationInteraction.findMany({
+      where: { medicationAId: { in: ids }, medicationBId: { in: ids } },
+    });
+    // Solo interesan pares donde al menos un lado se está prescribiendo.
+    const relevant = interactions.filter((i) => prescribedIds.has(i.medicationAId) || prescribedIds.has(i.medicationBId));
+    if (relevant.length === 0) return [];
+
+    const describe = (i: (typeof relevant)[number]) => ({
+      severity: i.severity,
+      medications: [universe.get(i.medicationAId) ?? "?", universe.get(i.medicationBId) ?? "?"] as [string, string],
+      description: i.description,
+      source: i.source,
+    });
+    const grave = relevant.filter((i) => i.severity === "GRAVE");
+    const moderada = relevant.filter((i) => i.severity === "MODERADA");
+
+    for (const i of relevant) {
+      await this.audit.log({
+        actorUserId: doctorUserId,
+        action: i.severity === "GRAVE" ? "PRESCRIPTION_INTERACTION_GRAVE_SHOWN" : "PRESCRIPTION_INTERACTION_MODERADA_SHOWN",
+        resourceType: "PRESCRIPTION_ATTEMPT",
+        patientId,
+        result: i.severity === "GRAVE" && !overrideConfirmed ? "DENIED" : "SUCCESS",
+        metadata: describe(i),
+      });
+    }
+    if (grave.length > 0 && !overrideConfirmed) {
+      throw new ApiException(
+        "PRESCRIPTION_INTERACTION_GRAVE",
+        "Hay interacciones GRAVES entre lo prescrito y/o la medicación vigente — confirma explícitamente para continuar.",
+        HttpStatus.CONFLICT,
+        { interactions: grave.map(describe) }
+      );
+    }
+    if (grave.length > 0 && overrideConfirmed) {
+      await this.audit.log({
+        actorUserId: doctorUserId,
+        action: "PRESCRIPTION_INTERACTION_GRAVE_CONFIRMED",
+        resourceType: "PRESCRIPTION_ATTEMPT",
+        patientId,
+        result: "SUCCESS",
+        metadata: { interactions: grave.map(describe) },
+      });
+    }
+    return [...grave, ...moderada].map(describe);
+  }
+
+  // Prompt 36 — "traer última receta": las líneas de la receta
+  // anterior del MISMO médico como líneas EDITABLES con su procedencia
+  // y fecha de origen — nunca texto pegado.
+  async lastPrescriptionLines(patientId: string, doctorId: string) {
+    const last = await this.prisma.prescription.findFirst({
+      where: { patientId, doctorId, cancellation: null },
+      orderBy: { issuedAt: "desc" },
+      include: { items: true },
+    });
+    if (!last) return { prescription: null, lines: [] };
+    return {
+      prescription: { id: last.id, folio: last.folio, issuedAt: last.issuedAt },
+      lines: last.items.map((item) => ({
+        medicationCatalogId: item.medicationCatalogId,
+        genericName: item.genericName,
+        presentation: item.presentation,
+        dose: item.dose,
+        doseUnit: item.doseUnit,
+        indication: item.indication,
+        route: item.route,
+        frequency: item.frequency,
+        duration: item.duration,
+        quantity: item.quantity,
+        specialInstructions: item.specialInstructions,
+        // Procedencia propuesta — el cliente la manda de regreso y el
+        // servidor revalida la receta de origen al emitir.
+        origin: "HEREDADA" as const,
+        sourcePrescriptionId: last.id,
+        sourceIssuedAt: last.issuedAt,
+      })),
+    };
+  }
+
+  // Prompt 38A: bitácora de impresión por documento — cuántas veces se
+  // deriva contando los eventos en audit_log.
+  async registerPrinted(prescriptionId: string, patientId: string, actorUserId: string) {
+    const prescription = await this.prisma.prescription.findUnique({ where: { id: prescriptionId }, select: { folio: true, patientId: true } });
+    if (!prescription || prescription.patientId !== patientId) {
+      throw new ApiException("PRESCRIPTION_NOT_FOUND", "Receta no encontrada para este paciente.", HttpStatus.NOT_FOUND);
+    }
+    await this.audit.log({
+      actorUserId,
+      action: "DOCUMENT_PRINTED",
+      resourceType: "PRESCRIPTION",
+      resourceId: prescriptionId,
+      patientId,
+      result: "SUCCESS",
+      metadata: { folio: prescription.folio, documentType: "RECETA" },
+    });
+    return { ok: true };
+  }
 }
 
 // M9-RN-010: "María G. L." — primer nombre completo, iniciales del resto.
@@ -341,4 +595,5 @@ function maskPatientName(fullName: string): string {
   if (parts.length === 0) return "";
   const [first, ...rest] = parts;
   return [first, ...rest.map((p) => `${p.charAt(0)}.`)].join(" ");
+
 }

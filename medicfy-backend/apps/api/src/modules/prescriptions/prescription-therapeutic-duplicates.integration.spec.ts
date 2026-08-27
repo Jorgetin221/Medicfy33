@@ -103,6 +103,11 @@ describe("Receta — duplicidad terapéutica (nombre exacto y clase ATC)", () =>
       .set("Authorization", `Bearer ${accessToken}`)
       .send({ patientId, encounterType: "FIRST_VISIT" });
     expect(res.status).toBe(201);
+    // Fase 4 / prompt 32: los documentos (receta, orden) se emiten
+    // desde una nota FIRMADA — el flujo de firma completo ya se prueba
+    // en fase3-nota-datos; aquí se marca directo para aislar la regla
+    // que ESTE archivo prueba.
+    await prisma.clinicalEncounter.update({ where: { id: res.body.id as string }, data: { status: "SIGNED", signedAt: new Date() } });
     return res.body.id as string;
   }
 

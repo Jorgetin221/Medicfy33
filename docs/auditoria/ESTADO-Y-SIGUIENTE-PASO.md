@@ -10,6 +10,7 @@
 | **Bloque 0 · Diagnóstico** (prompts 1–6) | **Terminado.** Informes en `docs/auditoria/P1`…`P6`. |
 | **Remediación previa a la Fase 0** | **Terminada y VERIFICADA: la suite completa corrió en verde.** |
 | **Fase 0 · Catálogos** (prompts 7–11) | **TERMINADA POR LA LETRA** — con el doc de 58 prompts ya en el repo: bandeja de solicitudes de término (prompt 10) y catálogos poblados (prompt 9, 120 términos en 8 dominios con fuente declarada); prueba 11.4 (cero duplicados) en verde. |
+| **Fase 4 · El plan del paciente** (prompts 32–38) | **Construida y verificada — las 6 pruebas del prompt 38B pasan (y una extra: borrador no emite documentos). El prompt 33 (base de medicamentos licenciada) sigue 🔒 PENDIENTE DE LICENCIA: el motor de interacciones y el buscador funcionan con 10 medicamentos y 2 pares de interacción SINTÉTICOS, marcados.** |
 | **Fase 3 · La nota como datos** (prompts 25–31) | **Construida y verificada — 5 de las 6 pruebas del prompt 31B pasan; la 31.5 (exportación FHIR validada) sigue DIFERIDA por decisión previa de Jorge.** |
 | **Fase 2 · Historia clínica estructurada** (prompts 18–24) | **Construida y verificada — las CINCO pruebas del prompt 24 pasan.** Falta solo el criterio de los 10 minutos, que exige el material clínico real de Jorge (🔒). |
 | **Fase 1 · Escritorio de Consulta** (prompts 12–17) | **TERMINADA POR LA LETRA** — las cinco pruebas del prompt 17 pasan (agenda en 2 clics, recarga con borrador+scroll, alergia sin scroll, cajón táctil de la Zona 3, otro médico→403). Zona 1 en orden de prominencia, Zona 3 esqueleto con carga diferida, autoguardado con rebote de 2s+blur+hora, encadenar consultas. |
@@ -294,6 +295,102 @@ además es inaccesible desde este entorno). B) pruebas: **5 de 6 en
 verde** (31.1, 31.2, 31.3, 31.4, 31.6) + FK de CIE-10 + descarte +
 nota tipada, en `fase3-nota-datos.integration.spec.ts`.
 
+## Fase 4 — El plan del paciente (misma sesión)
+
+Construida contra la letra de los prompts 32–38. Suite tras la fase:
+**257 pruebas de API (250 pasan + 4 todo + 3 saltadas si aplica), 30 de
+contratos, 5 unitarias de UI y las 6 e2e** — typecheck y lint limpios en
+los dos árboles.
+
+**Prompt 32 — modelo de receta.** La línea de prescripción ahora lleva
+dosis + unidad (`doseUnit`), indicación por línea (`indication`) y
+PROCEDENCIA (`origin`: NUEVA / HEREDADA / HEREDADA_MODIFICADA con
+`sourcePrescriptionId` + `sourceIssuedAt` fijada por el SERVIDOR desde la
+receta de origen, que debe existir y ser del mismo médico y paciente).
+La regla central de la letra quedó dura: **la receta pertenece a una
+nota FIRMADA — un borrador no emite recetas** (422
+`PRESCRIPTION_REQUIRES_SIGNED_NOTE`; igual para órdenes:
+`LAB_ORDER_REQUIRES_SIGNED_NOTE`). La medicación vigente del paciente se
+actualiza AUTOMÁTICAMENTE con cada receta emitida (upsert por principio
+activo, fuente MEDICO, sin duplicar) — es lo que la Zona 1 muestra.
+Migración `20260827100000_f4_plan_del_paciente`.
+
+**Prompt 33 — 🔒 PENDIENTE DE LICENCIA (marcado, no resuelto).** El
+modelo de sincronización está DOCUMENTADO en `schema.prisma`
+(`MedicationCatalog.sourceVersion`; retirar = `isActive=false`, nunca
+DELETE — las recetas históricas conservan su FK). El buscador y el motor
+funcionan HOY con 10 medicamentos sintéticos y 2 pares de interacción de
+demostración sembrados con `pendingMedicalReview=true` y descripción que
+dice "PAR DE DEMOSTRACIÓN, pendiente base licenciada". **Nada de esto es
+contenido clínico real: cuando Jorge contrate la base licenciada, se
+reemplaza la siembra y el resto ya está.**
+
+**Prompt 34 — alergia BLOQUEANTE.** El checkbox de confirmación se
+ELIMINÓ del contrato: el bloqueo solo se libera capturando una
+**justificación clínica** (`allergyOverrideJustification`, 15–500
+caracteres) que se guarda EN la receta, va al snapshot firmado y queda en
+bitácora (`PRESCRIPTION_ALLERGY_OVERRIDE` con la justificación en su
+columna dedicada). El caso obligatorio de la letra —alergia a
+penicilinas + amoxicilina— es la prueba 38.1 (cruce por grupo ATC J01C,
+ya reparado desde Bloque 0).
+
+**Prompt 35 — interacciones.** Motor nuevo (`MedicationInteraction`,
+único por par): cruza lo prescrito entre sí Y contra la medicación
+vigente anclada al catálogo. GRAVE → 409 `PRESCRIPTION_INTERACTION_GRAVE`
+salvo `interactionOverrideConfirmed`; MODERADA → se informa en la
+respuesta (`interactionWarnings`) sin bloquear. **Toda advertencia
+mostrada y toda confirmación quedan en bitácora**
+(`…_GRAVE_SHOWN` / `…_MODERADA_SHOWN` / `…_GRAVE_CONFIRMED`).
+
+**Prompt 36 — traer última receta.** GET
+`/prescriptions/patients/:patientId/last` (mismo médico): líneas
+EDITABLES con procedencia HEREDADA y fecha de origen — nunca texto
+pegado. En la interfaz, el botón "Traer última receta" del panel; editar
+una línea heredada la marca HEREDADA_MODIFICADA (el servidor revalida la
+receta de origen al emitir; una inventada → 422
+`PRESCRIPTION_SOURCE_INVALID`).
+
+**Prompt 37 — estudios e indicaciones.** La orden de estudios dejó el
+texto libre: `studyKey` del catálogo `ESTUDIO_LABORATORIO` (dos niveles —
+el tipo vive en `externalCode`: laboratorio/imagen/gabinete, dominio
+`TIPO_ESTUDIO`) y **motivo OBLIGATORIO** `motiveKey` del dominio
+`MOTIVO_ESTUDIO` (diagnóstico inicial, control, tamizaje, preoperatorio,
+urgencia) — sin motivo, la orden no se emite (422
+`LAB_ORDER_MOTIVE_REQUIRED`); estudio fuera de catálogo → R2 (solicitar
+término al curador). El nombre del estudio lo pone el CATÁLOGO, nunca el
+cliente. La nota firmada ganó `patientInstructions` (lenguaje llano) y
+`suggestedFollowUpDays` (1–365), capturados en el formulario de consulta
+y con autoguardado.
+
+**Prompt 38A — documentos independientes con bitácora.** Cada documento
+es un PDF propio: receta, orden, e INDICACIONES AL PACIENTE (servicio
+nuevo `IndicacionesPdfService`, GET
+`/records/encounters/:id/indicaciones/pdf`, con nombre y cédula del
+médico). Emisión → bitácora `DOCUMENT_EMITTED` (con folio); impresión →
+`DOCUMENT_PRINTED` por documento (POST
+`/prescriptions/:id/register-printed`, y el panel lo registra al abrir el
+PDF). **Flujo de interfaz:** al FIRMAR, la pantalla de consulta ya no
+salta sola al siguiente paciente — pasa a solo-lectura con el bloque
+"Documentos de esta consulta" (emitir receta / ordenar estudios /
+imprimir indicaciones) y el botón **"Siguiente paciente"** (prompt 16
+sigue funcionando, ahora a decisión del médico). Los botones de emisión
+salieron del borrador (el servidor los rechazaría: nota no firmada).
+
+**Prompt 38B — las seis pruebas de la letra** en
+`fase4-plan-paciente.integration.spec.ts`: 38.1 penicilinas/amoxicilina
+(bloqueo + justificación + bitácora), 38.2 interacción grave
+(confirmación + bitácora; moderada informa, incluida la vigente), 38.3
+traer última (editable, procedencia, fecha, origen revalidado), 38.4
+orden sin motivo → error (y estudio fuera de catálogo → error), 38.5
+PDFs independientes + folio en bitácora + impresión registrada, 38.6
+vigente refleja la receta (actualiza, no duplica). Más la previa: un
+borrador no emite ningún documento.
+
+**Ajuste a pruebas anteriores:** las suites que emitían receta/orden
+sobre encuentros en borrador ahora los firman antes (la regla nueva es
+más estricta); el spec de verificación de médicos conserva sus casos de
+borrador intactos.
+
 ## Decisiones tomadas por delegación (revisar cuando Jorge quiera)
 
 1. Valores exactos de los enums clínicos (tipos de alergia, severidades
@@ -320,10 +417,12 @@ si quiere ampliar el vocabulario, el flujo del curador ya existe.
 1. En la Mac (único paso que exige su terminal — su Postgres local no es
    alcanzable desde la sesión): `bash scripts/sync-dev.sh` dentro de
    `medicfy-backend/`. En `medicfy-frontend`: `pnpm install && pnpm build`.
-2. **Continuar la Fase 1**: consulta de seguimiento sin ratón (prueba
-   de teclado e2e), autoguardado sin conexión y métrica abrir→firmar
-   persistida — de preferencia con el texto de los prompts 12-17 a la
-   mano.
+2. **Fase 5** (prompts 39–42): panel de consulta — hoja frontal,
+   historia en lectura, notas previas y resultados dentro de la Zona 3
+   (las pestañas ya existen como esqueleto con carga diferida).
+3. Cuando haya base de medicamentos licenciada (🔒 prompt 33): reemplazar
+   la siembra sintética (medicamentos + pares de interacción) siguiendo
+   el modelo de sincronización documentado en `schema.prisma`.
 
 ## Historial de git
 

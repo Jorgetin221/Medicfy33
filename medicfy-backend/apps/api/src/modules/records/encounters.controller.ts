@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Patch, Post, Req, StreamableFile, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import {
   clinicalEncounterCreateSchema,
@@ -17,6 +17,7 @@ import { CareRelationshipGuard, type ClinicalRequest } from "../../common/guards
 import { AuditService } from "../identity/services/audit.service";
 import { getRequestMeta } from "../identity/request-meta";
 import { ClinicalEncounterService } from "./services/clinical-encounter.service";
+import { IndicacionesPdfService } from "./services/indicaciones-pdf.service";
 
 // M8-RN-002/DOC-06: crear/listar encuentros de un paciente, autoguardar
 // el borrador y firmar. Todas las rutas pasan por CareRelationshipGuard
@@ -28,7 +29,8 @@ import { ClinicalEncounterService } from "./services/clinical-encounter.service"
 export class EncountersController {
   constructor(
     private readonly encounters: ClinicalEncounterService,
-    private readonly auditService: AuditService
+    private readonly auditService: AuditService,
+    private readonly indicacionesPdf: IndicacionesPdfService
   ) {}
 
   @Post("records/patients/:patientId/encounters")
@@ -92,6 +94,16 @@ export class EncountersController {
     const note = await this.encounters.correctNote(encounterId, req.user.sub, body);
     await this.audit(req, req.clinicalPatientId as string, "records.encounter.note.correct", note.id);
     return note;
+  }
+
+  // Prompt 37/38A (Fase 4): PDF independiente de INDICACIONES AL
+  // PACIENTE desde la nota firmada — el paciente recibe solo lo suyo.
+  @Get("records/encounters/:encounterId/indicaciones/pdf")
+  @ApiOperation({ summary: "Fase 4 / prompt 38A: PDF de indicaciones al paciente desde la nota firmada" })
+  async indicacionesPdfDownload(@Param("encounterId") encounterId: string, @Req() req: ClinicalRequest): Promise<StreamableFile> {
+    const { buffer, contentType } = await this.indicacionesPdf.generate(encounterId, req.clinicalPatientId as string, req.user.sub);
+    await this.audit(req, req.clinicalPatientId as string, "records.encounter.indicaciones.pdf", encounterId);
+    return new StreamableFile(buffer, { type: contentType });
   }
 
   private async audit(req: ClinicalRequest, patientId: string, action: string, resourceId?: string) {

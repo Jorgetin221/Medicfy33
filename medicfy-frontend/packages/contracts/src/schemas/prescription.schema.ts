@@ -14,11 +14,19 @@ export const prescriptionItemCreateSchema = z
   .object({
     medicationCatalogId: z.string().uuid(),
     dose: z.string().min(1),
+    // Prompt 32: unidad de dosis explícita e indicación por línea.
+    doseUnit: z.string().max(30).optional(),
+    indication: z.string().max(200).optional(),
     route: z.string().min(1),
     frequency: z.string().min(1),
     duration: z.string().min(1),
     quantity: z.string().optional(),
     specialInstructions: z.string().optional(),
+    // Prompt 36 — procedencia: el cliente declara si la línea vino de
+    // "traer última receta" y si la editó; el servidor resuelve la
+    // receta/fecha de origen y NO confía en fechas del cliente.
+    origin: z.enum(["NUEVA", "HEREDADA", "HEREDADA_MODIFICADA"]).optional(),
+    sourcePrescriptionId: z.string().uuid().optional(),
   })
   .strict();
 export type PrescriptionItemCreateInput = z.infer<typeof prescriptionItemCreateSchema>;
@@ -38,7 +46,16 @@ const prescriptionCreateBaseSchema = z.object({
   diagnosisSnapshot: z.string().min(1, "El diagnóstico es obligatorio."),
   items: z.array(prescriptionItemCreateSchema).min(1, "Se requiere al menos un medicamento.").max(10),
   generalInstructions: z.string().optional(),
-  allergyOverrideConfirmed: z.boolean().optional(),
+  // Prompt 34: el bloqueo por alergia SOLO se libera con una
+  // justificación clínica (queda en el expediente, firmada). El viejo
+  // boolean allergyOverrideConfirmed desaparece del contrato.
+  allergyOverrideJustification: z
+    .string()
+    .min(15, "Justifica clínicamente (mínimo 15 caracteres) por qué procede a pesar de la alergia registrada.")
+    .max(500)
+    .optional(),
+  // Prompt 35: interacción GRAVE exige confirmación explícita.
+  interactionOverrideConfirmed: z.boolean().optional(),
 });
 
 // Corrección v2.1 de especificacion-plataforma-clinica-con-ia.md §1:

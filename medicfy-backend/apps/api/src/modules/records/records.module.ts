@@ -4,6 +4,7 @@ import { DoctorsModule } from "../doctors/doctors.module";
 import { SchedulingModule } from "../scheduling/scheduling.module";
 import { CareRelationshipGuard } from "../../common/guards/care-relationship.guard";
 import { ClinicalEncounterService } from "./services/clinical-encounter.service";
+import { IndicacionesPdfService } from "./services/indicaciones-pdf.service";
 import { PatientClinicalService } from "./services/patient-clinical.service";
 import { AntecedentesTemplateService } from "./services/antecedentes-template.service";
 import { SpecialtyScaleService } from "./services/specialty-scale.service";
@@ -21,7 +22,7 @@ import { SpecialtyFieldSchemasController } from "./specialty-field-schemas.contr
 @Module({
   imports: [IdentityModule, DoctorsModule, SchedulingModule],
   controllers: [PatientClinicalController, EncountersController, Icd10Controller, NoteTemplatesController, AntecedentesTemplatesController, SpecialtyFieldSchemasController],
-  providers: [ClinicalEncounterService, PatientClinicalService, AntecedentesTemplateService, SpecialtyScaleService, CareRelationshipGuard],
+  providers: [ClinicalEncounterService, IndicacionesPdfService, PatientClinicalService, AntecedentesTemplateService, SpecialtyScaleService, CareRelationshipGuard],
   exports: [ClinicalEncounterService],
 })
 export class RecordsModule {}

@@ -497,6 +497,98 @@ async function seedEscalasFase3(): Promise<void> {
   console.log(`Seeded ${inserted} campos de escalas Fase 3 (EVA + Bishop). PENDIENTE declarado: riesgo cardiovascular (coeficientes publicados requeridos, no se inventan).`);
 }
 
+
+// Prompt 37A — estudios en dos niveles y motivos de solicitud. El
+// vínculo estudio→tipo viaja en externalCode del término (documentado
+// también en el schema). Listas clínicas comunes PENDIENTES de
+// validación médica, como todo lo clínico sembrado.
+async function seedEstudiosFase4(): Promise<void> {
+  await seedDomain("TIPO_ESTUDIO", "operación clínica común", true, [
+    { key: "laboratorio", term: "Laboratorio" },
+    { key: "imagen", term: "Imagenología" },
+    { key: "gabinete", term: "Gabinete" },
+  ]);
+  await seedDomain("MOTIVO_ESTUDIO", "operación clínica común", true, [
+    { key: "diagnostico_inicial", term: "Diagnóstico inicial" },
+    { key: "control_seguimiento", term: "Control / seguimiento" },
+    { key: "tamizaje", term: "Tamizaje" },
+    { key: "preoperatorio", term: "Valoración preoperatoria" },
+    { key: "urgencia", term: "Urgencia" },
+  ]);
+  // Estudios concretos, con su tipo en externalCode.
+  const estudios: { key: string; term: string; tipo: string; synonyms?: string[] }[] = [
+    { key: "bh", term: "Biometría hemática completa", tipo: "laboratorio", synonyms: ["BH", "BHC", "Citometría hemática"] },
+    { key: "qs6", term: "Química sanguínea de 6 elementos", tipo: "laboratorio", synonyms: ["QS", "QS6"] },
+    { key: "ego", term: "Examen general de orina", tipo: "laboratorio", synonyms: ["EGO"] },
+    { key: "perfil_lipidico", term: "Perfil de lípidos", tipo: "laboratorio" },
+    { key: "hba1c", term: "Hemoglobina glucosilada (HbA1c)", tipo: "laboratorio" },
+    { key: "tsh", term: "Perfil tiroideo (TSH)", tipo: "laboratorio" },
+    { key: "tele_torax", term: "Telerradiografía de tórax", tipo: "imagen", synonyms: ["Tele de tórax"] },
+    { key: "usg_abdominal", term: "Ultrasonido abdominal", tipo: "imagen", synonyms: ["USG abdominal"] },
+    { key: "ecg", term: "Electrocardiograma de reposo", tipo: "gabinete", synonyms: ["ECG", "EKG"] },
+  ];
+  let inserted = 0;
+  for (const e of estudios) {
+    const existing = await prisma.clinicalCatalogTerm.findFirst({ where: { domain: "ESTUDIO_LABORATORIO", key: e.key } });
+    if (existing) continue;
+    await prisma.clinicalCatalogTerm.create({
+      data: {
+        domain: "ESTUDIO_LABORATORIO",
+        key: e.key,
+        preferredTerm: e.term,
+        normalizedTerm: normalizeTerm(e.term),
+        codingSystem: "PROPIETARIO",
+        externalCode: e.tipo,
+        synonyms: e.synonyms ?? [],
+        pendingMedicalReview: true,
+      },
+    });
+    inserted += 1;
+  }
+  console.log(`Seeded ESTUDIO_LABORATORIO: +${inserted}/${estudios.length} (dos niveles vía externalCode; PENDIENTE de validación médica).`);
+}
+
+// Prompt 35 — 🔒 PENDIENTE DE LICENCIA (prompt 33): estos DOS pares
+// son un set de DEMOSTRACIÓN del motor, elegidos por ser interacciones
+// clásicas y verificables — Tramadol+Diazepam (opioide+benzodiacepina:
+// depresión aditiva del SNC; advertencia de caja de la FDA, 2016) e
+// Ibuprofeno+Losartán (AINE reduce el efecto antihipertensivo de los
+// ARA-II y suma riesgo renal; interacción estándar de la literatura).
+// La base clínica real llega con la licencia. pendingMedicalReview=true.
+async function seedInteraccionesDemo(): Promise<void> {
+  const byName = async (name: string) => prisma.medicationCatalog.findFirst({ where: { genericName: name } });
+  const pairs: { a: string; b: string; severity: "GRAVE" | "MODERADA"; description: string; source: string }[] = [
+    {
+      a: "Tramadol",
+      b: "Diazepam",
+      severity: "GRAVE",
+      description: "Opioide + benzodiacepina: depresión respiratoria y sedación aditivas.",
+      source: "FDA boxed warning opioides+BZD (2016) — PAR DE DEMOSTRACIÓN, pendiente base licenciada",
+    },
+    {
+      a: "Ibuprofeno",
+      b: "Losartán",
+      severity: "MODERADA",
+      description: "AINE reduce el efecto antihipertensivo del ARA-II y aumenta riesgo de deterioro renal.",
+      source: "Interacción estándar AINE+ARA-II — PAR DE DEMOSTRACIÓN, pendiente base licenciada",
+    },
+  ];
+  let inserted = 0;
+  for (const pair of pairs) {
+    const [a, b] = await Promise.all([byName(pair.a), byName(pair.b)]);
+    if (!a || !b) continue;
+    const existing = await prisma.medicationInteraction.findFirst({
+      where: { OR: [{ medicationAId: a.id, medicationBId: b.id }, { medicationAId: b.id, medicationBId: a.id }] },
+    });
+    if (existing) continue;
+    await prisma.medicationInteraction.create({
+      data: { medicationAId: a.id, medicationBId: b.id, severity: pair.severity, description: pair.description, source: pair.source },
+    });
+    inserted += 1;
+  }
+  console.log(`Seeded ${inserted} interacciones de DEMOSTRACIÓN (motor listo; datos reales con la base licenciada 🔒).`);
+}
+
 async function main(): Promise<void> {
   for (const specialty of SPECIALTIES) {
     await prisma.specialty.upsert({
@@ -536,6 +628,8 @@ async function main(): Promise<void> {
   await seedCatalogosPrompt9();
   await seedGrowthReferences();
   await seedEscalasFase3();
+  await seedEstudiosFase4();
+  await seedInteraccionesDemo();
   await seedAdmin();
 }
 

@@ -32,6 +32,10 @@ export interface ClinicalNoteRecord {
   assessment: string;
   plan: string;
   prognosis: string | null;
+  // Prompt 37 (F4): viven en la nota firmada; de aquí sale el PDF de
+  // indicaciones al paciente.
+  patientInstructions: string | null;
+  suggestedFollowUpDays: number | null;
   createdAt: string;
 }
 

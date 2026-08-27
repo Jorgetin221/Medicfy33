@@ -12,7 +12,7 @@ import {
 import { apiFetch, ApiError } from "@/lib/api-client";
 import { useEncounterAutosave } from "@/lib/use-encounter-autosave";
 import { loadDraftLocally, clearDraftLocally } from "@/lib/offline-draft-store";
-import { FieldWrapper, Textarea } from "@/components/ui/field";
+import { FieldWrapper, Textarea, TextInput } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { Aviso } from "@/components/ui/alert";
 import { IndicadorGuardado } from "@/components/ui/save-indicator";
@@ -20,11 +20,9 @@ import { VitalsFields } from "@/components/clinical/vitals-fields";
 import { EscalasSection } from "@/components/clinical/escalas-section";
 import { Icd10Picker } from "@/components/clinical/icd10-picker";
 import { NoteTemplateBar } from "@/components/clinical/note-template-bar";
-import { PrescriptionPanel } from "@/components/clinical/prescription-panel";
-import { LabOrderPanel } from "@/components/clinical/lab-order-panel";
 import { AntecedentesEditor, AntecedentesSummary } from "@/components/clinical/antecedentes-editor";
 import type { PatientHistoryItem } from "@/lib/use-patient-clinical";
-import { ENCOUNTER_TYPE_LABEL, patientAgeYears, type EncounterDetail } from "./types";
+import { ENCOUNTER_TYPE_LABEL, type EncounterDetail } from "./types";
 
 type FreeTextField = "chiefComplaint" | "currentIllness" | "physicalExam" | "assessment" | "plan" | "prognosis";
 
@@ -70,7 +68,6 @@ export function ConsultaForm({
   accessToken,
   encounter,
   historyItems,
-  patientBirthDate,
   onHistoryChanged,
   onSigned,
   onAbandoned,
@@ -78,7 +75,6 @@ export function ConsultaForm({
   accessToken: string;
   encounter: EncounterDetail;
   historyItems: PatientHistoryItem[];
-  patientBirthDate: string | null;
   onHistoryChanged: () => void;
   onSigned: () => void;
   onAbandoned: () => void;
@@ -86,8 +82,6 @@ export function ConsultaForm({
   const [isHydrated, setIsHydrated] = useState(false);
   const [showAntecedentesEditor, setShowAntecedentesEditor] = useState(false);
   const [activeField, setActiveField] = useState<FreeTextField>("plan");
-  const [rxPanelOpen, setRxPanelOpen] = useState(false);
-  const [labPanelOpen, setLabPanelOpen] = useState(false);
   const [signError, setSignError] = useState<unknown>(null);
   const [isSigning, setIsSigning] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(() => Math.floor((Date.now() - new Date(encounter.startedAt).getTime()) / 1000));
@@ -155,6 +149,10 @@ export function ConsultaForm({
         assessment: base.assessment ?? "",
         plan: base.plan ?? "",
         prognosis: base.prognosis ?? "",
+        // Prompt 37 (F4): indicaciones al paciente y próxima cita
+        // también sobreviven en el borrador.
+        ...(base.patientInstructions !== undefined ? { patientInstructions: base.patientInstructions } : {}),
+        ...(base.suggestedFollowUpDays !== undefined ? { suggestedFollowUpDays: base.suggestedFollowUpDays } : {}),
         diagnoses: encounter.diagnoses.map((d) => ({
           description: d.description,
           diagnosisType: d.diagnosisType,
@@ -192,6 +190,8 @@ export function ConsultaForm({
     assessment: watched.assessment,
     plan: watched.plan,
     prognosis: watched.prognosis,
+    ...(watched.patientInstructions !== undefined && watched.patientInstructions !== "" ? { patientInstructions: watched.patientInstructions } : {}),
+    ...(watched.suggestedFollowUpDays !== undefined && !Number.isNaN(watched.suggestedFollowUpDays) ? { suggestedFollowUpDays: watched.suggestedFollowUpDays } : {}),
   };
 
   const { saveState, lastSavedAt, saveNow, fatalError } = useEncounterAutosave({
@@ -262,7 +262,11 @@ export function ConsultaForm({
   const diagnosesFieldError = form.formState.errors.diagnoses as { message?: string; root?: { message?: string } } | undefined;
   const diagnosesErrorMessage = diagnosesFieldError?.message ?? diagnosesFieldError?.root?.message;
 
-  async function onSign(values: ClinicalNoteSignInput) {
+  async function onSign(rawValues: ClinicalNoteSignInput) {
+    // Campos opcionales de F4: vacío = no viaja (no se firma "").
+    const values: ClinicalNoteSignInput = { ...rawValues };
+    if (!values.patientInstructions?.trim()) delete values.patientInstructions;
+    if (values.suggestedFollowUpDays === undefined || Number.isNaN(values.suggestedFollowUpDays)) delete values.suggestedFollowUpDays;
     setSignError(null);
     setIsSigning(true);
     try {
@@ -316,19 +320,11 @@ export function ConsultaForm({
       } else if (isMod && e.key === "Enter") {
         e.preventDefault();
         handleSignClick();
-      } else if (e.altKey && e.key.toLowerCase() === "r") {
-        e.preventDefault();
-        setRxPanelOpen(true);
-      } else if (e.altKey && e.key.toLowerCase() === "l") {
-        e.preventDefault();
-        setLabPanelOpen(true);
       }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [saveNow, handleSignSubmit]);
-
-  const principalDiagnosis = diagnoses.find((d) => d.diagnosisType === "PRINCIPAL")?.description ?? watched.assessment ?? "";
 
   return (
     <div className="flex flex-1 flex-col gap-6 pb-24">
@@ -346,12 +342,10 @@ export function ConsultaForm({
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <IndicadorGuardado state={saveState} lastSavedAt={lastSavedAt} />
-          <Button type="button" variant="secondary" onClick={() => setLabPanelOpen(true)} className="min-h-11 px-3 text-sm">
-            Ordenar laboratorio <span className="ml-1 text-gray-500">Alt+L</span>
-          </Button>
-          <Button type="button" variant="secondary" onClick={() => setRxPanelOpen(true)} className="min-h-11 px-3 text-sm">
-            Emitir receta <span className="ml-1 text-gray-500">Alt+R</span>
-          </Button>
+          {/* Prompt 32 (F4): "la receta pertenece a una nota firmada;
+              un borrador no emite recetas" — receta, órdenes e
+              indicaciones se emiten AL FIRMAR, en la vista siguiente. */}
+          <p className="text-sm text-gray-500">Receta y órdenes se emiten al firmar la consulta.</p>
         </div>
       </div>
 
@@ -420,7 +414,6 @@ export function ConsultaForm({
           accessToken={accessToken}
           values={watched.specialtyData ?? {}}
           onChange={(next) => form.setValue("specialtyData", next, { shouldDirty: true })}
-          patientAgeYears={patientBirthDate ? patientAgeYears(patientBirthDate) : null}
         />
 
         <FieldWrapper label="Exploración física (opcional)" htmlFor="physicalExam">
@@ -474,6 +467,31 @@ export function ConsultaForm({
           />
         </FieldWrapper>
 
+        {/* Prompt 37 (F4): lo que el PACIENTE se lleva — lenguaje
+            llano, separado de la nota técnica; se imprime como PDF
+            propio desde la nota firmada. */}
+        <FieldWrapper
+          label="Indicaciones al paciente (opcional)"
+          htmlFor="patientInstructions"
+          hint="Qué hacer, cuidados y signos de alarma, en palabras para el paciente. Se imprime como documento aparte."
+        >
+          <Textarea id="patientInstructions" rows={3} {...form.register("patientInstructions")} />
+        </FieldWrapper>
+
+        <FieldWrapper label="Próxima cita sugerida (días, opcional)" htmlFor="suggestedFollowUpDays">
+          <TextInput
+            id="suggestedFollowUpDays"
+            type="number"
+            min={1}
+            max={365}
+            inputMode="numeric"
+            className="max-w-40"
+            {...form.register("suggestedFollowUpDays", {
+              setValueAs: (v: string) => (v === "" || v === null ? undefined : Number(v)),
+            })}
+          />
+        </FieldWrapper>
+
         <FieldWrapper label="Pronóstico (opcional)" htmlFor="prognosis">
           <Textarea
             id="prognosis"
@@ -503,15 +521,6 @@ export function ConsultaForm({
         </div>
       </div>
 
-      <PrescriptionPanel
-        open={rxPanelOpen}
-        onClose={() => setRxPanelOpen(false)}
-        accessToken={accessToken}
-        encounterId={encounter.id}
-        defaultDiagnosis={principalDiagnosis}
-        onIssued={() => void saveNow()}
-      />
-      <LabOrderPanel open={labPanelOpen} onClose={() => setLabPanelOpen(false)} accessToken={accessToken} encounterId={encounter.id} onIssued={() => void saveNow()} />
     </div>
   );
 }

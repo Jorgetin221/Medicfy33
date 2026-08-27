@@ -1,10 +1,14 @@
 import { z } from "zod";
 
+// Prompt 37A: el estudio viene del CATÁLOGO en dos niveles (el tipo
+// filtra los concretos) y el motivo es OBLIGATORIO y de catálogo
+// cerrado — "no existe la opción de dejarlo vacío". studyName ya no
+// viaja del cliente: se resuelve del término en el servidor.
 export const labOrderItemCreateSchema = z
   .object({
-    studyName: z.string().min(1),
-    loincCode: z.string().optional(),
-    notes: z.string().optional(),
+    studyKey: z.string().min(1).max(100).regex(/^[a-z0-9_]+$/),
+    motiveKey: z.string().min(1, "El motivo de solicitud es obligatorio.").max(100).regex(/^[a-z0-9_]+$/),
+    notes: z.string().max(500).optional(),
   })
   .strict();
 export type LabOrderItemCreateInput = z.infer<typeof labOrderItemCreateSchema>;

@@ -157,7 +157,7 @@ export class ClinicalEncounterService {
     });
     const previousHashSha256 = previous?.contentHashSha256 ?? null;
 
-    const { diagnoses, physicalExam, prognosis, vitals: rawVitals, specialtyData: rawSpecialtyData, criticalVitalsConfirmed, ...requiredNote } = input;
+    const { diagnoses, physicalExam, prognosis, vitals: rawVitals, specialtyData: rawSpecialtyData, criticalVitalsConfirmed, patientInstructions, suggestedFollowUpDays, ...requiredNote } = input;
     // Prompt 27/31.2: si el cliente mandó bmi/bsaM2, se IGNORAN — el
     // servidor siempre recalcula sobre peso y talla firmados.
     const { bmi: _clientBmi, bsaM2: _clientBsa, ...vitals } = rawVitals;
@@ -213,7 +213,7 @@ export class ClinicalEncounterService {
     // Prompt 27: percentilas pediátricas por edad y sexo (LMS OMS/CDC).
     const percentiles = await this.computeGrowthPercentiles(ageYears, patientForVitals.sexAtBirth, vitals);
     const resolvedSpecialtyData = await this.resolveSpecialtyData(encounter.doctorId, rawSpecialtyData);
-    const noteContent = { ...requiredNote, vitals: computedVitals, percentiles, physicalExam, prognosis, noteTypeKey, specialtyCode };
+    const noteContent = { ...requiredNote, vitals: computedVitals, percentiles, physicalExam, prognosis, noteTypeKey, specialtyCode, patientInstructions, suggestedFollowUpDays };
     const contentHashSha256 = sha256Hex({ noteContent, diagnoses, specialtyData: resolvedSpecialtyData?.data, previousHashSha256, encounterId });
     const signedAt = new Date();
 
@@ -225,7 +225,10 @@ export class ClinicalEncounterService {
           vitals: computedVitals,
           noteTypeTermId: noteTypeTerm?.id ?? null,
           specialtyCode,
-          ...omitUndefined({ physicalExam, prognosis }),
+          // Prompt 37 (F4): indicaciones al paciente y próxima cita
+          // sugerida viven en la nota firmada — de ahí sale el PDF de
+          // indicaciones (38A) sin retrabajo.
+          ...omitUndefined({ physicalExam, prognosis, patientInstructions, suggestedFollowUpDays }),
         },
       });
       // Prompt 26: la entidad de signos vitales — columnas tipadas con
@@ -348,7 +351,7 @@ export class ClinicalEncounterService {
       );
     }
 
-    const { diagnoses, physicalExam, prognosis, vitals, isCorrectionOfNoteId, ...requiredNote } = input;
+    const { diagnoses, physicalExam, prognosis, vitals, isCorrectionOfNoteId, patientInstructions, suggestedFollowUpDays, ...requiredNote } = input;
     const computedVitals = withComputedVitals(vitals);
 
     return this.prisma.$transaction(async (tx) => {
@@ -358,7 +361,7 @@ export class ClinicalEncounterService {
           isCorrectionOfNoteId,
           ...requiredNote,
           vitals: computedVitals,
-          ...omitUndefined({ physicalExam, prognosis }),
+          ...omitUndefined({ physicalExam, prognosis, patientInstructions, suggestedFollowUpDays }),
         },
       });
       if (diagnoses.length > 0) {

@@ -884,6 +884,11 @@ model ClinicalNote {
   specialtyCode        String?
   chiefComplaint       String
   currentIllness       String
+  // Prompt 37B: lo que el PACIENTE se lleva — lenguaje llano,
+  // separado de la nota técnica; se imprime como PDF propio.
+  patientInstructions  String?
+  // Prompt 37C: próxima cita sugerida desde el plan (días).
+  suggestedFollowUpDays Int?
   vitals               Json
   physicalExam         String?
   assessment           String
@@ -1468,6 +1473,14 @@ enum ControlGroup {
 // un puñado de medicamentos sintéticos de ejemplo — ver el plan sobre
 // no inventar contenido clínico real (dosis/contraindicaciones/grupo
 // de control verdadero de cada fármaco).
+// Prompt 33 — 🔒 PENDIENTE DE LICENCIA: la base comercial aún no se
+// elige. El modelo de sincronización queda LISTO para cuando llegue:
+// isActive=false retira un medicamento sin romper recetas históricas
+// (la FK y los snapshots legales sobreviven; el buscador solo ofrece
+// activos); sourceVersion registra de qué corte de la base vino cada
+// fila; el grupo terapéutico es el prefijo ATC (4 caracteres), que el
+// prompt 34 ya consume. Las 10 filas actuales son SINTÉTICAS de
+// desarrollo — no prescribir con ellas en producción.
 model MedicationCatalog {
   id                           String       @id @default(uuid())
   genericName                  String
@@ -1478,12 +1491,16 @@ model MedicationCatalog {
   isElectronicallyPrescribable Boolean      @default(true)
   commonDoses                  Json?
   contraindications            String[]     @default([])
+  sourceVersion String?
   isActive                     Boolean      @default(true)
   createdAt                    DateTime     @default(now()) @db.Timestamptz(3)
 
   prescriptionItems PrescriptionItem[]
 
   patientAllergies PatientAllergy[]
+
+  interactionsA MedicationInteraction[] @relation("InteractionA")
+  interactionsB MedicationInteraction[] @relation("InteractionB")
 
   @@map("medications_catalog")
 }
@@ -1636,6 +1653,10 @@ model Prescription {
   doctor                 Doctor                           @relation(fields: [doctorId], references: [id])
   replacesPrescription   Prescription?                    @relation("PrescriptionReplacement", fields: [replacesPrescriptionId], references: [id])
   replacedByPrescription Prescription?                    @relation("PrescriptionReplacement")
+  // Prompt 34: el bloqueo por alergia SOLO se libera con una
+  // justificación clínica que queda registrada en el expediente y
+  // firmada por el médico (viaja dentro del snapshot legal firmado).
+  allergyOverrideJustification String?
   items                  PrescriptionItem[]
   cancellation           PrescriptionCancellation?
   handwrittenDelivery    PrescriptionHandwrittenDelivery?
@@ -1688,6 +1709,14 @@ model PrescriptionItem {
   dose                String
   route               String
   frequency           String
+  // Prompt 32: unidad de dosis explícita e indicación por línea.
+  doseUnit             String?
+  indication           String?
+  // Prompt 36 — procedencia: NUEVA | HEREDADA | HEREDADA_MODIFICADA,
+  // con la receta y fecha de origen cuando viene de "traer última".
+  origin               String    @default("NUEVA")
+  sourcePrescriptionId String?
+  sourceIssuedAt       DateTime? @db.Timestamptz(3)
   duration            String
   quantity            String?
   specialInstructions String?
@@ -1777,14 +1806,46 @@ model LabOrderCancellation {
   @@map("lab_order_cancellations")
 }
 
-model LabOrderItem {
-  id         String  @id @default(uuid())
-  labOrderId String
-  studyName  String
-  loincCode  String?
-  notes      String?
+// Prompt 35 — interacciones fármaco-fármaco. El MOTOR está completo;
+// los DATOS de producción llegan con la base licenciada (decisión 🔒
+// del prompt 33, PENDIENTE). Las filas sembradas son un set de
+// demostración de pares clásicos verificables (fuente citada en
+// seed.ts), marcadas pendingMedicalReview — NO son la base clínica.
+// GRAVE → advertencia con confirmación explícita obligatoria;
+// MODERADA → informa sin bloquear. Todo queda en bitácora.
+model MedicationInteraction {
+  id                   String  @id @default(uuid())
+  medicationAId        String
+  medicationBId        String
+  severity             String
+  description          String
+  source               String
+  pendingMedicalReview Boolean @default(true)
 
-  labOrder LabOrder @relation(fields: [labOrderId], references: [id])
+  medicationA MedicationCatalog @relation("InteractionA", fields: [medicationAId], references: [id])
+  medicationB MedicationCatalog @relation("InteractionB", fields: [medicationBId], references: [id])
+
+  @@unique([medicationAId, medicationBId])
+  @@map("medication_interactions")
+}
+
+// Prompt 37A — el estudio viene del catálogo en DOS niveles (el tipo
+// filtra los estudios concretos; el vínculo estudio→tipo viaja en
+// externalCode del término, documentado en seed.ts) y el MOTIVO es
+// OBLIGATORIO y de catálogo cerrado. studyName queda como snapshot
+// legible (entra al PDF y al hash) resuelto SIEMPRE del término.
+model LabOrderItem {
+  id           String  @id @default(uuid())
+  labOrderId   String
+  studyName    String
+  loincCode    String?
+  studyTermId  String?
+  motiveTermId String?
+  notes        String?
+
+  labOrder   LabOrder             @relation(fields: [labOrderId], references: [id])
+  studyTerm  ClinicalCatalogTerm? @relation("LabStudyTerm", fields: [studyTermId], references: [id])
+  motiveTerm ClinicalCatalogTerm? @relation("LabMotiveTerm", fields: [motiveTermId], references: [id])
 
   @@map("lab_order_items")
 }
@@ -1912,6 +1973,8 @@ model ClinicalCatalogTerm {
   allergyTerms  PatientAllergy[]      @relation("AllergyTerm")
   substanceUses PatientSubstanceUse[] @relation("SubstanceTerm")
   notesTyped    ClinicalNote[]        @relation("NoteTypeTerm")
+  labStudyItems  LabOrderItem[]       @relation("LabStudyTerm")
+  labMotiveItems LabOrderItem[]       @relation("LabMotiveTerm")
 
   @@unique([domain, key])
   @@unique([domain, normalizedTerm])

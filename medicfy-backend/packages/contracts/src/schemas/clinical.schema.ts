@@ -55,6 +55,10 @@ export const clinicalNoteDraftUpdateSchema = z
     physicalExam: z.string().optional(),
     assessment: z.string().optional(),
     plan: z.string().optional(),
+    // Prompt 37 (F4): también viven en el borrador — el autoguardado
+    // no pierde las indicaciones al paciente ni la próxima cita.
+    patientInstructions: z.string().max(2000).optional(),
+    suggestedFollowUpDays: z.number().int().min(1).max(365).optional(),
     prognosis: z.string().optional(),
   })
   .strict();
@@ -103,6 +107,10 @@ export const clinicalNoteSignSchema = z
     // Prompt 26: un signo vital en rango CRÍTICO exige confirmación
     // explícita del médico antes de permitir guardar/firmar.
     criticalVitalsConfirmed: z.boolean().optional(),
+    // Prompt 37B/C: lo que el paciente se lleva (lenguaje llano) y la
+    // próxima cita sugerida desde el plan.
+    patientInstructions: z.string().max(2000).optional(),
+    suggestedFollowUpDays: z.number().int().min(1).max(365).optional(),
   })
   .strict();
 export type ClinicalNoteSignInput = z.infer<typeof clinicalNoteSignSchema>;
