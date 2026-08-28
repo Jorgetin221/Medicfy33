@@ -81,6 +81,27 @@ export function IconShieldNav(props: IconProps) {
   );
 }
 
+// Fase 6 · Prompt 45: bitácora de acceso / integridad ("Auditoría").
+export function IconClipboardCheckNav(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <rect x="5" y="4.5" width="14" height="16" rx="1.5" />
+      <path d="M9 4.5V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1.5" />
+      <path d="m8.5 13 2.3 2.3L15.5 11" />
+    </svg>
+  );
+}
+
+// Botón de plegar/desplegar el rail — apunta a la izquierda expandido,
+// gira 180° (vía className del llamador) cuando está plegado.
+export function IconChevronNav(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <path d="m14.5 5-6 7 6 7" />
+    </svg>
+  );
+}
+
 export function IconLogout(props: IconProps) {
   return (
     <svg {...base} {...props}>
