@@ -3,6 +3,7 @@ import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import cookieParser from "cookie-parser";
 import request from "supertest";
+import { TOTP, Secret } from "otpauth";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AppModule } from "../../app.module";
 import { ApiExceptionFilter } from "../../common/api-exception.filter";
@@ -27,6 +28,11 @@ function uniquePhone(): string {
 }
 function uniqueCedula(): string {
   return Math.floor(1000000 + Math.random() * 8999999).toString();
+}
+function totpFromUri(otpauthUri: string): string {
+  const url = new URL(otpauthUri);
+  const secret = url.searchParams.get("secret") as string;
+  return new TOTP({ algorithm: "SHA1", digits: 6, period: 30, secret: Secret.fromBase32(secret) }).generate();
 }
 
 const STRONG_PASSWORD = "Correcto-Caballo-Bateria-47!Grafito";
@@ -82,6 +88,21 @@ describe("Fase 3 · La nota como datos (prompt 31B)", () => {
     return { userId, accessToken: tokenService.signAccessToken({ sub: userId, primaryRole: "DOCTOR" }) };
   }
 
+  // sign() ahora llama a SignatureVerificationService.verify() como lo
+  // primero que hace — a diferencia de signAccessToken() (bypass de
+  // sesión), la contraseña real y el TOTP real no se pueden saltar.
+  async function enrollMfa(accessToken: string): Promise<string> {
+    const start = await request(app.getHttpServer()).post("/auth/mfa/enroll").set("Authorization", `Bearer ${accessToken}`).send({});
+    expect(start.status).toBe(200);
+    const otpauthUri = start.body.otpauthUri as string;
+    const confirm = await request(app.getHttpServer())
+      .post("/auth/mfa/enroll")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ code: totpFromUri(otpauthUri) });
+    expect(confirm.status).toBe(200);
+    return otpauthUri;
+  }
+
   async function createPatient(accessToken: string, birthDate: string, sexAtBirth: "F" | "M" = "F"): Promise<string> {
     const ageYears = (Date.now() - new Date(birthDate).getTime()) / (365.25 * 24 * 60 * 60 * 1000);
     const res = await request(app.getHttpServer())
@@ -117,6 +138,7 @@ describe("Fase 3 · La nota como datos (prompt 31B)", () => {
 
   async function signNote(
     accessToken: string,
+    otpauthUri: string,
     patientId: string,
     extra: Record<string, unknown>
   ): Promise<{ status: number; body: { error: { code: string; details: { criticalFields: string[] } } } & Record<string, unknown> }> {
@@ -131,6 +153,8 @@ describe("Fase 3 · La nota como datos (prompt 31B)", () => {
       .send({
         ...BASE_NOTE,
         diagnoses: [{ icd10Code: await icd10(), description: "Control", diagnosisType: "PRINCIPAL", certainty: "CONFIRMED" }],
+        password: STRONG_PASSWORD,
+        totpCode: totpFromUri(otpauthUri),
         ...extra,
       });
     return { status: res.status, body: res.body };
@@ -138,10 +162,11 @@ describe("Fase 3 · La nota como datos (prompt 31B)", () => {
 
   it("31.1 — la presión arterial de las últimas doce consultas se grafica sin procesar texto", async () => {
     const doctor = await registerDoctor();
+    const otpauthUri = await enrollMfa(doctor.accessToken);
     const patientId = await createPatient(doctor.accessToken, "1990-01-01");
 
     for (let i = 0; i < 12; i += 1) {
-      const res = await signNote(doctor.accessToken, patientId, {
+      const res = await signNote(doctor.accessToken, otpauthUri, patientId, {
         vitals: { bpSystolic: 110 + i, bpDiastolic: 70 + i },
       });
       expect(res.status).toBe(201);
@@ -162,9 +187,10 @@ describe("Fase 3 · La nota como datos (prompt 31B)", () => {
 
   it("31.2 — peso y talla producen IMC del servidor (78.4 kg / 1.58 m → 31.4); un IMC enviado por el cliente se IGNORA", async () => {
     const doctor = await registerDoctor();
+    const otpauthUri = await enrollMfa(doctor.accessToken);
     const patientId = await createPatient(doctor.accessToken, "1990-01-01");
 
-    const res = await signNote(doctor.accessToken, patientId, {
+    const res = await signNote(doctor.accessToken, otpauthUri, patientId, {
       // El cliente intenta imponer un IMC falso: se ignora y recalcula.
       vitals: { weightKg: 78.4, heightCm: 158, bmi: 99.9, bsaM2: 9.99 },
     });
@@ -178,14 +204,15 @@ describe("Fase 3 · La nota como datos (prompt 31B)", () => {
 
   it("31.3 — una saturación de 78% exige confirmación explícita antes de permitir firmar", async () => {
     const doctor = await registerDoctor();
+    const otpauthUri = await enrollMfa(doctor.accessToken);
     const patientId = await createPatient(doctor.accessToken, "1990-01-01");
 
-    const blocked = await signNote(doctor.accessToken, patientId, { vitals: { spo2: 78 } });
+    const blocked = await signNote(doctor.accessToken, otpauthUri, patientId, { vitals: { spo2: 78 } });
     expect(blocked.status).toBe(422);
     expect(blocked.body.error.code).toBe("VITALS_CRITICAL_CONFIRMATION_REQUIRED");
     expect(blocked.body.error.details.criticalFields).toContain("spo2");
 
-    const confirmed = await signNote(doctor.accessToken, patientId, {
+    const confirmed = await signNote(doctor.accessToken, otpauthUri, patientId, {
       vitals: { spo2: 78 },
       criticalVitalsConfirmed: true,
     });
@@ -196,6 +223,7 @@ describe("Fase 3 · La nota como datos (prompt 31B)", () => {
 
   it("31.4 — dar de alta una escala nueva POR CONFIGURACIÓN la hace disponible en la nota sin desplegar código", async () => {
     const doctor = await registerDoctor();
+    const otpauthUri = await enrollMfa(doctor.accessToken);
     const patientId = await createPatient(doctor.accessToken, "1990-01-01");
 
     // Alta como DATOS (lo que haría un despliegue de configuración).
@@ -217,7 +245,7 @@ describe("Fase 3 · La nota como datos (prompt 31B)", () => {
     expect(JSON.stringify(schemas.body)).toContain(itemKey);
 
     // …y usable al firmar: el servidor computa el total e interpreta.
-    const res = await signNote(doctor.accessToken, patientId, {
+    const res = await signNote(doctor.accessToken, otpauthUri, patientId, {
       vitals: {},
       specialtyData: { [itemKey]: 8 },
     });
@@ -233,11 +261,12 @@ describe("Fase 3 · La nota como datos (prompt 31B)", () => {
 
   it("31.6 — en pediatría, peso y talla producen la percentila correspondiente a la edad (LMS OMS): mediana → P50", async () => {
     const doctor = await registerDoctor();
+    const otpauthUri = await enrollMfa(doctor.accessToken);
     // Paciente de ~12 meses (niño): la mediana OMS de peso es 9.6479 kg.
     const birth = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     const patientId = await createPatient(doctor.accessToken, birth, "M");
 
-    const res = await signNote(doctor.accessToken, patientId, {
+    const res = await signNote(doctor.accessToken, otpauthUri, patientId, {
       vitals: { weightKg: 9.65, heightCm: 75.7 },
     });
     expect(res.status).toBe(201);
@@ -252,6 +281,7 @@ describe("Fase 3 · La nota como datos (prompt 31B)", () => {
 
   it("Prompt 28 — un código CIE-10 inexistente ya no puede firmarse (FK real); descartar saca de vigentes sin borrar", async () => {
     const doctor = await registerDoctor();
+    const otpauthUri = await enrollMfa(doctor.accessToken);
     const patientId = await createPatient(doctor.accessToken, "1990-01-01");
 
     // Código inventado → 422 (P4 §2.4: antes quedaba firmado y hasheado).
@@ -266,6 +296,8 @@ describe("Fase 3 · La nota como datos (prompt 31B)", () => {
         ...BASE_NOTE,
         vitals: {},
         diagnoses: [{ icd10Code: "ZZZZ9", description: "Inventado", diagnosisType: "PRINCIPAL", certainty: "CONFIRMED" }],
+        password: STRONG_PASSWORD,
+        totpCode: totpFromUri(otpauthUri),
       });
     expect(invalid.status).toBe(422);
     expect(invalid.body.error.code).toBe("DIAGNOSIS_ICD10_NOT_IN_CATALOG");
@@ -279,6 +311,8 @@ describe("Fase 3 · La nota como datos (prompt 31B)", () => {
         ...BASE_NOTE,
         vitals: {},
         diagnoses: [{ icd10Code: code, description: "Real", diagnosisType: "PRINCIPAL", certainty: "CONFIRMED" }],
+        password: STRONG_PASSWORD,
+        totpCode: totpFromUri(otpauthUri),
       });
     expect(signed.status).toBe(201);
     const diagnosis = await prisma.encounterDiagnosis.findFirstOrThrow({ where: { encounterId: enc.body.id } });
@@ -307,8 +341,9 @@ describe("Fase 3 · La nota como datos (prompt 31B)", () => {
 
   it("Prompt 25 — la nota firmada queda tipada: tipo de nota del catálogo (TIPO_NOTA) y especialidad del autor, fijados por el servidor", async () => {
     const doctor = await registerDoctor();
+    const otpauthUri = await enrollMfa(doctor.accessToken);
     const patientId = await createPatient(doctor.accessToken, "1990-01-01");
-    const res = await signNote(doctor.accessToken, patientId, { vitals: {} });
+    const res = await signNote(doctor.accessToken, otpauthUri, patientId, { vitals: {} });
     expect(res.status).toBe(201);
 
     const note = await prisma.clinicalNote.findFirstOrThrow({

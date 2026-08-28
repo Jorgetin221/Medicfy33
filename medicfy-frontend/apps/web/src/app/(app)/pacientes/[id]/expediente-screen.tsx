@@ -14,6 +14,7 @@ import { TabAntecedentes } from "./tab-antecedentes";
 import { TabNotas } from "./tab-notas";
 import { TabRecetas } from "./tab-recetas";
 import { TabOrdenes } from "./tab-ordenes";
+import { TabProtocolos } from "./tab-protocolos";
 
 // Expediente — encabezado clínico persistente con alertas críticas
 // siempre visible (CLAUDE.md §5/§6), y las 5 secciones que
@@ -78,6 +79,11 @@ export function ExpedienteScreen({ patientId, accessToken }: { patientId: string
           onChanged={reload}
         />
       ),
+    },
+    {
+      id: "protocolos",
+      label: "Protocolos",
+      content: <TabProtocolos patientId={patientId} accessToken={accessToken} encounters={timeline?.encounters ?? []} />,
     },
   ];
 

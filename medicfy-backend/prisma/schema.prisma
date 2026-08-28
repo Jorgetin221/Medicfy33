@@ -281,6 +281,7 @@ model Specialty {
 
   doctors      Doctor[]
   fieldSchemas SpecialtyFieldSchema[]
+  treatmentProtocols TreatmentProtocol[]
 
   antecedentesTemplates AntecedentesTemplate[]
 
@@ -514,6 +515,8 @@ model Patient {
   prescriptions     Prescription[]
   labOrders         LabOrder[]
   labResults        LabResult[]
+  labResultAnalytes LabResultAnalyte[]
+  protocolInstances PatientProtocolInstance[]
 
   @@map("patients")
 }
@@ -839,6 +842,12 @@ model ClinicalEncounter {
   timeToSignSeconds  Int?
   signedByUserId     String?
   signatureMethod    SignatureMethod?
+  // Fase 6 · Prompt 43: "estampa nombre completo, cédula profesional"
+  // — snapshot al momento de firmar (R6), nunca resuelto por join
+  // después. Mismo patrón que LabOrder.doctorNameSnapshot/
+  // doctorLicenseSnapshot.
+  signedByLegalNameSnapshot String?
+  signedByLicenseSnapshot  String?
   contentHashSha256  String?
   previousHashSha256 String?
   abandonedAt        DateTime?        @db.Timestamptz(3)
@@ -854,6 +863,7 @@ model ClinicalEncounter {
   prescriptions Prescription[]
   labOrders     LabOrder[]
   specialtyData EncounterSpecialtyData?
+  protocolSessions ProtocolSession[]
 
   @@map("clinical_encounters")
 }
@@ -902,8 +912,29 @@ model ClinicalNote {
   corrections        ClinicalNote[]       @relation("NoteCorrection")
   noteTypeTerm       ClinicalCatalogTerm? @relation("NoteTypeTerm", fields: [noteTypeTermId], references: [id])
   vitalSignSet       VitalSignSet?
+  cancellation       ClinicalNoteCancellation?
 
   @@map("clinical_notes")
+}
+
+// Fase 6 · Prompt 44B: "el registro se marca cancelado, NUNCA se
+// elimina, y sigue siendo consultable." Mismo patrón exacto que
+// PrescriptionCancellation/LabOrderCancellation — tabla separada,
+// solo INSERT+SELECT (clinical_notes ya es append-only por su propio
+// GRANT; esta tabla nunca se UPDATEa tampoco). Su sola existencia ES
+// el estado "cancelada".
+model ClinicalNoteCancellation {
+  id                String   @id @default(uuid())
+  noteId            String   @unique
+  reasonTermId      String
+  reasonFreeText    String?
+  cancelledByUserId String
+  cancelledAt       DateTime @default(now()) @db.Timestamptz(3)
+
+  note       ClinicalNote        @relation(fields: [noteId], references: [id])
+  reasonTerm ClinicalCatalogTerm @relation("NoteCancellationReasonTerm", fields: [reasonTermId], references: [id])
+
+  @@map("clinical_note_cancellations")
 }
 
 // Prompt 26 — signos vitales como ENTIDAD por nota, no campos de
@@ -1052,6 +1083,11 @@ model ClinicalAttachment {
   mimeType         String
   sizeBytes        Int
   category         ClinicalAttachmentCategory
+  // Fase 5 · Prompt 41: fecha del estudio, distinta de uploadedAt (el
+  // documento puede subirse días después de realizado). Opcional
+  // porque no todo adjunto (p. ej. una foto clínica) tiene una fecha
+  // de estudio propia.
+  studyDate        DateTime?                  @db.Timestamptz(3)
   uploadedByUserId String
   description      String?
   uploadedAt       DateTime                   @default(now()) @db.Timestamptz(3)
@@ -1572,6 +1608,146 @@ model EncounterSpecialtyData {
   @@map("encounter_specialty_data")
 }
 
+// Fase 7 · Prompt 47 — modelo genérico de protocolo longitudinal
+// (generalización del módulo de quimioterapia del sistema de
+// referencia): línea de tratamiento → esquema → ciclo → día del
+// ciclo, aquí como protocolo → instancia por paciente → sesión.
+//
+// Definición como DATOS, no código (mismo patrón que
+// SpecialtyFieldSchema/EncounterSpecialtyData ya usa para "qué
+// capturar" por especialidad) — un protocolo nuevo se siembra, nunca
+// se programa. sourceCitation es obligatorio EN LA PRÁCTICA para
+// cualquier protocolo que se presente como clínicamente vigente
+// (control prenatal, vacunación); solo el protocolo de demostración
+// sembrado para probar el motor lo deja vacío, marcado como tal.
+model TreatmentProtocol {
+  id             String   @id @default(uuid())
+  name           String
+  specialtyId    String?
+  version        Int      @default(1)
+  isActive       Boolean  @default(true)
+  sourceCitation String?
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+
+  specialty     Specialty?                        @relation(fields: [specialtyId], references: [id])
+  sessionTemplates TreatmentProtocolSessionTemplate[]
+  fieldSchemas  ProtocolFieldSchema[]
+  instances     PatientProtocolInstance[]
+
+  @@map("treatment_protocols")
+}
+
+// Sesiones esperadas + su ventana de tiempo (prompt 47A). Los
+// offsets son relativos a PatientProtocolInstance.startedAt — ver la
+// nota de diseño en el plan de Fase 7 sobre por qué no se ancla a
+// fecha de última menstruación aquí (eso le corresponde al calendario
+// prenatal real, todavía pendiente).
+model TreatmentProtocolSessionTemplate {
+  id                    String @id @default(uuid())
+  protocolId            String
+  sequenceNumber        Int
+  label                 String
+  windowStartOffsetDays Int
+  windowEndOffsetDays   Int
+
+  protocol TreatmentProtocol @relation(fields: [protocolId], references: [id])
+  sessions ProtocolSession[]
+
+  @@unique([protocolId, sequenceNumber])
+  @@map("treatment_protocol_session_templates")
+}
+
+// "Datos a capturar por sesión" (prompt 47A) — mirror literal de
+// SpecialtyFieldSchema, mismo enum SpecialtyFieldInputType (no se
+// inventa un segundo vocabulario de tipos de campo).
+model ProtocolFieldSchema {
+  id           String                  @id @default(uuid())
+  protocolId   String
+  version      Int                     @default(1)
+  fieldKey     String
+  label        String
+  inputType    SpecialtyFieldInputType
+  unit         String?
+  minValue     Float?
+  maxValue     Float?
+  options      Json?
+  isRequired   Boolean                 @default(false)
+  displayOrder Int                     @default(0)
+  helpText     String?
+
+  protocol TreatmentProtocol @relation(fields: [protocolId], references: [id])
+
+  @@map("protocol_field_schemas")
+}
+
+enum PatientProtocolInstanceStatus {
+  ACTIVE
+  CLOSED
+
+  @@map("patient_protocol_instance_status")
+}
+
+// Motivo de cierre — texto LITERAL del prompt 47 ("completado,
+// abandonado, cambio de plan, referido"), no inventado.
+enum ProtocolInstanceClosureReason {
+  COMPLETADO
+  ABANDONADO
+  CAMBIO_PLAN
+  REFERIDO
+
+  @@map("protocol_instance_closure_reason")
+}
+
+// Instancia por paciente (prompt 47B). protocolVersion es un
+// snapshot al iniciar — igual que EncounterSpecialtyData.
+// specialtySchemaVersion, para que editar el protocolo después no
+// cambie retroactivamente instancias en curso.
+model PatientProtocolInstance {
+  id                   String                         @id @default(uuid())
+  patientId            String
+  protocolId           String
+  protocolVersion      Int
+  status               PatientProtocolInstanceStatus @default(ACTIVE)
+  startedAt            DateTime                       @default(now()) @db.Timestamptz(3)
+  startedByUserId      String
+  currentSessionNumber Int                            @default(1)
+  closedAt             DateTime?                      @db.Timestamptz(3)
+  closureReason        ProtocolInstanceClosureReason?
+  closureNotes         String?
+
+  patient  Patient           @relation(fields: [patientId], references: [id])
+  protocol TreatmentProtocol @relation(fields: [protocolId], references: [id])
+  sessions ProtocolSession[]
+
+  @@index([patientId, status])
+  @@map("patient_protocol_instances")
+}
+
+// Sesión real (prompt 47C). Se genera UNA fila por cada
+// TreatmentProtocolSessionTemplate al abrir la instancia — proposedDate
+// ya calculada, actualDate null hasta que ocurre. "Una sesión fuera
+// de ventana se REGISTRA como tal, no se rechaza" (regla explícita
+// del prompt): withinWindow solo se calcula, nunca bloquea.
+model ProtocolSession {
+  id             String    @id @default(uuid())
+  instanceId     String
+  templateId     String
+  sequenceNumber Int
+  proposedDate   DateTime  @db.Date
+  actualDate     DateTime? @db.Date
+  withinWindow   Boolean?
+  encounterId    String?
+  data           Json?
+  createdAt      DateTime  @default(now()) @db.Timestamptz(3)
+
+  instance  PatientProtocolInstance           @relation(fields: [instanceId], references: [id])
+  template  TreatmentProtocolSessionTemplate  @relation(fields: [templateId], references: [id])
+  encounter ClinicalEncounter?                @relation(fields: [encounterId], references: [id])
+
+  @@unique([instanceId, sequenceNumber])
+  @@map("protocol_sessions")
+}
+
 enum PrescriptionType {
   ELECTRONIC
   EXTERNAL_PHYSICAL
@@ -1784,9 +1960,10 @@ model LabOrder {
   encounter    ClinicalEncounter     @relation(fields: [encounterId], references: [id])
   patient      Patient               @relation(fields: [patientId], references: [id])
   doctor       Doctor                @relation(fields: [doctorId], references: [id])
-  items        LabOrderItem[]
-  results      LabResult[]
-  cancellation LabOrderCancellation?
+  items          LabOrderItem[]
+  results        LabResult[]
+  resultAnalytes LabResultAnalyte[]
+  cancellation   LabOrderCancellation?
 
   @@map("lab_orders")
 }
@@ -1877,6 +2054,37 @@ model LabResult {
   patient  Patient   @relation(fields: [patientId], references: [id])
 
   @@map("lab_results")
+}
+
+// Fase 5 · Prompt 42A: "Resultados de laboratorio como analitos
+// ESTRUCTURADOS ... NO como un PDF adjunto ni como número de orden."
+// Complementa LabResult (el archivo crudo) sin reemplazarlo — el
+// médico transcribe el valor a mano (sin OCR/parseo automático, fuera
+// de alcance). loincCode opcional: M10-RN-005 no exige un catálogo
+// LOINC completo. reviewedAt/reviewedByDoctorId se actualizan con
+// UPDATE (mismo patrón ya establecido en LabResult.reviewedAt) — no
+// está en la lista literal de R1.
+model LabResultAnalyte {
+  id                 String    @id @default(uuid())
+  patientId          String
+  labOrderId         String?
+  analyteName        String
+  loincCode          String?
+  value              Decimal   @db.Decimal(10, 3)
+  unit               String
+  referenceMin       Decimal?  @db.Decimal(10, 3)
+  referenceMax       Decimal?  @db.Decimal(10, 3)
+  measuredAt         DateTime  @db.Timestamptz(3)
+  enteredByUserId    String
+  reviewedByDoctorId String?
+  reviewedAt         DateTime? @db.Timestamptz(3)
+  createdAt          DateTime  @default(now()) @db.Timestamptz(3)
+
+  labOrder LabOrder? @relation(fields: [labOrderId], references: [id])
+  patient  Patient   @relation(fields: [patientId], references: [id])
+
+  @@index([patientId, analyteName])
+  @@map("lab_result_analytes")
 }
 
 // Prompt 7 (medicfy-50-prompts.md), R2 "los catálogos son cerrados".
@@ -1975,6 +2183,7 @@ model ClinicalCatalogTerm {
   notesTyped    ClinicalNote[]        @relation("NoteTypeTerm")
   labStudyItems  LabOrderItem[]       @relation("LabStudyTerm")
   labMotiveItems LabOrderItem[]       @relation("LabMotiveTerm")
+  noteCancellationReasons ClinicalNoteCancellation[] @relation("NoteCancellationReasonTerm")
 
   @@unique([domain, key])
   @@unique([domain, normalizedTerm])

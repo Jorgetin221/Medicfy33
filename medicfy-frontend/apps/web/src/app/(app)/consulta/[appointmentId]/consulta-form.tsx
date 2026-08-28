@@ -14,6 +14,7 @@ import { useEncounterAutosave } from "@/lib/use-encounter-autosave";
 import { loadDraftLocally, clearDraftLocally } from "@/lib/offline-draft-store";
 import { FieldWrapper, Textarea, TextInput } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
+import { Panel } from "@/components/ui/panel";
 import { Aviso } from "@/components/ui/alert";
 import { IndicadorGuardado } from "@/components/ui/save-indicator";
 import { VitalsFields } from "@/components/clinical/vitals-fields";
@@ -87,6 +88,12 @@ export function ConsultaForm({
   const [activeField, setActiveField] = useState<FreeTextField>("plan");
   const [signError, setSignError] = useState<unknown>(null);
   const [isSigning, setIsSigning] = useState(false);
+  // Fase 6 · Prompt 43: firmar exige reautenticación (password+TOTP,
+  // SignatureVerificationService en servidor). El panel de reauth ES
+  // la confirmación — reemplaza el window.confirm() que había antes,
+  // porque escribir contraseña+código es una confirmación más fuerte
+  // que un diálogo nativo.
+  const [showReauthPanel, setShowReauthPanel] = useState(false);
   // Fase 4b: receta/estudios ya se pueden emitir contra la nota en
   // borrador (encounter-editable.util.ts, backend) — mientras el
   // panel de EmisionDocumentos esté abierto con edición sin guardar,
@@ -111,6 +118,8 @@ export function ConsultaForm({
       plan: "",
       prognosis: "",
       diagnoses: [],
+      password: "",
+      totpCode: "",
     },
   });
 
@@ -284,6 +293,13 @@ export function ConsultaForm({
     } catch (error) {
       if (error instanceof ApiError && error.code === "ENCOUNTER_ABANDONED") {
         onAbandoned();
+      } else if (error instanceof ApiError && error.code === "SIGNATURE_MFA_REQUIRED") {
+        // Contraseña/código incorrectos o MFA sin activar — se queda en
+        // el panel de reauth, nunca en el resto de la nota, y limpia
+        // el código (no la contraseña: un solo dígito mal tecleado no
+        // debería obligar a reescribir todo).
+        form.resetField("totpCode");
+        setSignError(error);
       } else if (error instanceof ApiError && error.code === "VITALS_CRITICAL_CONFIRMATION_REQUIRED") {
         // Prompt 26: un signo vital CRÍTICO exige confirmación
         // explícita del médico — se le muestra cuáles y confirma.
@@ -316,8 +332,14 @@ export function ConsultaForm({
 
   function handleSignClick() {
     if (planPanelOpen) return;
-    if (!window.confirm("¿Firmar esta consulta? Una vez firmada, la nota no se puede editar — solo corregir con una nota nueva.")) return;
-    void handleSignSubmit();
+    setShowReauthPanel(true);
+  }
+
+  function closeReauthPanel() {
+    setShowReauthPanel(false);
+    setSignError(null);
+    form.resetField("password");
+    form.resetField("totpCode");
   }
 
   useEffect(() => {
@@ -524,11 +546,6 @@ export function ConsultaForm({
           />
         </FieldWrapper>
 
-        {signError ? (
-          <Aviso variant="critico" title="No se pudo firmar la consulta">
-            {signError instanceof ApiError ? signError.message : "Intenta de nuevo."}
-          </Aviso>
-        ) : null}
       </form>
 
       <div className="fixed inset-x-0 bottom-0 z-20 border-t border-gray-300 bg-white p-4">
@@ -545,6 +562,53 @@ export function ConsultaForm({
         </div>
       </div>
 
+      {/* Fase 6 · Prompt 43: reautenticación obligatoria para firmar —
+          el panel ES la confirmación (reemplaza el window.confirm()
+          que había antes). Los campos password/totpCode viven en el
+          MISMO form de react-hook-form que el resto de la nota —
+          register() no depende de dónde en el DOM se monte el campo,
+          así que handleSignSubmit (form.handleSubmit(onSign)) los
+          incluye igual que cualquier otro campo de la nota. */}
+      <Panel open={showReauthPanel} onClose={closeReauthPanel} title="Confirma tu identidad para firmar">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void handleSignSubmit();
+          }}
+          className="flex flex-col gap-4"
+          noValidate
+        >
+          <p className="text-base text-gray-700">
+            Una vez firmada, esta consulta no se puede editar — solo corregir con una nota nueva (adenda).
+          </p>
+          <FieldWrapper label="Contraseña" htmlFor="sign-password" error={form.formState.errors.password?.message}>
+            <TextInput id="sign-password" type="password" autoComplete="current-password" error={!!form.formState.errors.password} {...form.register("password")} />
+          </FieldWrapper>
+          <FieldWrapper label="Código de verificación (TOTP)" htmlFor="sign-totp-code" error={form.formState.errors.totpCode?.message}>
+            <TextInput
+              id="sign-totp-code"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              error={!!form.formState.errors.totpCode}
+              {...form.register("totpCode")}
+            />
+          </FieldWrapper>
+          {signError ? (
+            <Aviso variant="critico" title="No se pudo firmar la consulta">
+              {signError instanceof ApiError ? signError.message : "Intenta de nuevo."}
+            </Aviso>
+          ) : null}
+          <div className="flex gap-3">
+            <Button type="submit" isLoading={isSigning} className="px-6">
+              Firmar
+            </Button>
+            <Button type="button" variant="secondary" onClick={closeReauthPanel}>
+              Cancelar
+            </Button>
+          </div>
+        </form>
+      </Panel>
     </div>
   );
 }

@@ -4,6 +4,11 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ResultadosCharts } from "@/components/clinical/resultados-charts";
+import { HojaFrontal } from "@/components/clinical/hoja-frontal";
+import { HistoriaReadonly } from "@/components/clinical/historia-readonly";
+import { NotasTimeline } from "@/components/clinical/notas-timeline";
+import { DocumentosTab } from "@/components/clinical/documentos-tab";
+import { LabAnalytesPanel } from "@/components/clinical/lab-analytes-panel";
 
 // Prompt 14 — Zona 3, esqueleto: pestañas Hoja frontal / Historia /
 // Notas / Estudios / Resultados, VACÍAS por ahora (el contenido llega
@@ -20,14 +25,6 @@ import { ResultadosCharts } from "@/components/clinical/resultados-charts";
 
 const TABS = ["Hoja frontal", "Historia", "Notas", "Estudios", "Resultados"] as const;
 export type Zona3Tab = (typeof TABS)[number];
-
-const PLACEHOLDER: Record<Zona3Tab, string> = {
-  "Hoja frontal": "La hoja frontal del expediente llega con la Fase 2.",
-  Historia: "La historia clínica estructurada llega con la Fase 2.",
-  Notas: "Las notas previas llegan con la Fase 3.",
-  Estudios: "Las órdenes de estudio llegan con la Fase 4.",
-  Resultados: "Los resultados llegan con la Fase 5.",
-};
 
 function storageKey(doctorKey: string): string {
   return `medicfy:zona3:${doctorKey}`;
@@ -95,15 +92,32 @@ export function ConsultaZona3({
         {TABS.map((tab) =>
           openedTabs.has(tab) && activeTab === tab ? (
             <div key={tab} role="tabpanel" aria-label={tab}>
-              {tab === "Resultados" && patientId && accessToken && birthDate ? (
-                <ResultadosCharts
-                  patientId={patientId}
-                  accessToken={accessToken}
-                  birthDate={birthDate}
-                  ageYears={(Date.now() - new Date(birthDate).getTime()) / (365.25 * 24 * 60 * 60 * 1000)}
-                />
+              {tab === "Hoja frontal" && patientId && accessToken ? (
+                <HojaFrontal patientId={patientId} accessToken={accessToken} />
+              ) : tab === "Historia" && patientId && accessToken ? (
+                <HistoriaReadonly patientId={patientId} accessToken={accessToken} />
+              ) : tab === "Notas" && patientId && accessToken ? (
+                <NotasTimeline patientId={patientId} accessToken={accessToken} />
+              ) : tab === "Estudios" && patientId && accessToken ? (
+                <DocumentosTab patientId={patientId} accessToken={accessToken} />
+              ) : tab === "Resultados" && patientId && accessToken && birthDate ? (
+                <div className="flex flex-col gap-4">
+                  <div>
+                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Signos vitales</h3>
+                    <ResultadosCharts
+                      patientId={patientId}
+                      accessToken={accessToken}
+                      birthDate={birthDate}
+                      ageYears={(Date.now() - new Date(birthDate).getTime()) / (365.25 * 24 * 60 * 60 * 1000)}
+                    />
+                  </div>
+                  <div>
+                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Laboratorio</h3>
+                    <LabAnalytesPanel patientId={patientId} accessToken={accessToken} />
+                  </div>
+                </div>
               ) : (
-                <p className="text-sm text-gray-500">{PLACEHOLDER[tab]}</p>
+                <p className="text-sm text-gray-500">Sin datos suficientes para mostrar esta pestaña.</p>
               )}
             </div>
           ) : null
@@ -116,7 +130,7 @@ export function ConsultaZona3({
   return (
     <>
       {/* Escritorio (≥1024px): panel fijo a la derecha. */}
-      <aside className="hidden w-72 shrink-0 lg:block" aria-label="Zona 3 — consulta del expediente">
+      <aside className="hidden w-96 shrink-0 lg:block" aria-label="Zona 3 — consulta del expediente">
         {panel}
       </aside>
 

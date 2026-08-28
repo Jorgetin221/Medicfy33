@@ -3,6 +3,7 @@ import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import cookieParser from "cookie-parser";
 import request from "supertest";
+import { TOTP, Secret } from "otpauth";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AppModule } from "../../app.module";
 import { ApiExceptionFilter } from "../../common/api-exception.filter";
@@ -27,6 +28,11 @@ function uniquePhone(): string {
 }
 function uniqueCedula(): string {
   return Math.floor(1000000 + Math.random() * 8999999).toString();
+}
+function totpFromUri(otpauthUri: string): string {
+  const url = new URL(otpauthUri);
+  const secret = url.searchParams.get("secret") as string;
+  return new TOTP({ algorithm: "SHA1", digits: 6, period: 30, secret: Secret.fromBase32(secret) }).generate();
 }
 
 const STRONG_PASSWORD = "Correcto-Caballo-Bateria-47!Grafito";
@@ -90,6 +96,24 @@ describe("Verificación de médico — enforcement real en las rutas de emisión
 
   async function verify(userId: string): Promise<void> {
     await prisma.doctor.update({ where: { userId }, data: { verificationStatus: "VERIFIED" } });
+  }
+
+  // /auth/mfa/enroll solo exige JwtAuthGuard (sin DoctorVerifiedGuard),
+  // así que un médico SIN verificar puede enrolarse igual — lo que este
+  // archivo prueba es que /sign lo bloquea a él, no que MFA lo bloquee.
+  // sign() llama a SignatureVerificationService.verify() como lo
+  // primero que hace, así que la llamada "permitida" (tras verificar)
+  // también necesita contraseña real y TOTP real.
+  async function enrollMfa(accessToken: string): Promise<string> {
+    const start = await request(app.getHttpServer()).post("/auth/mfa/enroll").set("Authorization", `Bearer ${accessToken}`).send({});
+    expect(start.status).toBe(200);
+    const otpauthUri = start.body.otpauthUri as string;
+    const confirm = await request(app.getHttpServer())
+      .post("/auth/mfa/enroll")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ code: totpFromUri(otpauthUri) });
+    expect(confirm.status).toBe(200);
+    return otpauthUri;
   }
 
   async function createPatient(accessToken: string): Promise<string> {
@@ -190,6 +214,11 @@ describe("Verificación de médico — enforcement real en las rutas de emisión
 
   it("bloquea POST /records/encounters/:id/sign para un médico sin verificar, y lo permite tras verificarlo", async () => {
     const doctor = await registerUnverifiedDoctor();
+    // MFA se enrola ANTES de verificar al médico a propósito: el
+    // enroll no depende de verificationStatus, y así se aísla que el
+    // bloqueo de la llamada "blocked" de abajo es por DOCTOR_NOT_VERIFIED
+    // y no por falta de MFA.
+    const otpauthUri = await enrollMfa(doctor.accessToken);
     const patientId = await createPatient(doctor.accessToken);
     const encounterId = await createEncounter(doctor.accessToken, patientId);
 
@@ -222,7 +251,7 @@ describe("Verificación de médico — enforcement real en las rutas de emisión
     const allowed = await request(app.getHttpServer())
       .post(`/records/encounters/${encounterId}/sign`)
       .set("Authorization", `Bearer ${doctor.accessToken}`)
-      .send(noteBody);
+      .send({ ...noteBody, password: STRONG_PASSWORD, totpCode: totpFromUri(otpauthUri) });
     expect(allowed.status).toBe(201);
   });
 

@@ -12,6 +12,7 @@ import type {
   PatientPregnancyCreateInput,
   PatientPregnancyUpdateInput,
   SubstanceUseUpsertInput,
+  NotesTimelineQueryInput,
 } from "@medicfy/contracts";
 import { ApiException } from "../../../common/api-exception";
 import { PrismaService } from "../../../prisma/prisma.service";
@@ -676,6 +677,135 @@ export class PatientClinicalService {
         status: r.reviewedAt ? ("REVIEWED" as const) : ("PENDING_REVIEW" as const),
       })),
     };
+  }
+
+  // Fase 5 · Prompt 39A: "una sola pantalla, sin scroll si es posible"
+  // — un endpoint agregador en vez de que el frontend dispare 6-7
+  // fetches en cascada para una sola pantalla. Reusa los métodos que
+  // ya existen uno por uno; lo único nuevo es "próxima cita" (no
+  // existía ninguna consulta de "siguiente cita de este paciente con
+  // este médico" — appointments.controller.ts solo tiene la agenda
+  // del día).
+  async hojaFrontal(patientId: string, doctorId: string) {
+    const [patient, allergies, medications, activeDiagnoses, surgeries, lastEncounter, nextAppointment] = await Promise.all([
+      this.prisma.patient.findUniqueOrThrow({
+        where: { id: patientId },
+        select: {
+          id: true,
+          medicfyId: true,
+          firstName: true,
+          lastNamePaternal: true,
+          lastNameMaternal: true,
+          birthDate: true,
+          sexAtBirth: true,
+          phoneE164: true,
+          email: true,
+          addressStreet: true,
+          addressExt: true,
+          addressInt: true,
+          addressColonia: true,
+          addressMunicipality: true,
+          addressState: true,
+          addressPostalCode: true,
+        },
+      }),
+      this.listAllergies(patientId),
+      this.listMedications(patientId),
+      this.activeDiagnoses(patientId),
+      this.prisma.patientHistoryItem.findMany({
+        where: { patientId, category: "PERSONAL_PATOLOGICO", subtype: "cirugias", status: "PRESENTE" },
+        orderBy: { updatedAt: "desc" },
+      }),
+      this.prisma.clinicalEncounter.findFirst({
+        where: { patientId, status: "SIGNED" },
+        orderBy: { signedAt: "desc" },
+        select: {
+          id: true,
+          encounterType: true,
+          signedAt: true,
+          doctor: { select: { legalFirstName: true, legalLastName: true, primarySpecialty: { select: { nameEs: true } } } },
+        },
+      }),
+      this.prisma.appointment.findFirst({
+        where: { patientId, doctorId, startsAt: { gte: new Date() }, status: { in: ["SCHEDULED", "CONFIRMED"] } },
+        orderBy: { startsAt: "asc" },
+        select: { id: true, startsAt: true, status: true, service: { select: { name: true } } },
+      }),
+    ]);
+
+    return { patient, allergies, medications, activeDiagnoses, surgeries, lastEncounter, nextAppointment };
+  }
+
+  // Fase 5 · Prompt 40: línea de tiempo de notas. Una nota SIGNED es
+  // un "hilo" — su(s) corrección(es) (isCorrectionOfNoteId, M8-RN-001)
+  // viajan SIEMPRE con ella, nunca la reemplazan (prompt 40: "las
+  // adendas se muestran siempre junto a su nota original"). type/from/
+  // to filtran por el encuentro (mismo signedAt/tipo para la nota y
+  // sus correcciones, así que nunca se separan); q busca en el
+  // contenido y, si encuentra una corrección, muestra el hilo
+  // completo igual — nunca una corrección huérfana sin su original.
+  async notesTimeline(patientId: string, filters: NotesTimelineQueryInput) {
+    const encounters = await this.prisma.clinicalEncounter.findMany({
+      where: {
+        patientId,
+        status: "SIGNED",
+        ...(filters.type ? { encounterType: filters.type } : {}),
+        ...(filters.from || filters.to
+          ? {
+              signedAt: {
+                ...(filters.from ? { gte: new Date(`${filters.from}T00:00:00.000Z`) } : {}),
+                ...(filters.to ? { lte: new Date(`${filters.to}T23:59:59.999Z`) } : {}),
+              },
+            }
+          : {}),
+      },
+      orderBy: { signedAt: "desc" },
+      select: {
+        id: true,
+        encounterType: true,
+        signedAt: true,
+        doctor: { select: { legalFirstName: true, legalLastName: true, primarySpecialty: { select: { nameEs: true } } } },
+        notes: {
+          orderBy: { createdAt: "asc" },
+          select: {
+            id: true,
+            chiefComplaint: true,
+            currentIllness: true,
+            physicalExam: true,
+            assessment: true,
+            plan: true,
+            prognosis: true,
+            isCorrectionOfNoteId: true,
+            createdAt: true,
+            // Fase 6 · Prompt 44B: la cancelación se MUESTRA, nunca se
+            // oculta — su sola existencia es el estado "cancelada".
+            cancellation: {
+              select: { cancelledAt: true, reasonFreeText: true, reasonTerm: { select: { preferredTerm: true } } },
+            },
+          },
+        },
+      },
+    });
+
+    const q = filters.q?.trim().toLowerCase();
+    const matchesQuery = (note: { chiefComplaint: string; currentIllness: string; assessment: string; plan: string }) =>
+      !q ||
+      [note.chiefComplaint, note.currentIllness, note.assessment, note.plan].some((field) => field.toLowerCase().includes(q));
+
+    return encounters
+      .flatMap((e) =>
+        e.notes
+          .filter((n) => !n.isCorrectionOfNoteId)
+          .map((root) => ({
+            encounterId: e.id,
+            encounterType: e.encounterType,
+            signedAt: e.signedAt,
+            doctor: e.doctor,
+            note: root,
+            corrections: e.notes.filter((n) => n.isCorrectionOfNoteId === root.id),
+          }))
+      )
+      .filter((thread) => matchesQuery(thread.note) || thread.corrections.some(matchesQuery));
   }
 
   private async assertAllergyBelongsToPatient(patientId: string, allergyId: string) {

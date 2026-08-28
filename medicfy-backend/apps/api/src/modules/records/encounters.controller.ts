@@ -2,10 +2,12 @@ import { Body, Controller, Get, Param, Patch, Post, Req, StreamableFile, UseGuar
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import {
   clinicalEncounterCreateSchema,
+  clinicalNoteCancelSchema,
   clinicalNoteCorrectionSchema,
   clinicalNoteDraftUpdateSchema,
   clinicalNoteSignSchema,
   type ClinicalEncounterCreateInput,
+  type ClinicalNoteCancelInput,
   type ClinicalNoteCorrectionInput,
   type ClinicalNoteDraftUpdateInput,
   type ClinicalNoteSignInput,
@@ -18,6 +20,7 @@ import { AuditService } from "../identity/services/audit.service";
 import { getRequestMeta } from "../identity/request-meta";
 import { ClinicalEncounterService } from "./services/clinical-encounter.service";
 import { IndicacionesPdfService } from "./services/indicaciones-pdf.service";
+import { ClinicalNoteCancellationService } from "./services/clinical-note-cancellation.service";
 
 // M8-RN-002/DOC-06: crear/listar encuentros de un paciente, autoguardar
 // el borrador y firmar. Todas las rutas pasan por CareRelationshipGuard
@@ -30,7 +33,8 @@ export class EncountersController {
   constructor(
     private readonly encounters: ClinicalEncounterService,
     private readonly auditService: AuditService,
-    private readonly indicacionesPdf: IndicacionesPdfService
+    private readonly indicacionesPdf: IndicacionesPdfService,
+    private readonly noteCancellation: ClinicalNoteCancellationService
   ) {}
 
   @Post("records/patients/:patientId/encounters")
@@ -94,6 +98,20 @@ export class EncountersController {
     const note = await this.encounters.correctNote(encounterId, req.user.sub, body);
     await this.audit(req, req.clinicalPatientId as string, "records.encounter.note.correct", note.id);
     return note;
+  }
+
+  @Post("records/encounters/:encounterId/notes/:noteId/cancel")
+  @UseGuards(DoctorVerifiedGuard)
+  @ApiOperation({ summary: "Prompt 44B: cancela una nota firmada — motivo de catálogo + firma, nunca se elimina" })
+  async cancelNote(
+    @Param("encounterId") encounterId: string,
+    @Param("noteId") noteId: string,
+    @Body(new ZodValidationPipe(clinicalNoteCancelSchema)) body: ClinicalNoteCancelInput,
+    @Req() req: ClinicalRequest
+  ) {
+    const cancellation = await this.noteCancellation.cancel(encounterId, noteId, req.user.sub, body);
+    await this.audit(req, req.clinicalPatientId as string, "records.encounter.note.cancel", noteId);
+    return cancellation;
   }
 
   // Prompt 37/38A (Fase 4): PDF independiente de INDICACIONES AL

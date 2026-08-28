@@ -548,6 +548,60 @@ async function seedEstudiosFase4(): Promise<void> {
   console.log(`Seeded ESTUDIO_LABORATORIO: +${inserted}/${estudios.length} (dos niveles vía externalCode; PENDIENTE de validación médica).`);
 }
 
+// Fase 6 · Prompt 44B — motivo administrativo de cancelación de una
+// nota firmada. Nunca clínico (no es diagnóstico ni tratamiento), por
+// eso pendingMedicalReview=false — son categorías de trámite, mismo
+// criterio ya usado para VIA_ADMINISTRACION/ESTADO_CIVIL.
+async function seedFase6(): Promise<void> {
+  await seedDomain("MOTIVO_CANCELACION_NOTA", "operación clínica común", false, [
+    { key: "error_captura", term: "Error de captura" },
+    { key: "nota_duplicada", term: "Nota duplicada" },
+    { key: "paciente_equivocado", term: "Paciente equivocado" },
+    { key: "otro", term: "Otro" },
+  ]);
+}
+
+// Fase 7 · Prompt 48A — PENDIENTE(jorge): el control prenatal (ej.
+// NOM-007-SSA2) y el esquema de vacunación (Cartilla Nacional de
+// Vacunación) NO se siembran aquí — ninguna fuente fue verificada en
+// esta sesión (CLAUDE.md §7: no inventar un calendario clínico).
+// Este protocolo es SOLO para probar el motor genérico de extremo a
+// extremo (prompt 47) — sourceCitation queda null a propósito, y el
+// nombre lo marca como no clínico.
+async function seedFase7(): Promise<void> {
+  const existing = await prisma.treatmentProtocol.findFirst({ where: { name: "Protocolo de seguimiento — DEMOSTRACIÓN" } });
+  if (existing) {
+    console.log("Protocolo de demostración (Fase 7) ya sembrado.");
+    return;
+  }
+  const generalSpecialty = await prisma.specialty.findFirst({ where: { code: "GENERAL" } });
+  const protocol = await prisma.treatmentProtocol.create({
+    data: {
+      name: "Protocolo de seguimiento — DEMOSTRACIÓN",
+      specialtyId: generalSpecialty?.id ?? null,
+      version: 1,
+      isActive: true,
+      sourceCitation: null,
+      sessionTemplates: {
+        create: [
+          { sequenceNumber: 1, label: "Sesión 1 — basal", windowStartOffsetDays: 0, windowEndOffsetDays: 3 },
+          { sequenceNumber: 2, label: "Sesión 2 — seguimiento a 2 semanas", windowStartOffsetDays: 10, windowEndOffsetDays: 17 },
+          { sequenceNumber: 3, label: "Sesión 3 — cierre a 6 semanas", windowStartOffsetDays: 38, windowEndOffsetDays: 45 },
+        ],
+      },
+      fieldSchemas: {
+        create: [
+          { version: 1, fieldKey: "peso_kg", label: "Peso", inputType: "NUMBER", unit: "kg", minValue: 0, maxValue: 300, isRequired: true, displayOrder: 1 },
+          { version: 1, fieldKey: "tolerancia", label: "Tolerancia", inputType: "SELECT", options: ["Buena", "Regular", "Mala"], isRequired: false, displayOrder: 2 },
+        ],
+      },
+    },
+  });
+  console.log(
+    `Seeded protocolo de demostración (Fase 7): ${protocol.id} — sin fuente clínica real. PENDIENTE de fuente verificada para control prenatal y esquema de vacunación.`
+  );
+}
+
 // Prompt 35 — 🔒 PENDIENTE DE LICENCIA (prompt 33): estos DOS pares
 // son un set de DEMOSTRACIÓN del motor, elegidos por ser interacciones
 // clásicas y verificables — Tramadol+Diazepam (opioide+benzodiacepina:
@@ -629,6 +683,8 @@ async function main(): Promise<void> {
   await seedGrowthReferences();
   await seedEscalasFase3();
   await seedEstudiosFase4();
+  await seedFase6();
+  await seedFase7();
   await seedInteraccionesDemo();
   await seedAdmin();
 }

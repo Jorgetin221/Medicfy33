@@ -8,12 +8,13 @@ import type {
 } from "@medicfy/contracts";
 import { ApiException } from "../../../common/api-exception";
 import { PrismaService } from "../../../prisma/prisma.service";
-import { sha256Hex } from "../../../common/content-hash.util";
+import { buildSignedNoteHashInput, sha256Hex } from "../../../common/content-hash.util";
 import { omitUndefined } from "../../../common/omit-undefined";
 import { LMS_FORMULA, lmsPercentile, withBodySurfaceArea, withComputedVitals } from "../../../common/vitals-calculations.util";
 import { evaluateVitalRanges } from "../../../common/vital-ranges.util";
 import { AppointmentStateMachineService } from "../../scheduling/services/appointment-state-machine.service";
 import { SpecialtyScaleService } from "./specialty-scale.service";
+import { SignatureVerificationService } from "../../identity/services/signature-verification.service";
 
 const ABANDONED_AFTER_HOURS = 72;
 
@@ -35,7 +36,8 @@ export class ClinicalEncounterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly appointments: AppointmentStateMachineService,
-    private readonly scales: SpecialtyScaleService
+    private readonly scales: SpecialtyScaleService,
+    private readonly signatureVerification: SignatureVerificationService
   ) {}
 
   // Resuelve la especialidad del médico dueño del encuentro y computa
@@ -133,6 +135,19 @@ export class ClinicalEncounterService {
   // contenido final, se calcula el hash y se encadena con el último
   // encuentro firmado del mismo paciente (M8-CA-004).
   async sign(encounterId: string, doctorUserId: string, input: ClinicalNoteSignInput) {
+    // Fase 6 · Prompt 43: reautenticación obligatoria — antes que
+    // cualquier otra validación, para no revelar nada del contenido de
+    // la nota a quien no pueda probar que es el médico dueño de la
+    // sesión. Mismo servicio que ya usan recetas/órdenes ELECTRONIC.
+    await this.signatureVerification.verify(doctorUserId, input.password, input.totpCode);
+
+    // PENDIENTE(jorge): validación de contenido mínimo NOM-004 — antes
+    // de permitir firmar, falta validar que la nota trae el contenido
+    // mínimo obligatorio conforme a NOM-004-SSA3-2012. Necesito el
+    // listado de campos obligatorios validado por un médico y tu
+    // abogado (el roadmap pide explícitamente no inventarlo). Ref:
+    // prompt 46A, docs/medicfy-58-prompts.md.
+
     const encounter = await this.assertDraft(encounterId);
 
     // Prompt 23B: la nota NO se firma mientras existan antecedentes
@@ -157,7 +172,21 @@ export class ClinicalEncounterService {
     });
     const previousHashSha256 = previous?.contentHashSha256 ?? null;
 
-    const { diagnoses, physicalExam, prognosis, vitals: rawVitals, specialtyData: rawSpecialtyData, criticalVitalsConfirmed, patientInstructions, suggestedFollowUpDays, ...requiredNote } = input;
+    const {
+      diagnoses,
+      physicalExam,
+      prognosis,
+      vitals: rawVitals,
+      specialtyData: rawSpecialtyData,
+      criticalVitalsConfirmed,
+      patientInstructions,
+      suggestedFollowUpDays,
+      password: _password,
+      totpCode: _totpCode,
+      ...requiredNote
+    } = input;
+    void _password;
+    void _totpCode;
     // Prompt 27/31.2: si el cliente mandó bmi/bsaM2, se IGNORAN — el
     // servidor siempre recalcula sobre peso y talla firmados.
     const { bmi: _clientBmi, bsaM2: _clientBsa, ...vitals } = rawVitals;
@@ -203,9 +232,19 @@ export class ClinicalEncounterService {
     const noteTypeTerm = await this.prisma.clinicalCatalogTerm.findFirst({ where: { domain: "TIPO_NOTA", key: noteTypeKey } });
     const signingDoctor = await this.prisma.doctor.findUnique({
       where: { id: encounter.doctorId },
-      select: { primarySpecialty: { select: { code: true } } },
+      select: { displayName: true, legalFirstName: true, legalLastName: true, professionalLicense: true, primarySpecialty: { select: { code: true } } },
     });
     const specialtyCode = signingDoctor?.primarySpecialty?.code ?? null;
+    // Prompt 43: "estampa nombre completo, cédula profesional" —
+    // snapshot al firmar (R6), nunca resuelto por join después. Misma
+    // fórmula que common/legal-snapshot.util.ts (buildLegalSnapshot),
+    // que no se reusa aquí directamente porque también calcula
+    // snapshots del paciente que ClinicalEncounter no necesita — ya
+    // tiene patientId.
+    const signedByLegalNameSnapshot = signingDoctor
+      ? (signingDoctor.displayName ?? `${signingDoctor.legalFirstName} ${signingDoctor.legalLastName}`)
+      : null;
+    const signedByLicenseSnapshot = signingDoctor?.professionalLicense ?? null;
 
     // Autoritativo: IMC, superficie corporal y percentilas se calculan
     // aquí sobre lo que de verdad se firma — y entran al hash.
@@ -213,8 +252,33 @@ export class ClinicalEncounterService {
     // Prompt 27: percentilas pediátricas por edad y sexo (LMS OMS/CDC).
     const percentiles = await this.computeGrowthPercentiles(ageYears, patientForVitals.sexAtBirth, vitals);
     const resolvedSpecialtyData = await this.resolveSpecialtyData(encounter.doctorId, rawSpecialtyData);
-    const noteContent = { ...requiredNote, vitals: computedVitals, percentiles, physicalExam, prognosis, noteTypeKey, specialtyCode, patientInstructions, suggestedFollowUpDays };
-    const contentHashSha256 = sha256Hex({ noteContent, diagnoses, specialtyData: resolvedSpecialtyData?.data, previousHashSha256, encounterId });
+    const contentHashSha256 = sha256Hex(
+      buildSignedNoteHashInput({
+        note: {
+          chiefComplaint: requiredNote.chiefComplaint,
+          currentIllness: requiredNote.currentIllness,
+          physicalExam: physicalExam ?? null,
+          assessment: requiredNote.assessment,
+          plan: requiredNote.plan,
+          prognosis: prognosis ?? null,
+          vitals: computedVitals,
+          specialtyCode,
+          noteTypeTermId: noteTypeTerm?.id ?? null,
+          patientInstructions: patientInstructions ?? null,
+          suggestedFollowUpDays: suggestedFollowUpDays ?? null,
+        },
+        diagnoses: diagnoses.map((d) => ({
+          icd10CodeId: d.icd10Code ?? null,
+          codeAbsentReason: d.codeAbsentReason ?? null,
+          description: d.description,
+          diagnosisType: d.diagnosisType,
+          certainty: d.certainty,
+        })),
+        specialtyData: resolvedSpecialtyData?.data ?? null,
+        previousHashSha256,
+        encounterId,
+      })
+    );
     const signedAt = new Date();
 
     return this.prisma.$transaction(async (tx) => {
@@ -267,10 +331,24 @@ export class ClinicalEncounterService {
         // opcionales (segunda ruta de M8-RN-006, ver
         // encounterDiagnosisSchema) — el que no venga debe omitirse,
         // no mandarse como `undefined` explícito.
+        //
+        // createdAt: signedAt EXPLÍCITO (no @default(now()) del
+        // servidor) — Fase 6/Prompt 45: NoteIntegrityService distingue
+        // los diagnósticos que existían AL FIRMAR (entran al hash) de
+        // los que una adenda posterior pudiera sumar (legítimo, no es
+        // alteración) comparando createdAt <= signedAt. Postgres
+        // now() dentro de una transacción devuelve el inicio de la
+        // transacción, no el instante exacto del INSERT — unos
+        // milisegundos DESPUÉS del signedAt ya calculado en JS antes
+        // de abrir la transacción. Sin este valor explícito, ese
+        // desfase hacía que el propio verificador reportara una nota
+        // recién firmada, sin alterar, como "ALTERADA" (falso
+        // positivo encontrado al escribir la prueba de integridad).
         await tx.encounterDiagnosis.createMany({
           data: diagnoses.map(({ icd10Code, codeAbsentReason, ...required }) => ({
             encounterId,
             ...required,
+            createdAt: signedAt,
             // Prompt 28: FK real — validada arriba contra el catálogo.
             ...omitUndefined({ icd10Code, icd10CodeId: icd10Code, codeAbsentReason }),
           })),
@@ -295,6 +373,8 @@ export class ClinicalEncounterService {
           timeToSignSeconds: Math.max(0, Math.round((signedAt.getTime() - encounter.startedAt.getTime()) / 1000)),
           signedByUserId: doctorUserId,
           signatureMethod: "INTERNAL_SYSTEM",
+          signedByLegalNameSnapshot,
+          signedByLicenseSnapshot,
           contentHashSha256,
           previousHashSha256,
         },
@@ -331,6 +411,11 @@ export class ClinicalEncounterService {
   // del encounter, no reemplazan a los de la nota original en la
   // base de datos (la interfaz decide cómo mostrarlo).
   async correctNote(encounterId: string, doctorUserId: string, input: ClinicalNoteCorrectionInput) {
+    // Prompt 44A: "su propia firma" — una adenda reautentica igual que
+    // firmar la nota original (clinicalNoteCorrectionSchema extiende
+    // clinicalNoteSignSchema, así que password/totpCode ya viajan).
+    await this.signatureVerification.verify(doctorUserId, input.password, input.totpCode);
+
     const encounter = await this.prisma.clinicalEncounter.findUnique({ where: { id: encounterId } });
     if (!encounter) {
       throw new ApiException("ENCOUNTER_NOT_FOUND", "Encuentro no encontrado.", HttpStatus.NOT_FOUND);
@@ -351,7 +436,20 @@ export class ClinicalEncounterService {
       );
     }
 
-    const { diagnoses, physicalExam, prognosis, vitals, isCorrectionOfNoteId, patientInstructions, suggestedFollowUpDays, ...requiredNote } = input;
+    const {
+      diagnoses,
+      physicalExam,
+      prognosis,
+      vitals,
+      isCorrectionOfNoteId,
+      patientInstructions,
+      suggestedFollowUpDays,
+      password: _password,
+      totpCode: _totpCode,
+      ...requiredNote
+    } = input;
+    void _password;
+    void _totpCode;
     const computedVitals = withComputedVitals(vitals);
 
     return this.prisma.$transaction(async (tx) => {

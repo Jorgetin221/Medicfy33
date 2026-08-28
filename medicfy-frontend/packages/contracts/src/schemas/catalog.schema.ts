@@ -35,6 +35,9 @@ export const CATALOG_DOMAINS = [
   "TIPO_DOCUMENTO",
   "TIPO_ESTUDIO",
   "MOTIVO_ESTUDIO",
+  // Fase 6 · Prompt 44B: motivo administrativo de cancelación de una
+  // nota firmada — nunca clínico (no es diagnóstico ni tratamiento).
+  "MOTIVO_CANCELACION_NOTA",
 ] as const;
 export const catalogDomainSchema = z.enum(CATALOG_DOMAINS);
 export type CatalogDomain = z.infer<typeof catalogDomainSchema>;

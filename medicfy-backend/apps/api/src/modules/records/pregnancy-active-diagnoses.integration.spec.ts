@@ -3,6 +3,7 @@ import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import cookieParser from "cookie-parser";
 import request from "supertest";
+import { TOTP, Secret } from "otpauth";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AppModule } from "../../app.module";
 import { ApiExceptionFilter } from "../../common/api-exception.filter";
@@ -27,6 +28,11 @@ function uniquePhone(): string {
 }
 function uniqueCedula(): string {
   return Math.floor(1000000 + Math.random() * 8999999).toString();
+}
+function totpFromUri(otpauthUri: string): string {
+  const url = new URL(otpauthUri);
+  const secret = url.searchParams.get("secret") as string;
+  return new TOTP({ algorithm: "SHA1", digits: 6, period: 30, secret: Secret.fromBase32(secret) }).generate();
 }
 function isoDaysAgo(days: number): string {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -83,6 +89,21 @@ describe("Fase 1 · Zona 1 — embarazo (#18) y diagnósticos vigentes (#19)", (
     return { userId, accessToken };
   }
 
+  // sign() ahora llama a SignatureVerificationService.verify() como lo
+  // primero que hace — a diferencia de signAccessToken() (bypass de
+  // sesión), la contraseña real y el TOTP real no se pueden saltar.
+  async function enrollMfa(accessToken: string): Promise<string> {
+    const start = await request(app.getHttpServer()).post("/auth/mfa/enroll").set("Authorization", `Bearer ${accessToken}`).send({});
+    expect(start.status).toBe(200);
+    const otpauthUri = start.body.otpauthUri as string;
+    const confirm = await request(app.getHttpServer())
+      .post("/auth/mfa/enroll")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ code: totpFromUri(otpauthUri) });
+    expect(confirm.status).toBe(200);
+    return otpauthUri;
+  }
+
   async function createPatient(accessToken: string, sexAtBirth: "F" | "M"): Promise<string> {
     const res = await request(app.getHttpServer())
       .post("/patients")
@@ -101,6 +122,7 @@ describe("Fase 1 · Zona 1 — embarazo (#18) y diagnósticos vigentes (#19)", (
 
   async function signEncounterWithDiagnoses(
     accessToken: string,
+    otpauthUri: string,
     patientId: string,
     diagnoses: Record<string, unknown>[]
   ): Promise<string> {
@@ -113,7 +135,7 @@ describe("Fase 1 · Zona 1 — embarazo (#18) y diagnósticos vigentes (#19)", (
     const signed = await request(app.getHttpServer())
       .post(`/records/encounters/${encounterId}/sign`)
       .set("Authorization", `Bearer ${accessToken}`)
-      .send({ ...VALID_NOTE, diagnoses });
+      .send({ ...VALID_NOTE, diagnoses, password: STRONG_PASSWORD, totpCode: totpFromUri(otpauthUri) });
     expect(signed.status).toBe(201);
     return encounterId;
   }
@@ -252,8 +274,9 @@ describe("Fase 1 · Zona 1 — embarazo (#18) y diagnósticos vigentes (#19)", (
   describe("M8-RN-013 — tiempo abrir→firmar", () => {
     it("al firmar, el servidor fija timeToSignSeconds = signedAt - startedAt (la métrica del negocio, nunca del cliente)", async () => {
       const doctor = await registerDoctor();
+      const otpauthUri = await enrollMfa(doctor.accessToken);
       const patientId = await createPatient(doctor.accessToken, "F");
-      const encounterId = await signEncounterWithDiagnoses(doctor.accessToken, patientId, [
+      const encounterId = await signEncounterWithDiagnoses(doctor.accessToken, otpauthUri, patientId, [
         {
           description: "Control sano",
           codeAbsentReason: "Consulta de control sin patología que codificar.",
@@ -273,11 +296,12 @@ describe("Fase 1 · Zona 1 — embarazo (#18) y diagnósticos vigentes (#19)", (
   describe("#19 — diagnósticos vigentes", () => {
     it("deduplica por CIE-10 y por descripción normalizada, cuenta repeticiones y ordena por más reciente", async () => {
       const doctor = await registerDoctor();
+      const otpauthUri = await enrollMfa(doctor.accessToken);
       const patientId = await createPatient(doctor.accessToken, "F");
       const icd10Code = (await prisma.icd10Code.findFirstOrThrow()).code;
 
       // Consulta 1: diagnóstico codificado + uno sin código.
-      await signEncounterWithDiagnoses(doctor.accessToken, patientId, [
+      await signEncounterWithDiagnoses(doctor.accessToken, otpauthUri, patientId, [
         { icd10Code, description: "Diabetes mellitus tipo 2", diagnosisType: "PRINCIPAL", certainty: "CONFIRMED" },
         {
           description: "Lumbalgia mecánica",
@@ -288,7 +312,7 @@ describe("Fase 1 · Zona 1 — embarazo (#18) y diagnósticos vigentes (#19)", (
       ]);
       // Consulta 2: el MISMO código otra vez + la MISMA descripción con
       // formato distinto (mayúsculas/plural — debe deduplicar).
-      const lastEncounterId = await signEncounterWithDiagnoses(doctor.accessToken, patientId, [
+      const lastEncounterId = await signEncounterWithDiagnoses(doctor.accessToken, otpauthUri, patientId, [
         { icd10Code, description: "DM2 en control", diagnosisType: "PRINCIPAL", certainty: "CONFIRMED" },
         {
           description: "LUMBALGIAS MECANICAS",

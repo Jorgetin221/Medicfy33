@@ -3,6 +3,7 @@ import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import cookieParser from "cookie-parser";
 import request from "supertest";
+import { TOTP, Secret } from "otpauth";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AppModule } from "../../app.module";
 import { ApiExceptionFilter } from "../../common/api-exception.filter";
@@ -27,6 +28,11 @@ function uniquePhone(): string {
 }
 function uniqueCedula(): string {
   return Math.floor(1000000 + Math.random() * 8999999).toString();
+}
+function totpFromUri(otpauthUri: string): string {
+  const url = new URL(otpauthUri);
+  const secret = url.searchParams.get("secret") as string;
+  return new TOTP({ algorithm: "SHA1", digits: 6, period: 30, secret: Secret.fromBase32(secret) }).generate();
 }
 
 function mustGetField(
@@ -84,6 +90,21 @@ describe("Motor de escalas clínicas (Glasgow, Apgar) sobre SpecialtyFieldSchema
     await prisma.doctor.update({ where: { userId }, data: { verificationStatus: "VERIFIED" } });
     const accessToken = tokenService.signAccessToken({ sub: userId, primaryRole: "DOCTOR" });
     return { userId, accessToken };
+  }
+
+  // sign() ahora llama a SignatureVerificationService.verify() como lo
+  // primero que hace — a diferencia de signAccessToken() (bypass de
+  // sesión), la contraseña real y el TOTP real no se pueden saltar.
+  async function enrollMfa(accessToken: string): Promise<string> {
+    const start = await request(app.getHttpServer()).post("/auth/mfa/enroll").set("Authorization", `Bearer ${accessToken}`).send({});
+    expect(start.status).toBe(200);
+    const otpauthUri = start.body.otpauthUri as string;
+    const confirm = await request(app.getHttpServer())
+      .post("/auth/mfa/enroll")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ code: totpFromUri(otpauthUri) });
+    expect(confirm.status).toBe(200);
+    return otpauthUri;
   }
 
   async function createPatient(accessToken: string): Promise<string> {
@@ -146,13 +167,18 @@ describe("Motor de escalas clínicas (Glasgow, Apgar) sobre SpecialtyFieldSchema
 
   it("Glasgow 4+5+6 firma con glasgow_total=15 e interpretación Leve, protegido por el hash de la nota", async () => {
     const doctor = await registerDoctor();
+    const otpauthUri = await enrollMfa(doctor.accessToken);
     const patientId = await createPatient(doctor.accessToken);
     const encounterId = await createEncounter(doctor.accessToken, patientId);
 
     const signed = await request(app.getHttpServer())
       .post(`/records/encounters/${encounterId}/sign`)
       .set("Authorization", `Bearer ${doctor.accessToken}`)
-      .send(baseSignPayload({ glasgow_ocular: 4, glasgow_verbal: 5, glasgow_motora: 6 }));
+      .send({
+        ...baseSignPayload({ glasgow_ocular: 4, glasgow_verbal: 5, glasgow_motora: 6 }),
+        password: STRONG_PASSWORD,
+        totpCode: totpFromUri(otpauthUri),
+      });
     expect(signed.status).toBe(201);
 
     const stored = await prisma.encounterSpecialtyData.findUniqueOrThrow({ where: { encounterId } });
@@ -165,21 +191,24 @@ describe("Motor de escalas clínicas (Glasgow, Apgar) sobre SpecialtyFieldSchema
 
   it("Apgar bajo al minuto 1 da interpretación de depresión severa, y sin escalas la firma sigue funcionando igual que siempre", async () => {
     const doctor = await registerDoctor();
+    const otpauthUri = await enrollMfa(doctor.accessToken);
     const patientId = await createPatient(doctor.accessToken);
 
     const encounterWithApgar = await createEncounter(doctor.accessToken, patientId);
     const signedLow = await request(app.getHttpServer())
       .post(`/records/encounters/${encounterWithApgar}/sign`)
       .set("Authorization", `Bearer ${doctor.accessToken}`)
-      .send(
-        baseSignPayload({
+      .send({
+        ...baseSignPayload({
           apgar_1min_apariencia: 0,
           apgar_1min_pulso: 1,
           apgar_1min_gesticulacion: 0,
           apgar_1min_actividad: 0,
           apgar_1min_respiracion: 0,
-        })
-      );
+        }),
+        password: STRONG_PASSWORD,
+        totpCode: totpFromUri(otpauthUri),
+      });
     expect(signedLow.status).toBe(201);
     const storedLow = await prisma.encounterSpecialtyData.findUniqueOrThrow({ where: { encounterId: encounterWithApgar } });
     const dataLow = storedLow.data as Record<string, { value: number; interpretation?: string }>;
@@ -192,7 +221,7 @@ describe("Motor de escalas clínicas (Glasgow, Apgar) sobre SpecialtyFieldSchema
     const signedPlain = await request(app.getHttpServer())
       .post(`/records/encounters/${encounterWithoutScales}/sign`)
       .set("Authorization", `Bearer ${doctor.accessToken}`)
-      .send(baseSignPayload());
+      .send({ ...baseSignPayload(), password: STRONG_PASSWORD, totpCode: totpFromUri(otpauthUri) });
     expect(signedPlain.status).toBe(201);
     const noSpecialtyRow = await prisma.encounterSpecialtyData.findUnique({ where: { encounterId: encounterWithoutScales } });
     expect(noSpecialtyRow).toBeNull();
@@ -200,13 +229,18 @@ describe("Motor de escalas clínicas (Glasgow, Apgar) sobre SpecialtyFieldSchema
 
   it("rechaza un valor fuera de rango con 400 y no firma la nota", async () => {
     const doctor = await registerDoctor();
+    const otpauthUri = await enrollMfa(doctor.accessToken);
     const patientId = await createPatient(doctor.accessToken);
     const encounterId = await createEncounter(doctor.accessToken, patientId);
 
     const res = await request(app.getHttpServer())
       .post(`/records/encounters/${encounterId}/sign`)
       .set("Authorization", `Bearer ${doctor.accessToken}`)
-      .send(baseSignPayload({ glasgow_ocular: 9, glasgow_verbal: 5, glasgow_motora: 6 }));
+      .send({
+        ...baseSignPayload({ glasgow_ocular: 9, glasgow_verbal: 5, glasgow_motora: 6 }),
+        password: STRONG_PASSWORD,
+        totpCode: totpFromUri(otpauthUri),
+      });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe("SCALE_VALUE_OUT_OF_RANGE");
 
@@ -216,13 +250,14 @@ describe("Motor de escalas clínicas (Glasgow, Apgar) sobre SpecialtyFieldSchema
 
   it("una escala incompleta no calcula un total parcial, pero guarda los valores crudos que sí llegaron", async () => {
     const doctor = await registerDoctor();
+    const otpauthUri = await enrollMfa(doctor.accessToken);
     const patientId = await createPatient(doctor.accessToken);
     const encounterId = await createEncounter(doctor.accessToken, patientId);
 
     const signed = await request(app.getHttpServer())
       .post(`/records/encounters/${encounterId}/sign`)
       .set("Authorization", `Bearer ${doctor.accessToken}`)
-      .send(baseSignPayload({ glasgow_ocular: 4, glasgow_verbal: 5 }));
+      .send({ ...baseSignPayload({ glasgow_ocular: 4, glasgow_verbal: 5 }), password: STRONG_PASSWORD, totpCode: totpFromUri(otpauthUri) });
     expect(signed.status).toBe(201);
 
     const stored = await prisma.encounterSpecialtyData.findUniqueOrThrow({ where: { encounterId } });

@@ -3,6 +3,7 @@ import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import cookieParser from "cookie-parser";
 import request from "supertest";
+import { TOTP, Secret } from "otpauth";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AppModule } from "../../app.module";
 import { ApiExceptionFilter } from "../../common/api-exception.filter";
@@ -26,6 +27,11 @@ function uniquePhone(): string {
 }
 function uniqueCedula(): string {
   return Math.floor(1000000 + Math.random() * 8999999).toString();
+}
+function totpFromUri(otpauthUri: string): string {
+  const url = new URL(otpauthUri);
+  const secret = url.searchParams.get("secret") as string;
+  return new TOTP({ algorithm: "SHA1", digits: 6, period: 30, secret: Secret.fromBase32(secret) }).generate();
 }
 
 const STRONG_PASSWORD = "Correcto-Caballo-Bateria-47!Grafito";
@@ -79,6 +85,21 @@ describe("Fase 4 · Plan del paciente (prompt 38B)", () => {
     return { userId, accessToken: tokenService.signAccessToken({ sub: userId, primaryRole: "DOCTOR" }) };
   }
 
+  // sign() ahora llama a SignatureVerificationService.verify() como lo
+  // primero que hace — a diferencia de signAccessToken() (bypass de
+  // sesión), la contraseña real y el TOTP real no se pueden saltar.
+  async function enrollMfa(accessToken: string): Promise<string> {
+    const start = await request(app.getHttpServer()).post("/auth/mfa/enroll").set("Authorization", `Bearer ${accessToken}`).send({});
+    expect(start.status).toBe(200);
+    const otpauthUri = start.body.otpauthUri as string;
+    const confirm = await request(app.getHttpServer())
+      .post("/auth/mfa/enroll")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ code: totpFromUri(otpauthUri) });
+    expect(confirm.status).toBe(200);
+    return otpauthUri;
+  }
+
   async function createPatient(accessToken: string): Promise<string> {
     const res = await request(app.getHttpServer()).post("/patients").set("Authorization", `Bearer ${accessToken}`).send({
       firstName: "Paciente",
@@ -95,7 +116,12 @@ describe("Fase 4 · Plan del paciente (prompt 38B)", () => {
   // Prompt 32: la receta pertenece a una nota FIRMADA — el flujo
   // completo de firma se prueba en fase3; aquí se firma por la API
   // real (sin diagnóstico ICD no hace falta para esta fase).
-  async function signedEncounter(accessToken: string, patientId: string, extra: Record<string, unknown> = {}): Promise<string> {
+  async function signedEncounter(
+    accessToken: string,
+    otpauthUri: string,
+    patientId: string,
+    extra: Record<string, unknown> = {}
+  ): Promise<string> {
     const enc = await request(app.getHttpServer())
       .post(`/records/patients/${patientId}/encounters`)
       .set("Authorization", `Bearer ${accessToken}`)
@@ -108,6 +134,8 @@ describe("Fase 4 · Plan del paciente (prompt 38B)", () => {
       .send({
         ...BASE_NOTE,
         diagnoses: [{ icd10Code, description: "Control", diagnosisType: "PRINCIPAL", certainty: "CONFIRMED" }],
+        password: STRONG_PASSWORD,
+        totpCode: totpFromUri(otpauthUri),
         ...extra,
       });
     expect(signed.status).toBe(201);
@@ -182,9 +210,10 @@ describe("Fase 4 · Plan del paciente (prompt 38B)", () => {
 
   it("38.1 — alergia a penicilinas + amoxicilina: bloquea, exige justificación clínica, y la justificación queda firmada y en bitácora", async () => {
     const doctor = await registerDoctor();
+    const otpauthUri = await enrollMfa(doctor.accessToken);
     const patientId = await createPatient(doctor.accessToken);
     await registerPenicillinAllergy(doctor.accessToken, patientId);
-    const encounterId = await signedEncounter(doctor.accessToken, patientId);
+    const encounterId = await signedEncounter(doctor.accessToken, otpauthUri, patientId);
     const amoxi = await medId("Amoxicilina");
 
     // Sin justificación → 409 con la explicación del conflicto.
@@ -219,8 +248,9 @@ describe("Fase 4 · Plan del paciente (prompt 38B)", () => {
 
   it("38.2 — interacción GRAVE (Tramadol+Diazepam, par de demostración): exige confirmación explícita; MODERADA solo informa; todo queda en bitácora", async () => {
     const doctor = await registerDoctor();
+    const otpauthUri = await enrollMfa(doctor.accessToken);
     const patientId = await createPatient(doctor.accessToken);
-    const encounterId = await signedEncounter(doctor.accessToken, patientId);
+    const encounterId = await signedEncounter(doctor.accessToken, otpauthUri, patientId);
     const [tramadol, diazepam] = await Promise.all([medId("Tramadol"), medId("Diazepam")]);
 
     const blocked = await request(app.getHttpServer())
@@ -245,7 +275,7 @@ describe("Fase 4 · Plan del paciente (prompt 38B)", () => {
     // MODERADA (Ibuprofeno + Losartán vigente): informa sin bloquear.
     // La medicación vigente entra al cruce — no solo lo que se escribe.
     const patient2 = await createPatient(doctor.accessToken);
-    const enc2 = await signedEncounter(doctor.accessToken, patient2);
+    const enc2 = await signedEncounter(doctor.accessToken, otpauthUri, patient2);
     const losartanRes = await request(app.getHttpServer())
       .post(`/records/patients/${patient2}/medications`)
       .set("Authorization", `Bearer ${doctor.accessToken}`)
@@ -264,8 +294,9 @@ describe("Fase 4 · Plan del paciente (prompt 38B)", () => {
 
   it("38.3 — traer última receta: líneas EDITABLES con procedencia y fecha de origen; el servidor revalida la receta de origen", async () => {
     const doctor = await registerDoctor();
+    const otpauthUri = await enrollMfa(doctor.accessToken);
     const patientId = await createPatient(doctor.accessToken);
-    const enc1 = await signedEncounter(doctor.accessToken, patientId);
+    const enc1 = await signedEncounter(doctor.accessToken, otpauthUri, patientId);
     const metformina = await medId("Metformina");
 
     const first = await request(app.getHttpServer())
@@ -285,7 +316,7 @@ describe("Fase 4 · Plan del paciente (prompt 38B)", () => {
     expect(last.body.lines[0].sourceIssuedAt).toBeTruthy();
 
     // Reemitir editando la línea heredada: procedencia HEREDADA_MODIFICADA.
-    const enc2 = await signedEncounter(doctor.accessToken, patientId);
+    const enc2 = await signedEncounter(doctor.accessToken, otpauthUri, patientId);
     const reissued = await request(app.getHttpServer())
       .post(`/prescriptions/encounters/${enc2}`)
       .set("Authorization", `Bearer ${doctor.accessToken}`)
@@ -315,8 +346,9 @@ describe("Fase 4 · Plan del paciente (prompt 38B)", () => {
 
   it("38.4 — orden de estudios sin motivo: no se emite; el estudio y el motivo vienen del catálogo", async () => {
     const doctor = await registerDoctor();
+    const otpauthUri = await enrollMfa(doctor.accessToken);
     const patientId = await createPatient(doctor.accessToken);
-    const encounterId = await signedEncounter(doctor.accessToken, patientId);
+    const encounterId = await signedEncounter(doctor.accessToken, otpauthUri, patientId);
 
     // Sin motiveKey → rechazo estructural del contrato (400).
     const sinMotivo = await request(app.getHttpServer())
@@ -356,8 +388,9 @@ describe("Fase 4 · Plan del paciente (prompt 38B)", () => {
 
   it("38.5 — cada documento es un PDF independiente con nombre y cédula, y su emisión e impresión quedan en bitácora con folio", async () => {
     const doctor = await registerDoctor();
+    const otpauthUri = await enrollMfa(doctor.accessToken);
     const patientId = await createPatient(doctor.accessToken);
-    const encounterId = await signedEncounter(doctor.accessToken, patientId, {
+    const encounterId = await signedEncounter(doctor.accessToken, otpauthUri, patientId, {
       patientInstructions: "Tomar el medicamento con alimentos. Regresar si hay fiebre o dolor intenso.",
       suggestedFollowUpDays: 30,
     });
@@ -398,8 +431,9 @@ describe("Fase 4 · Plan del paciente (prompt 38B)", () => {
 
   it("38.6 — la medicación vigente del paciente refleja la receta emitida, automáticamente", async () => {
     const doctor = await registerDoctor();
+    const otpauthUri = await enrollMfa(doctor.accessToken);
     const patientId = await createPatient(doctor.accessToken);
-    const encounterId = await signedEncounter(doctor.accessToken, patientId);
+    const encounterId = await signedEncounter(doctor.accessToken, otpauthUri, patientId);
 
     const receta = await request(app.getHttpServer())
       .post(`/prescriptions/encounters/${encounterId}`)
@@ -413,7 +447,7 @@ describe("Fase 4 · Plan del paciente (prompt 38B)", () => {
     expect(vigente?.source).toBe("MEDICO");
 
     // Reemitir con dosis distinta ACTUALIZA la vigente — no duplica.
-    const enc2 = await signedEncounter(doctor.accessToken, patientId);
+    const enc2 = await signedEncounter(doctor.accessToken, otpauthUri, patientId);
     const otra = await request(app.getHttpServer())
       .post(`/prescriptions/encounters/${enc2}`)
       .set("Authorization", `Bearer ${doctor.accessToken}`)

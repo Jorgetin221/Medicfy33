@@ -68,3 +68,20 @@ export const labResultReviewSchema = z
   })
   .strict();
 export type LabResultReviewInput = z.infer<typeof labResultReviewSchema>;
+
+// Fase 5 · Prompt 42A: analito ESTRUCTURADO — nombre, valor, unidad,
+// rango de referencia. loincCode opcional (M10-RN-005: sin catálogo
+// LOINC completo en el MVP). Captura manual del médico, no OCR.
+export const labResultAnalyteCreateSchema = z
+  .object({
+    labOrderId: z.string().uuid().optional(),
+    analyteName: z.string().min(1, "El nombre del analito es obligatorio.").max(200),
+    loincCode: z.string().max(20).optional(),
+    value: z.number(),
+    unit: z.string().min(1, "La unidad es obligatoria.").max(50),
+    referenceMin: z.number().optional(),
+    referenceMax: z.number().optional(),
+    measuredAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida — usa AAAA-MM-DD."),
+  })
+  .strict();
+export type LabResultAnalyteCreateInput = z.infer<typeof labResultAnalyteCreateSchema>;

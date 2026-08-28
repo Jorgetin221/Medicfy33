@@ -3,6 +3,7 @@ import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import cookieParser from "cookie-parser";
 import request from "supertest";
+import { TOTP, Secret } from "otpauth";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AppModule } from "../../app.module";
 import { ApiExceptionFilter } from "../../common/api-exception.filter";
@@ -26,6 +27,11 @@ function uniquePhone(): string {
 }
 function uniqueCedula(): string {
   return Math.floor(1000000 + Math.random() * 8999999).toString();
+}
+function totpFromUri(otpauthUri: string): string {
+  const url = new URL(otpauthUri);
+  const secret = url.searchParams.get("secret") as string;
+  return new TOTP({ algorithm: "SHA1", digits: 6, period: 30, secret: Secret.fromBase32(secret) }).generate();
 }
 
 const STRONG_PASSWORD = "Correcto-Caballo-Bateria-47!Grafito";
@@ -75,6 +81,21 @@ describe("Fase 2 · Historia clínica estructurada (prompt 24)", () => {
     const userId = res.body.userId as string;
     await prisma.doctor.update({ where: { userId }, data: { verificationStatus: "VERIFIED" } });
     return { userId, accessToken: tokenService.signAccessToken({ sub: userId, primaryRole: "DOCTOR" }) };
+  }
+
+  // sign() ahora llama a SignatureVerificationService.verify() como lo
+  // primero que hace — a diferencia de signAccessToken() (bypass de
+  // sesión), la contraseña real y el TOTP real no se pueden saltar.
+  async function enrollMfa(accessToken: string): Promise<string> {
+    const start = await request(app.getHttpServer()).post("/auth/mfa/enroll").set("Authorization", `Bearer ${accessToken}`).send({});
+    expect(start.status).toBe(200);
+    const otpauthUri = start.body.otpauthUri as string;
+    const confirm = await request(app.getHttpServer())
+      .post("/auth/mfa/enroll")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ code: totpFromUri(otpauthUri) });
+    expect(confirm.status).toBe(200);
+    return otpauthUri;
   }
 
   async function createPatient(accessToken: string, sexAtBirth: "F" | "M", birthDate = "1994-03-15"): Promise<string> {
@@ -265,6 +286,7 @@ describe("Fase 2 · Historia clínica estructurada (prompt 24)", () => {
 
   it("24.5 — aplicar una plantilla y firmar sin revisar devuelve error indicando los campos heredados pendientes", async () => {
     const doctor = await registerDoctor();
+    const otpauthUri = await enrollMfa(doctor.accessToken);
     const patientId = await createPatient(doctor.accessToken, "F");
 
     // Plantilla con subtipo inventado: se rechaza AL CREARLA.
@@ -306,7 +328,7 @@ describe("Fase 2 · Historia clínica estructurada (prompt 24)", () => {
     const blockedSign = await request(app.getHttpServer())
       .post(`/records/encounters/${encounter.body.id}/sign`)
       .set("Authorization", `Bearer ${doctor.accessToken}`)
-      .send({ ...VALID_NOTE, diagnoses });
+      .send({ ...VALID_NOTE, diagnoses, password: STRONG_PASSWORD, totpCode: totpFromUri(otpauthUri) });
     expect(blockedSign.status).toBe(422);
     expect(blockedSign.body.error.code).toBe("ENCOUNTER_INHERITED_UNREVIEWED");
     expect(blockedSign.body.error.details.pendingItems).toHaveLength(2);
@@ -330,7 +352,7 @@ describe("Fase 2 · Historia clínica estructurada (prompt 24)", () => {
     await request(app.getHttpServer())
       .post(`/records/encounters/${encounter.body.id}/sign`)
       .set("Authorization", `Bearer ${doctor.accessToken}`)
-      .send({ ...VALID_NOTE, diagnoses })
+      .send({ ...VALID_NOTE, diagnoses, password: STRONG_PASSWORD, totpCode: totpFromUri(otpauthUri) })
       .expect(201);
   });
 

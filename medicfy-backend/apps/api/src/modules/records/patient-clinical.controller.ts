@@ -11,6 +11,7 @@ import {
   patientPregnancyCreateSchema,
   patientPregnancyUpdateSchema,
   substanceUseUpsertSchema,
+  notesTimelineQuerySchema,
   type GynecoHistoryUpsertInput,
   type PatientAllergyCatalogCreateInput,
   type PatientAllergyUpdateInput,
@@ -20,6 +21,7 @@ import {
   type PatientPregnancyCreateInput,
   type PatientPregnancyUpdateInput,
   type SubstanceUseUpsertInput,
+  type NotesTimelineQueryInput,
 } from "@medicfy/contracts";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { JwtAuthGuard } from "../identity/guards/jwt-auth.guard";
@@ -28,8 +30,10 @@ import { AuditService } from "../identity/services/audit.service";
 import { getRequestMeta } from "../identity/request-meta";
 import { PatientClinicalService } from "./services/patient-clinical.service";
 import { AntecedentesTemplateService } from "./services/antecedentes-template.service";
+import { NoteIntegrityService } from "./services/note-integrity.service";
 
 const historyQueryPipe = new ZodValidationPipe(patientHistoryListQuerySchema);
+const notesTimelineQueryPipe = new ZodValidationPipe(notesTimelineQuerySchema);
 
 // M8: antecedentes/alergias/medicamentos y línea de tiempo del
 // paciente. Toda la clase pasa por CareRelationshipGuard — ningún
@@ -42,7 +46,8 @@ export class PatientClinicalController {
   constructor(
     private readonly patientClinical: PatientClinicalService,
     private readonly antecedentesTemplates: AntecedentesTemplateService,
-    private readonly auditService: AuditService
+    private readonly auditService: AuditService,
+    private readonly noteIntegrity: NoteIntegrityService
   ) {}
 
   @Get("allergies")
@@ -286,6 +291,48 @@ export class PatientClinicalController {
   async timeline(@Param("patientId") patientId: string, @Req() req: ClinicalRequest) {
     await this.auditRead(req, patientId, "records.timeline.read");
     return this.patientClinical.timeline(patientId);
+  }
+
+  // ── Fase 5 · Prompt 39A: hoja frontal del panel de consulta ──────
+
+  @Get("hoja-frontal")
+  @ApiOperation({ summary: "Prompt 39A: vista de una sola pantalla — id, domicilio, dx activos, alergias, medicación, última consulta, próxima cita" })
+  async hojaFrontal(@Param("patientId") patientId: string, @Req() req: ClinicalRequest) {
+    await this.auditRead(req, patientId, "records.hojaFrontal.read");
+    return this.patientClinical.hojaFrontal(patientId, req.actingDoctorId as string);
+  }
+
+  // ── Fase 5 · Prompt 40: línea de tiempo de notas ──────────────────
+
+  @Get("notes-timeline")
+  @ApiOperation({ summary: "Prompt 40: notas firmadas con sus correcciones, filtrable por tipo/fecha/texto" })
+  async notesTimeline(
+    @Param("patientId") patientId: string,
+    @Query("type") type: string | undefined,
+    @Query("from") from: string | undefined,
+    @Query("to") to: string | undefined,
+    @Query("q") q: string | undefined,
+    @Req() req: ClinicalRequest
+  ) {
+    await this.auditRead(req, patientId, "records.notesTimeline.read");
+    const query: NotesTimelineQueryInput = notesTimelineQueryPipe.transform({ type, from, to, q });
+    return this.patientClinical.notesTimeline(patientId, query);
+  }
+
+  // ── Fase 6 · Prompt 45: integridad y bitácora de acceso ──────────
+
+  @Get("integrity-check")
+  @ApiOperation({ summary: "Prompt 45: recalcula y verifica el sello de cada nota firmada del paciente contra lo guardado" })
+  async integrityCheck(@Param("patientId") patientId: string, @Req() req: ClinicalRequest) {
+    await this.auditRead(req, patientId, "records.integrityCheck.read");
+    return this.noteIntegrity.verifyPatientChain(patientId);
+  }
+
+  @Get("access-log")
+  @ApiOperation({ summary: "Prompt 45: bitácora de acceso del expediente — quién, cuándo, desde dónde, incluida la lectura del médico tratante" })
+  async accessLog(@Param("patientId") patientId: string, @Req() req: ClinicalRequest) {
+    await this.auditRead(req, patientId, "records.accessLog.read");
+    return this.auditService.listForPatient(patientId);
   }
 
   // R3: toda lectura de dato clínico se registra antes de responder.

@@ -25,6 +25,7 @@ describe("append-only enforcement — clinical_notes, prescriptions, lab_orders"
   let noteId = "";
   let prescriptionId = "";
   let labOrderId = "";
+  let cancellationId = "";
 
   beforeAll(async () => {
     await appDb.$connect();
@@ -71,6 +72,10 @@ describe("append-only enforcement — clinical_notes, prescriptions, lab_orders"
   });
 
   afterAll(async () => {
+    // clinical_note_cancellations tiene noteId ON DELETE RESTRICT —
+    // debe borrarse antes que la nota, o el delete de abajo fallaría
+    // silenciosamente (el .catch() ya presente aquí lo escondería).
+    if (cancellationId) await ownerDb.clinicalNoteCancellation.delete({ where: { id: cancellationId } }).catch(() => {});
     if (noteId) await ownerDb.clinicalNote.delete({ where: { id: noteId } }).catch(() => {});
     if (prescriptionId) await ownerDb.prescription.delete({ where: { id: prescriptionId } }).catch(() => {});
     if (labOrderId) await ownerDb.labOrder.delete({ where: { id: labOrderId } }).catch(() => {});
@@ -181,6 +186,37 @@ describe("append-only enforcement — clinical_notes, prescriptions, lab_orders"
 
     it("rejects DELETE on lab_orders for medicfy_app (R1)", async () => {
       await expect(appDb.$executeRaw`DELETE FROM lab_orders WHERE id = ${labOrderId}`).rejects.toThrow(
+        /permission denied/i
+      );
+    });
+  });
+
+  // Fase 6 · Prompt 44B: "el registro se marca cancelado, NUNCA se
+  // elimina" — mismo GRANT que prescription_cancellations/
+  // lab_order_cancellations (solo INSERT+SELECT).
+  describe("clinical_note_cancellations (Fase 6)", () => {
+    it("allows medicfy_app to INSERT a note cancellation", async () => {
+      const reasonTerm = await ownerDb.clinicalCatalogTerm.findFirstOrThrow({ where: { domain: "MOTIVO_CANCELACION_NOTA" } });
+      const cancellation = await appDb.clinicalNoteCancellation.create({
+        data: { noteId, reasonTermId: reasonTerm.id, cancelledByUserId: doctorUserId },
+      });
+      cancellationId = cancellation.id;
+      expect(cancellation.id).toBeTruthy();
+    });
+
+    it("allows medicfy_app to SELECT note cancellations", async () => {
+      const rows = await appDb.clinicalNoteCancellation.findMany({ where: { id: cancellationId } });
+      expect(rows).toHaveLength(1);
+    });
+
+    it("rejects UPDATE on clinical_note_cancellations for medicfy_app", async () => {
+      await expect(
+        appDb.$executeRaw`UPDATE clinical_note_cancellations SET "reasonFreeText" = 'tampered' WHERE id = ${cancellationId}`
+      ).rejects.toThrow(/permission denied/i);
+    });
+
+    it("rejects DELETE on clinical_note_cancellations for medicfy_app", async () => {
+      await expect(appDb.$executeRaw`DELETE FROM clinical_note_cancellations WHERE id = ${cancellationId}`).rejects.toThrow(
         /permission denied/i
       );
     });

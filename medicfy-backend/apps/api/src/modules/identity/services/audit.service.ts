@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import type { AuditResult, Prisma } from "@prisma/client";
+import type { AuditLog, AuditResult, Prisma } from "@prisma/client";
 import { PrismaService } from "../../../prisma/prisma.service";
 
 export interface AuditEntry {
@@ -43,6 +43,36 @@ export class AuditService {
         result: entry.result,
         ...(entry.metadata !== undefined ? { metadata: entry.metadata as Prisma.InputJsonValue } : {}),
       },
+    });
+  }
+
+  // Fase 6 · Prompt 45: "bitácora de acceso consultable: quién leyó
+  // qué expediente, cuándo y desde dónde. Incluye las lecturas del
+  // propio médico tratante." — audit_log ya se llena en cada lectura
+  // clínica de toda la app (R3); esto es lo que faltaba: leerlo.
+  async listForPatient(patientId: string, limit = 200): Promise<AuditLog[]> {
+    return this.prisma.auditLog.findMany({
+      where: { patientId },
+      orderBy: { occurredAt: "desc" },
+      take: limit,
+    });
+  }
+
+  // "Panel de auditoría para el médico titular: quién ha visto a sus
+  // pacientes" — agrega sobre TODOS los pacientes con care_relationship
+  // activo con este médico, sin acotar a un paciente de la ruta (a
+  // diferencia de listForPatient).
+  async listForDoctorPatients(doctorId: string, limit = 200): Promise<AuditLog[]> {
+    const relationships = await this.prisma.careRelationship.findMany({
+      where: { doctorId, status: "ACTIVE" },
+      select: { patientId: true },
+    });
+    const patientIds = relationships.map((r) => r.patientId);
+    if (patientIds.length === 0) return [];
+    return this.prisma.auditLog.findMany({
+      where: { patientId: { in: patientIds } },
+      orderBy: { occurredAt: "desc" },
+      take: limit,
     });
   }
 }

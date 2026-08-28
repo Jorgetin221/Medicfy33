@@ -93,6 +93,15 @@ export type EncounterDiagnosisInput = z.infer<typeof encounterDiagnosisSchema>;
 // obligatorio, al menos un diagnóstico con CIE-10 (M8-RN-006). Esta es
 // la forma completa exigida al firmar (M8-CA-006 depende de que las
 // alergias ya estén conciliadas, verificado en el servicio, no aquí).
+//
+// Fase 6 · Prompt 43: password+totpCode — reautenticación obligatoria
+// para firmar, mismo mecanismo (SignatureVerificationService) que ya
+// usan recetas/órdenes en su ruta ELECTRONIC. A diferencia de esas dos,
+// la nota clínica no tiene ruta "impresa a mano": siempre es firma
+// interna, así que aquí van directo como campos requeridos, sin
+// discriminated union. clinicalNoteCorrectionSchema (abajo) extiende
+// este schema, así que una adenda también exige "su propia firma"
+// (prompt 44A) sin necesidad de repetir los campos.
 export const clinicalNoteSignSchema = z
   .object({
     chiefComplaint: z.string().min(3, "El motivo de consulta debe tener al menos 3 caracteres.").max(500),
@@ -111,6 +120,8 @@ export const clinicalNoteSignSchema = z
     // próxima cita sugerida desde el plan.
     patientInstructions: z.string().max(2000).optional(),
     suggestedFollowUpDays: z.number().int().min(1).max(365).optional(),
+    password: z.string().min(1, "Confirma tu contraseña para firmar."),
+    totpCode: z.string().length(6, "El código de verificación debe tener 6 dígitos."),
   })
   .strict();
 export type ClinicalNoteSignInput = z.infer<typeof clinicalNoteSignSchema>;
@@ -121,6 +132,20 @@ export const clinicalNoteCorrectionSchema = clinicalNoteSignSchema.extend({
   isCorrectionOfNoteId: z.string().uuid(),
 });
 export type ClinicalNoteCorrectionInput = z.infer<typeof clinicalNoteCorrectionSchema>;
+
+// Fase 6 · Prompt 44B: "motivo obligatorio tomado de catálogo, más
+// firma". reasonFreeText solo se usa cuando el término elegido es
+// "otro" (domain MOTIVO_CANCELACION_NOTA) — el servicio lo valida, no
+// aquí (el schema no conoce el catálogo).
+export const clinicalNoteCancelSchema = z
+  .object({
+    reasonTermId: z.string().uuid(),
+    reasonFreeText: z.string().max(500).optional(),
+    password: z.string().min(1, "Confirma tu contraseña para cancelar."),
+    totpCode: z.string().length(6, "El código de verificación debe tener 6 dígitos."),
+  })
+  .strict();
+export type ClinicalNoteCancelInput = z.infer<typeof clinicalNoteCancelSchema>;
 
 // P4 §6.1 (Fase 0): los vocabularios que ya se sabían cerrados dejan
 // de ser texto libre. Las listas salen de la propia auditoría (P4
@@ -304,6 +329,9 @@ export const clinicalAttachmentUploadMetadataSchema = z
   .object({
     encounterId: z.string().uuid().optional(),
     category: z.enum(["LAB_RESULT", "IMAGING", "EXTERNAL_DOCUMENT", "PHOTO", "OTHER"]),
+    // Fase 5 · Prompt 41: fecha del estudio, distinta de la fecha de
+    // subida — mismo formato que labResultUploadMetadataSchema.
+    studyDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     description: z.string().optional(),
   })
   .strict();
@@ -463,3 +491,14 @@ export const antecedentesTemplateCreateSchema = z
   })
   .strict();
 export type AntecedentesTemplateCreateInput = z.infer<typeof antecedentesTemplateCreateSchema>;
+
+// ── Fase 5 · Prompt 40: línea de tiempo de notas del panel ──────────
+export const notesTimelineQuerySchema = z
+  .object({
+    type: encounterTypeSchema.optional(),
+    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    q: z.string().max(200).optional(),
+  })
+  .strict();
+export type NotesTimelineQueryInput = z.infer<typeof notesTimelineQuerySchema>;

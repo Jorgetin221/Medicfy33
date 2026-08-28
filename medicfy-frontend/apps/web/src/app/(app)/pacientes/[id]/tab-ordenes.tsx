@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { apiFetch, apiFetchBlob, apiUpload } from "@/lib/api-client";
+import { blobToDataUrl } from "@/lib/blob-to-data-url";
 import type { TimelineLabOrder, TimelineStandaloneResult } from "@/lib/use-patient-clinical";
 import { Card, EmptyState, ErrorState } from "@/components/ui/states";
 import { Button } from "@/components/ui/button";
@@ -28,15 +29,6 @@ interface LabResultRecord {
 const MX_TIME_ZONE = "America/Mexico_City";
 function formatMxDate(iso: string): string {
   return new Intl.DateTimeFormat("es-MX", { timeZone: MX_TIME_ZONE, dateStyle: "long" }).format(new Date(iso));
-}
-
-function blobToDataUrl(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(blob);
-  });
 }
 
 const STATUS_LABEL: Record<TimelineLabOrder["status"], string> = {

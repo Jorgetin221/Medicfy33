@@ -3,6 +3,7 @@ import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import cookieParser from "cookie-parser";
 import request from "supertest";
+import { TOTP, Secret } from "otpauth";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AppModule } from "../../app.module";
 import { ApiExceptionFilter } from "../../common/api-exception.filter";
@@ -33,6 +34,11 @@ function isoDaysFromNow(days: number, hour = 10): string {
   const d = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
   d.setUTCHours(hour, 0, 0, 0);
   return d.toISOString();
+}
+function totpFromUri(otpauthUri: string): string {
+  const url = new URL(otpauthUri);
+  const secret = url.searchParams.get("secret") as string;
+  return new TOTP({ algorithm: "SHA1", digits: 6, period: 30, secret: Secret.fromBase32(secret) }).generate();
 }
 
 const STRONG_PASSWORD = "Correcto-Caballo-Bateria-47!Grafito";
@@ -90,6 +96,21 @@ describe("Soporte de frontend M8 — catálogos, plantillas, firma completa la c
     return { userId, accessToken };
   }
 
+  // sign() ahora llama a SignatureVerificationService.verify() como lo
+  // primero que hace — a diferencia de signAccessToken() (bypass de
+  // sesión), la contraseña real y el TOTP real no se pueden saltar.
+  async function enrollMfa(accessToken: string): Promise<string> {
+    const start = await request(app.getHttpServer()).post("/auth/mfa/enroll").set("Authorization", `Bearer ${accessToken}`).send({});
+    expect(start.status).toBe(200);
+    const otpauthUri = start.body.otpauthUri as string;
+    const confirm = await request(app.getHttpServer())
+      .post("/auth/mfa/enroll")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ code: totpFromUri(otpauthUri) });
+    expect(confirm.status).toBe(200);
+    return otpauthUri;
+  }
+
   async function createService(accessToken: string): Promise<string> {
     const res = await request(app.getHttpServer())
       .post("/doctors/me/services")
@@ -115,7 +136,7 @@ describe("Soporte de frontend M8 — catálogos, plantillas, firma completa la c
     return res.body.id as string;
   }
 
-  function signPayload() {
+  function signPayload(otpauthUri: string) {
     return {
       chiefComplaint: "Dolor de cabeza",
       currentIllness: "2 días de evolución",
@@ -125,6 +146,8 @@ describe("Soporte de frontend M8 — catálogos, plantillas, firma completa la c
       // Prompt 28: la FK exige un código EXISTENTE — el DGIS codifica
       // la cefalea como "R51.X", no "R51" a secas.
       diagnoses: [{ icd10Code: "R51.X", description: "Cefalea", diagnosisType: "PRINCIPAL", certainty: "CONFIRMED" }],
+      password: STRONG_PASSWORD,
+      totpCode: totpFromUri(otpauthUri),
     };
   }
 
@@ -203,6 +226,7 @@ describe("Soporte de frontend M8 — catálogos, plantillas, firma completa la c
   describe("Firmar un encounter completa la cita ligada", () => {
     it("IN_PROGRESS -> COMPLETED con completedWithoutNoteReason=null al firmar", async () => {
       const doctor = await registerDoctor();
+      const otpauthUri = await enrollMfa(doctor.accessToken);
       const serviceId = await createService(doctor.accessToken);
       const patientId = await createPatient(doctor.accessToken);
 
@@ -224,7 +248,7 @@ describe("Soporte de frontend M8 — catálogos, plantillas, firma completa la c
       const sign = await request(app.getHttpServer())
         .post(`/records/encounters/${encounter.body.id}/sign`)
         .set("Authorization", `Bearer ${doctor.accessToken}`)
-        .send(signPayload());
+        .send(signPayload(otpauthUri));
       expect(sign.status).toBe(201);
 
       const updatedAppt = await prisma.appointment.findUniqueOrThrow({ where: { id: appt.body.id } });
@@ -241,6 +265,7 @@ describe("Soporte de frontend M8 — catálogos, plantillas, firma completa la c
 
     it("no falla si el encounter no tiene cita ligada", async () => {
       const doctor = await registerDoctor();
+      const otpauthUri = await enrollMfa(doctor.accessToken);
       const patientId = await createPatient(doctor.accessToken);
 
       const encounter = await request(app.getHttpServer())
@@ -252,12 +277,13 @@ describe("Soporte de frontend M8 — catálogos, plantillas, firma completa la c
       const sign = await request(app.getHttpServer())
         .post(`/records/encounters/${encounter.body.id}/sign`)
         .set("Authorization", `Bearer ${doctor.accessToken}`)
-        .send(signPayload());
+        .send(signPayload(otpauthUri));
       expect(sign.status).toBe(201);
     });
 
     it("no falla si la cita ligada no está IN_PROGRESS (queda como estaba)", async () => {
       const doctor = await registerDoctor();
+      const otpauthUri = await enrollMfa(doctor.accessToken);
       const serviceId = await createService(doctor.accessToken);
       const patientId = await createPatient(doctor.accessToken);
 
@@ -276,7 +302,7 @@ describe("Soporte de frontend M8 — catálogos, plantillas, firma completa la c
       const sign = await request(app.getHttpServer())
         .post(`/records/encounters/${encounter.body.id}/sign`)
         .set("Authorization", `Bearer ${doctor.accessToken}`)
-        .send(signPayload());
+        .send(signPayload(otpauthUri));
       expect(sign.status).toBe(201);
 
       const updatedAppt = await prisma.appointment.findUniqueOrThrow({ where: { id: appt.body.id } });

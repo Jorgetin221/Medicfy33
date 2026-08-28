@@ -36,7 +36,7 @@ const STATUS_CLASS: Record<Status, string> = {
 // §10.1-10.3 de especificacion-plataforma-clinica-con-ia.md: vocabulario
 // transcrito literal — nada agregado. Alergias y medicamentos actuales
 // se excluyen porque ya viven en PatientAllergy/PatientMedication.
-const HEREDOFAMILIAR_LABELS: Record<string, string> = {
+export const HEREDOFAMILIAR_LABELS: Record<string, string> = {
   estado_vital: "Estado vital",
   diabetes: "Diabetes",
   hipertension: "Hipertensión",
@@ -49,7 +49,7 @@ const HEREDOFAMILIAR_LABELS: Record<string, string> = {
   otro: "Otro antecedente",
 };
 
-const PERSONAL_NO_PATOLOGICO_LABELS: Record<string, string> = {
+export const PERSONAL_NO_PATOLOGICO_LABELS: Record<string, string> = {
   vivienda_servicios: "Vivienda y servicios",
   alimentacion_hidratacion: "Alimentación e hidratación",
   higiene: "Higiene",
@@ -64,7 +64,7 @@ const PERSONAL_NO_PATOLOGICO_LABELS: Record<string, string> = {
   animales_vectores_riesgos: "Animales, vectores y riesgos ambientales",
 };
 
-const PERSONAL_PATOLOGICO_LABELS: Record<string, string> = {
+export const PERSONAL_PATOLOGICO_LABELS: Record<string, string> = {
   enfermedades_previas_activas: "Enfermedades previas y activas",
   hospitalizaciones: "Hospitalizaciones",
   cirugias: "Cirugías",
