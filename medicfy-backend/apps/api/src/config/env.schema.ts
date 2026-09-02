@@ -19,6 +19,18 @@ export const envSchema = z.object({
   // point at the frontend too, flagged, not changed here to avoid
   // touching an already-shipped M1 env contract for an unrelated fix).
   WEB_ORIGIN: z.string().url().default("http://localhost:3000"),
+  // Fase 8 · Prompt 51 ("El Segundo Lector"). Opcional a propósito: el
+  // resto de la aplicación arranca y sirve todo lo demás sin esta
+  // clave — ClaudeModelAdapter la lee de forma perezosa y se degrada
+  // ("no disponible") si falta, en vez de tumbar el proceso entero.
+  ANTHROPIC_API_KEY: z.string().min(1).optional(),
+  ASSISTANT_MODEL_ID: z.string().min(1).optional(),
+  ASSISTANT_MODEL_TIMEOUT_MS: z.coerce.number().int().positive().optional(),
+  // PENDIENTE(jorge): el tope de gasto por consulta es una decisión
+  // de negocio/costos, no algo para inventar — ver el comentario en
+  // AssistantPassOrchestratorService. Este default es solo un piso de
+  // arranque conservador.
+  ASSISTANT_MAX_TOKENS_PER_ENCOUNTER: z.coerce.number().int().positive().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

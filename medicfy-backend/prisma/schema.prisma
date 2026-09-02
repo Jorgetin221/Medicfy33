@@ -203,7 +203,17 @@ model Doctor {
   legalLastName           String
   professionalLicense     String                   @unique
   specialtyLicense        String?
+  // M2-RN-006: la cédula de especialidad (recertificación de consejo)
+  // puede vencer — el sello "Médico verificado" se degrada cuando
+  // pasa esta fecha (calculado al leer, en toPublicDoctorView, no vía
+  // job). El recordatorio proactivo a 60 días queda PENDIENTE: exige
+  // una cola real (Redis+BullMQ) que hoy no existe en el backend.
+  specialtyLicenseExpiresAt DateTime?              @db.Timestamptz(3)
   primarySpecialtyId      String?
+  // M5-RN-007: "el enlace público del médico (/dr/{slug})". Se genera
+  // una sola vez al registrarse (auth.service.ts), no editable por el
+  // médico en este pase.
+  slug                    String                   @unique
   displayName             String?
   photoUrl                String?
   biography               String?
@@ -261,8 +271,10 @@ model Doctor {
   prescriptions          Prescription[]
   labOrders              LabOrder[]
   noteTemplates          NoteTemplate[]
+  posts                  DoctorPost[]
 
   antecedentesTemplates AntecedentesTemplate[]
+  selfAddedMedications  MedicationCatalog[]
 
   @@map("doctors")
 }
@@ -391,6 +403,91 @@ model DoctorService {
   appointments Appointment[]
 
   @@map("doctor_services")
+}
+
+// M2B (spec §7, v2.2): categoría cerrada, independiente de la
+// audiencia (visibility) y del estado (status) de la publicación.
+enum PostCategory {
+  HEALTH_EDUCATION
+  HEALTH_TIP
+  HEALTH_FACT
+  PROFESSIONAL_UPDATE
+  CONGRESS
+  RESEARCH
+  CERTIFICATION
+  PATIENT_NOTICE
+  PREVENTION
+  LIFESTYLE
+  VIDEO
+  PHOTO
+  ANNOUNCEMENT
+
+  @@map("post_category")
+}
+
+// M2B-RN-002: quién puede ver la publicación — autorizado siempre en
+// backend (toPublicDoctorView-style: el serializador decide, nunca el
+// cliente). PATIENTS_ONLY exige care_relationship activo; hoy no hay
+// portal de pacientes que llame esa ruta, pero la regla ya es real.
+enum PostVisibility {
+  PUBLIC
+  PATIENTS_ONLY
+  PRIVATE
+
+  @@map("post_visibility")
+}
+
+// M2B-RN-003: draft (solo el autor) -> published (según visibility) ->
+// archived (fuera de toda vista pública/pacientes, el autor la
+// conserva). No es dato clínico (R1 no aplica) — DELETE real existe.
+enum PostStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+
+  @@map("post_status")
+}
+
+enum PostMediaType {
+  PHOTO
+  VIDEO
+
+  @@map("post_media_type")
+}
+
+model DoctorPost {
+  id               String         @id @default(uuid())
+  doctorId         String
+  title            String?
+  body             String
+  category         PostCategory
+  visibility       PostVisibility @default(PRIVATE)
+  status           PostStatus     @default(DRAFT)
+  publishedAt      DateTime?      @db.Timestamptz(3)
+  archivedAt       DateTime?      @db.Timestamptz(3)
+  // Quién archivó, cuando no fue el propio autor (M2B-RN-008,
+  // moderación mínima de un ADMIN).
+  archivedByUserId String?
+  createdAt        DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime       @updatedAt @db.Timestamptz(3)
+
+  doctor Doctor            @relation(fields: [doctorId], references: [id])
+  media  DoctorPostMedia[]
+
+  @@map("doctor_posts")
+}
+
+model DoctorPostMedia {
+  id           String        @id @default(uuid())
+  postId       String
+  mediaType    PostMediaType
+  fileKey      String
+  displayOrder Int           @default(0)
+  createdAt    DateTime      @default(now()) @db.Timestamptz(3)
+
+  post DoctorPost @relation(fields: [postId], references: [id])
+
+  @@map("doctor_post_media")
 }
 
 enum AppointmentModality {
@@ -864,6 +961,8 @@ model ClinicalEncounter {
   labOrders     LabOrder[]
   specialtyData EncounterSpecialtyData?
   protocolSessions ProtocolSession[]
+  assistantReadings AssistantReading[]
+  redFlagEvents RedFlagEvent[]
 
   @@map("clinical_encounters")
 }
@@ -960,6 +1059,14 @@ model VitalSignSet {
   respiratoryRateBpm       Int?
   temperatureC             Decimal? @db.Decimal(4, 1)
   spo2Percent              Int?
+  // Fase 8 · Prompt 52 (banderas rojas): no existía captura de glucosa
+  // capilar ni llenado capilar en ningún lugar del sistema hasta ahora
+  // — ambas las pide explícitamente el documento clínico del médico
+  // responsable (banderas por glucosa fuera de rango y por llenado
+  // capilar > 3s). Mismo patrón que el resto de vitales: opcionales,
+  // sin cálculo del servidor.
+  glucoseCapMgDl           Int?
+  capillaryRefillSeconds   Decimal? @db.Decimal(3, 1)
   weightKg                 Decimal? @db.Decimal(6, 2)
   heightCm                 Decimal? @db.Decimal(5, 1)
   headCircumferenceCm      Decimal? @db.Decimal(5, 1)
@@ -1530,7 +1637,16 @@ model MedicationCatalog {
   sourceVersion String?
   isActive                     Boolean      @default(true)
   createdAt                    DateTime     @default(now()) @db.Timestamptz(3)
+  // Autoservicio: un médico agrega un medicamento que no encontró en
+  // el catálogo directamente desde la receta, sin aprobación de admin
+  // (decisión explícita del usuario, 2026-09-02) — controlGroup lo
+  // declara el propio médico de forma obligatoria y explícita (nunca
+  // texto libre ni default), así que R5 sigue aplicando exactamente
+  // igual sobre esta fila que sobre cualquier otra. null = catálogo
+  // sembrado/curado.
+  addedByDoctorId              String?
 
+  addedByDoctor     Doctor?             @relation(fields: [addedByDoctorId], references: [id])
   prescriptionItems PrescriptionItem[]
 
   patientAllergies PatientAllergy[]
@@ -2188,4 +2304,79 @@ model ClinicalCatalogTerm {
   @@unique([domain, key])
   @@unique([domain, normalizedTerm])
   @@map("clinical_catalog_terms")
+}
+
+// Fase 8 · Prompt 51 (docs/medicfy-58-prompts.md, Bloque 9). Slice
+// mínimo de persistencia para que "los pases anteriores se conservan"
+// (Prompt 51) y el tope de gasto por consulta (que necesita sumar
+// tokens entre llamadas HTTP separadas) tengan dónde vivir. El
+// Prompt 56 ("Datos, métricas y pruebas de la Fase 8") es quien
+// diseña el modelo completo (SugerenciaAsistente/PreguntaAsistente/
+// AcuseBanderaRoja/VersionPrompt) — esta tabla es deliberadamente
+// angosta, para no adelantar esa decisión.
+//
+// Append-only, mismo criterio que clinical_notes (R1): una lectura es
+// lo que el modelo le dijo al médico en un momento dado — igual que
+// una nota firmada, corregirla es escribir una fila nueva (un pase
+// nuevo), nunca reescribir la vieja.
+model AssistantReading {
+  id                String        @id @default(uuid())
+  encounterId       String
+  pase              AssistantPass
+  contextHashSha256 String
+  readingJson       Json
+  modelVersion      String
+  promptVersion     String
+  inputTokens       Int
+  outputTokens      Int
+  createdAt         DateTime      @default(now()) @db.Timestamptz(3)
+
+  encounter ClinicalEncounter @relation(fields: [encounterId], references: [id])
+
+  @@index([encounterId, createdAt])
+  @@map("assistant_readings")
+}
+
+enum AssistantPass {
+  SUBJETIVO
+  OBJETIVO
+  ANALISIS
+  CIERRE
+
+  @@map("assistant_pass")
+}
+
+// Fase 8 · Prompt 52 — filtro de seguridad determinista, INDEPENDIENTE
+// del modelo de IA (banderas-rojas-medicfy.md, documento del médico
+// responsable, 2026-09-02). "Es la red de seguridad por si el modelo
+// minimiza o pasa por alto un hallazgo grave": corre sobre datos
+// estructurados (signos vitales, síntomas de catálogo cerrado), nunca
+// sobre texto libre ni sobre la salida del asistente.
+//
+// Append-only, mismo criterio que assistant_readings/clinical_notes
+// (R1): una bandera es un evento clínico que ocurrió en un momento
+// dado — nunca se reescribe. @@unique([encounterId, flagCode]) es el
+// mecanismo de dedup: el autoguardado corre cada 10s y no debe crear
+// una fila nueva cada vez que la misma condición sigue vigente.
+model RedFlagEvent {
+  id              String   @id @default(uuid())
+  encounterId     String
+  flagCode        String
+  // Mismo vocabulario que AssistantReading.banderas_rojas.urgencia
+  // (Prompt 49): "inmediata" | "misma_consulta" | "seguimiento".
+  urgency         String
+  detectionMethod String
+  finding         String
+  // El valor concreto que disparó la bandera (p.ej. {"spo2": 85}) —
+  // dato clínico legítimo en una tabla de expediente protegida por
+  // CareRelationshipGuard, no un log externo (R2 prohíbe esto en
+  // canales externos/logs de aplicación, no en el propio expediente).
+  triggerData     Json
+  detectedAt      DateTime @default(now()) @db.Timestamptz(3)
+
+  encounter ClinicalEncounter @relation(fields: [encounterId], references: [id])
+
+  @@unique([encounterId, flagCode])
+  @@index([encounterId, detectedAt])
+  @@map("red_flag_events")
 }

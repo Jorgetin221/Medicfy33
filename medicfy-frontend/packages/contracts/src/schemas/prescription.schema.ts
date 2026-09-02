@@ -120,3 +120,22 @@ export const medicationSearchQuerySchema = z
   })
   .strict();
 export type MedicationSearchQueryInput = z.infer<typeof medicationSearchQuerySchema>;
+
+// Autoservicio: un médico agrega al catálogo un medicamento que no
+// encontró, directamente desde la receta, sin aprobación de admin
+// (decisión explícita del usuario, 2026-09-02). controlGroup es
+// OBLIGATORIO y viene de un enum cerrado — nunca texto libre, nunca
+// con default — precisamente porque R5 (bloqueo duro de Grupos I/II)
+// depende de que este campo siempre exista y sea correcto; el
+// servidor deriva isElectronicallyPrescribable de aquí, nunca lo
+// acepta del cliente.
+export const medicationCatalogSelfServiceCreateSchema = z
+  .object({
+    genericName: z.string().min(2, "El nombre genérico debe tener al menos 2 caracteres.").max(200),
+    brandNames: z.array(z.string().min(1).max(100)).max(10).optional(),
+    presentations: z.array(z.object({ label: z.string().min(1).max(100) })).min(1, "Agrega al menos una presentación.").max(10),
+    atcCode: z.string().max(10).optional(),
+    controlGroup: z.enum(["I", "II", "III", "IV", "V", "VI"]),
+  })
+  .strict();
+export type MedicationCatalogSelfServiceCreateInput = z.infer<typeof medicationCatalogSelfServiceCreateSchema>;

@@ -26,6 +26,9 @@ import { LabResultAnalytesController } from "./lab-result-analytes.controller";
     CareRelationshipGuard,
     { provide: FILE_STORAGE_PORT, useClass: LocalDiskFileStorageAdapter },
   ],
-  exports: [LabOrderService],
+  // LabResultAnalyteService: Fase 8 · Prompt 50 (assistant/context-
+  // assembler.service.ts) reutiliza listForPatient() para el bloque
+  // "Laboratorio" en vez de duplicar la consulta.
+  exports: [LabOrderService, LabResultAnalyteService],
 })
 export class LabsModule {}

@@ -84,6 +84,89 @@ const MEDICATIONS = [
   // Grupo I — deliberadamente incluido para poder probar
   // PRESCRIPTION_CONTROLLED_BLOCKED de punta a punta (M9-CA-002).
   { genericName: "Morfina", brandNames: [], presentations: [{ label: "Solución inyectable 10 mg/mL" }], atcCode: "N02AA01", controlGroup: "I" as const, isElectronicallyPrescribable: false },
+
+  // Ampliación del catálogo (2026-09-02) — a petición explícita del
+  // usuario, tras el hallazgo de que 10 medicamentos de demostración
+  // no alcanzan para uso real. Cubre las 4 especialidades piloto
+  // (medicina general, ginecología y obstetricia, pediatría, medicina
+  // interna). Solo medicamentos de identidad y clasificación bien
+  // establecidas (Ley General de Salud art. 226) — nada en zona gris.
+  // Igual que el resto del catálogo, PENDIENTE de validación médica
+  // formal antes de producción (ver seedCatalogosPrompt9 arriba: la
+  // base clínica real llega con licencia).
+
+  // Analgésicos / antiinflamatorios (Grupo VI)
+  { genericName: "Naproxeno", brandNames: ["Flanax"], presentations: [{ label: "Tableta 250 mg" }], atcCode: "M01AE02", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Diclofenaco", brandNames: ["Voltaren"], presentations: [{ label: "Tableta 100 mg" }], atcCode: "M01AB05", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Ketorolaco", brandNames: ["Dolac"], presentations: [{ label: "Ampolleta 30 mg/mL" }], atcCode: "M01AB15", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Metamizol sódico", brandNames: ["Neo-Melubrina"], presentations: [{ label: "Tableta 500 mg" }], atcCode: "N02BB02", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Ácido acetilsalicílico", brandNames: ["Aspirina"], presentations: [{ label: "Tableta 100 mg" }], atcCode: "N02BA01", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Prednisona", brandNames: ["Meticorten"], presentations: [{ label: "Tableta 5 mg" }], atcCode: "H02AB07", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+
+  // Antibióticos (Grupo VI)
+  { genericName: "Azitromicina", brandNames: ["Zithromax"], presentations: [{ label: "Tableta 500 mg" }], atcCode: "J01FA10", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Ciprofloxacino", brandNames: ["Ciproxina"], presentations: [{ label: "Tableta 500 mg" }], atcCode: "J01MA02", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Trimetoprim/Sulfametoxazol", brandNames: ["Bactrim"], presentations: [{ label: "Tableta 800/160 mg" }], atcCode: "J01EE01", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Cefalexina", brandNames: ["Keflex"], presentations: [{ label: "Cápsula 500 mg" }], atcCode: "J01DB01", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Clindamicina", brandNames: ["Dalacin"], presentations: [{ label: "Cápsula 300 mg" }], atcCode: "J01FF01", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Doxiciclina", brandNames: ["Vibramicina"], presentations: [{ label: "Cápsula 100 mg" }], atcCode: "J01AA02", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Nitrofurantoína", brandNames: ["Macrodantina"], presentations: [{ label: "Cápsula 100 mg" }], atcCode: "J01XE01", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Penicilina G benzatínica", brandNames: ["Benzetacil"], presentations: [{ label: "Ampolleta 1,200,000 U" }], atcCode: "J01CE08", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Metronidazol", brandNames: ["Flagyl"], presentations: [{ label: "Tableta 500 mg" }], atcCode: "J01XD01", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Claritromicina", brandNames: ["Klaricid"], presentations: [{ label: "Tableta 500 mg" }], atcCode: "J01FA09", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Amoxicilina/Ácido clavulánico", brandNames: ["Clavulin"], presentations: [{ label: "Tableta 875/125 mg" }], atcCode: "J01CR02", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+
+  // Cardiovascular (Grupo VI)
+  { genericName: "Enalapril", brandNames: ["Renitec"], presentations: [{ label: "Tableta 10 mg" }], atcCode: "C09AA02", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Amlodipino", brandNames: ["Norvasc"], presentations: [{ label: "Tableta 5 mg" }], atcCode: "C08CA01", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Metoprolol", brandNames: ["Lopresor"], presentations: [{ label: "Tableta 100 mg" }], atcCode: "C07AB02", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Hidroclorotiazida", brandNames: ["Microzide"], presentations: [{ label: "Tableta 25 mg" }], atcCode: "C03AA03", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Atorvastatina", brandNames: ["Lipitor"], presentations: [{ label: "Tableta 20 mg" }], atcCode: "C10AA05", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Furosemida", brandNames: ["Lasix"], presentations: [{ label: "Tableta 40 mg" }], atcCode: "C03CA01", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Espironolactona", brandNames: ["Aldactone"], presentations: [{ label: "Tableta 25 mg" }], atcCode: "C03DA01", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Clopidogrel", brandNames: ["Plavix"], presentations: [{ label: "Tableta 75 mg" }], atcCode: "B01AC04", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Warfarina", brandNames: ["Coumadin"], presentations: [{ label: "Tableta 5 mg" }], atcCode: "B01AA03", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+
+  // Diabetes / endocrino (Grupo VI)
+  { genericName: "Glibenclamida", brandNames: ["Daonil"], presentations: [{ label: "Tableta 5 mg" }], atcCode: "A10BB01", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Insulina NPH", brandNames: ["Humulin N"], presentations: [{ label: "Suspensión inyectable 100 UI/mL" }], atcCode: "A10AC01", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Insulina glargina", brandNames: ["Lantus"], presentations: [{ label: "Solución inyectable 100 UI/mL" }], atcCode: "A10AE04", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Levotiroxina", brandNames: ["Synthroid"], presentations: [{ label: "Tableta 100 mcg" }], atcCode: "H03AA01", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+
+  // Gastrointestinal (Grupo VI)
+  { genericName: "Pantoprazol", brandNames: ["Pantozol"], presentations: [{ label: "Tableta 40 mg" }], atcCode: "A02BC02", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Butilhioscina", brandNames: ["Buscapina"], presentations: [{ label: "Tableta 10 mg" }], atcCode: "A03BB01", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Metoclopramida", brandNames: ["Plasil"], presentations: [{ label: "Tableta 10 mg" }], atcCode: "A03FA01", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Loperamida", brandNames: ["Imodium"], presentations: [{ label: "Cápsula 2 mg" }], atcCode: "A07DA03", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Simeticona", brandNames: ["Flatoril"], presentations: [{ label: "Tableta 125 mg" }], atcCode: "A03AX13", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+
+  // Respiratorio / alergia (Grupo VI)
+  { genericName: "Salbutamol", brandNames: ["Ventolin"], presentations: [{ label: "Inhalador 100 mcg/dosis" }], atcCode: "R03AC02", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Budesonida", brandNames: ["Pulmicort"], presentations: [{ label: "Inhalador 200 mcg/dosis" }], atcCode: "R03BA02", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Cetirizina", brandNames: ["Zyrtec"], presentations: [{ label: "Tableta 10 mg" }], atcCode: "R06AE07", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Ambroxol", brandNames: ["Mucosolvan"], presentations: [{ label: "Jarabe 15 mg/5mL" }], atcCode: "R05CB06", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Dimenhidrinato", brandNames: ["Dramamine"], presentations: [{ label: "Tableta 50 mg" }], atcCode: "R06AA02", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+
+  // Ginecología y obstetricia (Grupo VI)
+  { genericName: "Ácido fólico", brandNames: [], presentations: [{ label: "Tableta 5 mg" }], atcCode: "B03BB01", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Sulfato ferroso", brandNames: ["Ferrifol"], presentations: [{ label: "Tableta 200 mg" }], atcCode: "B03AA07", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Progesterona micronizada", brandNames: ["Utrogestan"], presentations: [{ label: "Cápsula 200 mg" }], atcCode: "G03DA04", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Nifedipino", brandNames: ["Adalat"], presentations: [{ label: "Tableta 30 mg" }], atcCode: "C08CA05", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Etinilestradiol/Levonorgestrel", brandNames: ["Microgynon"], presentations: [{ label: "Tableta 0.03/0.15 mg" }], atcCode: "G03AA07", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Clotrimazol", brandNames: ["Canesten"], presentations: [{ label: "Óvulo vaginal 100 mg" }], atcCode: "G01AF02", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Oxitocina", brandNames: ["Syntocinon"], presentations: [{ label: "Ampolleta 10 UI/mL" }], atcCode: "H01BB02", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+
+  // Psiquiatría / neurología no controlados (Grupo VI)
+  { genericName: "Sertralina", brandNames: ["Zoloft"], presentations: [{ label: "Tableta 50 mg" }], atcCode: "N06AB06", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Fluoxetina", brandNames: ["Prozac"], presentations: [{ label: "Cápsula 20 mg" }], atcCode: "N06AB03", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+  { genericName: "Levetiracetam", brandNames: ["Keppra"], presentations: [{ label: "Tableta 500 mg" }], atcCode: "N03AX14", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
+
+  // Controlados adicionales — mismo criterio que Diazepam/Tramadol/
+  // Morfina ya sembrados: clasificación bien establecida, sin zona
+  // gris, para que R5 siga probado también en Grupo II (no solo I/IV).
+  { genericName: "Clonazepam", brandNames: ["Rivotril"], presentations: [{ label: "Tableta 2 mg" }], atcCode: "N03AE01", controlGroup: "IV" as const, isElectronicallyPrescribable: true },
+  { genericName: "Alprazolam", brandNames: ["Tafil"], presentations: [{ label: "Tableta 0.5 mg" }], atcCode: "N05BA12", controlGroup: "IV" as const, isElectronicallyPrescribable: true },
+  { genericName: "Metilfenidato", brandNames: ["Ritalin"], presentations: [{ label: "Tableta 10 mg" }], atcCode: "N06BA04", controlGroup: "II" as const, isElectronicallyPrescribable: false },
 ];
 
 // Motor de escalas (SpecialtyFieldSchema, sección ESCALAS): la
@@ -643,6 +726,62 @@ async function seedInteraccionesDemo(): Promise<void> {
   console.log(`Seeded ${inserted} interacciones de DEMOSTRACIÓN (motor listo; datos reales con la base licenciada 🔒).`);
 }
 
+// Fase 8 · Prompt 52 — banderas-rojas-medicfy.md, documento clínico
+// del médico responsable (2026-09-02), fundamentado en PALS, Sepsis-3/
+// qSOFA, ESI, GPC CENETEC. pendingMedicalReview=true en TODO el
+// dominio: la sección 4 del documento ("checklist de aprobación")
+// deja la lista final todavía como decisión abierta del médico
+// responsable, aunque cada término ya viene sourceado. Los keys AQUÍ
+// deben coincidir EXACTAMENTE con SYMPTOM_FLAG_MAP en
+// apps/api/src/common/red-flag-detector.util.ts — un key sin match en
+// ese mapa se ignora en silencio (no dispara nada), así que un typo
+// aquí no rompe el build, solo apaga una bandera sin avisar.
+//
+// 2.8 (salud mental) SÍ se siembra — el propio documento pide
+// "confirmar que cada síntoma 🔴 tenga su término en catálogo" — pero
+// el detector la EXCLUYE a propósito de disparar una alerta simple.
+async function seedBanderasRojas(): Promise<void> {
+  await seedDomain("BANDERA_ROJA_SINTOMA", "banderas-rojas-medicfy.md (médico responsable, 2026-09-02)", true, [
+    // 2.1 Cardiovascular
+    { key: "cv_dolor_toracico_opresivo", term: "Dolor torácico opresivo o retroesternal" },
+    { key: "cv_dolor_toracico_irradiado", term: "Dolor torácico irradiado a brazo, mandíbula, cuello o espalda" },
+    { key: "cv_sincope", term: "Síncope o pérdida transitoria de la conciencia" },
+    { key: "cv_palpitaciones_con_dolor_disnea", term: "Palpitaciones con dolor torácico o disnea asociada" },
+    // 2.2 Respiratorio
+    { key: "resp_disnea_subita_reposo", term: "Disnea súbita o dificultad respiratoria en reposo" },
+    { key: "resp_estridor", term: "Estridor" },
+    { key: "resp_cianosis", term: "Cianosis" },
+    { key: "resp_hemoptisis", term: "Hemoptisis" },
+    // 2.3 Neurológico
+    { key: "neuro_deficit_focal_subito", term: "Déficit neurológico focal súbito", synonyms: ["Debilidad o asimetría facial súbita", "Disartria súbita", "Afasia súbita"] },
+    { key: "neuro_cefalea_subita_intensa", term: "Cefalea súbita e intensa, de máxima intensidad" },
+    { key: "neuro_alteracion_conciencia_aguda", term: "Alteración aguda del estado de conciencia o confusión de inicio reciente" },
+    { key: "neuro_convulsion_activa_o_primera", term: "Convulsión activa o primera convulsión" },
+    { key: "neuro_rigidez_nuca_fiebre", term: "Rigidez de nuca con fiebre" },
+    // 2.4 Abdominal / Gastrointestinal
+    { key: "gi_dolor_abdominal_intenso_subito", term: "Dolor abdominal intenso y súbito" },
+    { key: "gi_irritacion_peritoneal", term: "Signos de irritación peritoneal", synonyms: ["Abdomen en tabla"] },
+    { key: "gi_hematemesis_melena", term: "Hematemesis o melena" },
+    { key: "gi_vomito_persistente_deshidratacion", term: "Vómito persistente con datos de deshidratación" },
+    // 2.5 Obstétrico / Ginecológico (condicionado a sexo femenino o embarazo)
+    { key: "obs_sangrado_transvaginal_abundante_embarazo", term: "Sangrado transvaginal abundante en embarazo" },
+    { key: "obs_cefalea_vision_borrosa_embarazo", term: "Cefalea con alteraciones visuales en embarazo" },
+    { key: "obs_dolor_abdominal_intenso_embarazo", term: "Dolor abdominal intenso en embarazada" },
+    { key: "obs_disminucion_movimientos_fetales", term: "Disminución o ausencia de movimientos fetales" },
+    { key: "obs_trabajo_parto_pretermino", term: "Datos de trabajo de parto pretérmino" },
+    // 2.6 Infeccioso / Sepsis
+    { key: "inf_fiebre_hipotension_alteracion_mental", term: "Fiebre con hipotensión y alteración del estado mental", synonyms: ["Probable choque séptico"] },
+    { key: "inf_fiebre_inmunocomprometido", term: "Fiebre en paciente inmunocomprometido" },
+    // 2.7 Alérgico / Trauma / Otros
+    { key: "alerg_anafilaxia", term: "Reacción alérgica con compromiso respiratorio o hipotensión", synonyms: ["Anafilaxia"] },
+    { key: "trauma_tce_perdida_conciencia", term: "Traumatismo craneoencefálico con pérdida de conciencia" },
+    { key: "trauma_quemadura_extensa_via_aerea", term: "Quemadura extensa o sospecha de quemadura de vía aérea" },
+    // 2.8 Salud mental — sembrado, NO alertado como bandera simple
+    // (DECISIÓN PENDIENTE del médico responsable sobre el flujo).
+    { key: "salud_mental_ideacion_autolesion", term: "Ideación, plan o intento suicida, o conducta autolesiva" },
+  ]);
+}
+
 async function main(): Promise<void> {
   for (const specialty of SPECIALTIES) {
     await prisma.specialty.upsert({
@@ -686,6 +825,7 @@ async function main(): Promise<void> {
   await seedFase6();
   await seedFase7();
   await seedInteraccionesDemo();
+  await seedBanderasRojas();
   await seedAdmin();
 }
 

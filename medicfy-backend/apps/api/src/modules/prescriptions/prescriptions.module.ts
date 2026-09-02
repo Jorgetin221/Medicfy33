@@ -6,6 +6,7 @@ import { LabsModule } from "../labs/labs.module";
 import { CareRelationshipGuard } from "../../common/guards/care-relationship.guard";
 import { PrescriptionService } from "./services/prescription.service";
 import { PrescriptionPdfService } from "./services/prescription-pdf.service";
+import { MedicationCatalogService } from "./services/medication-catalog.service";
 import { PrescriptionsController } from "./prescriptions.controller";
 import { VerificationController } from "./verification.controller";
 import { MedicationsController } from "./medications.controller";
@@ -25,6 +26,7 @@ import { LocalDiskFileStorageAdapter } from "../doctors/services/local-disk-file
   providers: [
     PrescriptionService,
     PrescriptionPdfService,
+    MedicationCatalogService,
     CareRelationshipGuard,
     { provide: FILE_STORAGE_PORT, useClass: LocalDiskFileStorageAdapter },
   ],
