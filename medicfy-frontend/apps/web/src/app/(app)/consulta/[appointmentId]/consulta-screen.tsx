@@ -223,6 +223,8 @@ export function ConsultaScreen({ appointmentId, accessToken }: { appointmentId: 
         pregnancy={pregnancy}
         activeDiagnoses={activeDiagnoses}
         isLoadingClinical={isLoadingClinical}
+        encounterId={encounter.id}
+        accessToken={accessToken}
       />
       {phase === "readonly" ? (
         <div className="flex flex-1 flex-col gap-4">

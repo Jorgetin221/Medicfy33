@@ -5,6 +5,13 @@ import { PrismaService } from "../../../prisma/prisma.service";
 import { ContextAssemblerService } from "./context-assembler.service";
 import { ASSISTANT_MODEL_PORT, type AssistantModelPort } from "./assistant-model.port";
 
+// "Resumen objetivo": medido con llamadas reales, una salida de un
+// solo campo con max_tokens bajo responde en segundos, no minutos —
+// muy por debajo del timeout de la lectura completa. 30s da margen
+// real sin acercarse a esa espera larga (petición explícita del
+// usuario, 2026-09-02: "debe durar menos").
+const SUMMARY_TIMEOUT_MS = 30_000;
+
 // Fase 8 · Prompt 51 — "Los cuatro pases". Cuándo disparar cada pase
 // (blur + 3s estable, botón "Volver a leer") es del frontend (Zona 3,
 // Prompt 53); esto es lo que pasa del lado del servidor UNA VEZ que
@@ -103,6 +110,28 @@ export class AssistantPassOrchestratorService {
     });
 
     return { kind: "ok", reading: outcome.result.reading, readingId: saved.id, createdAt: saved.createdAt };
+  }
+
+  // "Resumen objetivo" — deliberadamente SIN persistencia (se
+  // regenera siempre sobre el estado actual de la nota, un resumen
+  // viejo no aporta nada) y SIN candado de tope de gasto (ese tope es
+  // del ENCUENTRO completo vía assistant_readings; esta llamada es
+  // aparte a propósito — ver claude-model.adapter.ts). Mismo patrón de
+  // cancelación por señal combinada que requestPass(), con un timeout
+  // mucho más corto porque la salida es mucho más pequeña.
+  async requestSummary(encounterId: string, callerSignal: AbortSignal): Promise<{ kind: "ok"; resumen: string } | { kind: "unavailable"; reason: string } | { kind: "cancelled" }> {
+    if (callerSignal.aborted) return { kind: "cancelled" };
+
+    const { context, hashContexto } = await this.contextAssembler.assemble(encounterId);
+    const timeoutMs = Number(process.env.ASSISTANT_SUMMARY_TIMEOUT_MS ?? SUMMARY_TIMEOUT_MS);
+    const timeoutSignal = AbortSignal.timeout(timeoutMs);
+    const combinedSignal = AbortSignal.any([callerSignal, timeoutSignal]);
+
+    const outcome = await this.modelPort.generateSummary({ context, hashContexto, signal: combinedSignal });
+    if (outcome.kind === "cancelled") {
+      return timeoutSignal.aborted && !callerSignal.aborted ? { kind: "unavailable", reason: "TIMEOUT" } : { kind: "cancelled" };
+    }
+    return outcome;
   }
 
   // "Cada pase reemplaza al anterior en pantalla, pero los anteriores

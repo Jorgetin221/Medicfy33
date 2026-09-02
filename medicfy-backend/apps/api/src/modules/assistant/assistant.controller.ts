@@ -16,7 +16,7 @@ import { AssistantPassOrchestratorService } from "./services/assistant-pass-orch
 // controller que lo exponga".
 @ApiTags("assistant")
 @ApiBearerAuth()
-@Controller("records/encounters/:encounterId/assistant/passes")
+@Controller("records/encounters/:encounterId/assistant")
 @UseGuards(JwtAuthGuard, CareRelationshipGuard)
 export class AssistantController {
   constructor(
@@ -24,7 +24,7 @@ export class AssistantController {
     private readonly auditService: AuditService
   ) {}
 
-  @Post()
+  @Post("passes")
   @ApiOperation({ summary: "Dispara un pase de 'El Segundo Lector' (Prompt 51)" })
   async requestPass(
     @Param("encounterId") encounterId: string,
@@ -48,11 +48,25 @@ export class AssistantController {
     return outcome;
   }
 
-  @Get()
+  @Get("passes")
   @ApiOperation({ summary: "Lecturas conservadas de este encuentro, más reciente primero" })
   async listReadings(@Param("encounterId") encounterId: string, @Req() req: ClinicalRequest) {
     await this.audit(req, "assistant.pass.list", encounterId);
     return this.orchestrator.listReadings(encounterId);
+  }
+
+  // "Resumen objetivo" — a petición explícita del usuario (2026-09-02):
+  // rápido, siempre disponible, en cualquier momento de la consulta.
+  // Sin persistencia (ver requestSummary), por eso no hay GET aquí.
+  @Post("summary")
+  @ApiOperation({ summary: "Resumen objetivo, rápido, de lo capturado hasta ahora" })
+  async requestSummary(@Param("encounterId") encounterId: string, @Req() req: ClinicalRequest) {
+    const controller = new AbortController();
+    req.on("close", () => controller.abort());
+
+    const outcome = await this.orchestrator.requestSummary(encounterId, controller.signal);
+    await this.audit(req, `assistant.summary.request.${outcome.kind}`, encounterId);
+    return outcome;
   }
 
   private async audit(req: ClinicalRequest, action: string, encounterId: string) {

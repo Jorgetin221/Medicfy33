@@ -28,6 +28,23 @@ export type AssistantModelOutcome =
   | { kind: "unavailable"; reason: "TIMEOUT" | "NOT_CONFIGURED" | "PROVIDER_ERROR" | "INVALID_OUTPUT" }
   | { kind: "cancelled" };
 
+// "Resumen objetivo" — llamada deliberadamente más pequeña que
+// generateReading(): mismo contexto ensamblado, pero SIN pase (no
+// está atado a una sección del SOAP — "en cualquier momento de la
+// consulta") y con una salida de un solo campo, para que "dure
+// menos" de verdad (petición explícita del usuario, 2026-09-02).
+export interface AssistantSummaryCallInput {
+  context: AssembledAssistantContext;
+  hashContexto: string;
+  signal: AbortSignal;
+}
+
+export type AssistantSummaryOutcome =
+  | { kind: "ok"; resumen: string }
+  | { kind: "unavailable"; reason: "TIMEOUT" | "NOT_CONFIGURED" | "PROVIDER_ERROR" | "INVALID_OUTPUT" }
+  | { kind: "cancelled" };
+
 export interface AssistantModelPort {
   generateReading(input: AssistantModelCallInput): Promise<AssistantModelOutcome>;
+  generateSummary(input: AssistantSummaryCallInput): Promise<AssistantSummaryOutcome>;
 }

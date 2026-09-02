@@ -76,6 +76,12 @@ class FakeAssistantModelPort implements AssistantModelPort {
     if (input.signal.aborted) return { kind: "cancelled" };
     return this.nextOutcome;
   }
+
+  // No usado por estas pruebas (cubierto en resumen-objetivo.integration.spec.ts)
+  // — presente solo para satisfacer la interfaz.
+  async generateSummary(): Promise<never> {
+    throw new Error("not used in this suite");
+  }
 }
 
 function uniqueEmail(prefix: string): string {

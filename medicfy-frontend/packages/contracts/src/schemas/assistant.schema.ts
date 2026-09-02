@@ -198,3 +198,15 @@ export const assistantModelOutputSchema = z
   .strict()
   .superRefine(checkSubstantiveInvariants);
 export type AssistantModelOutput = z.infer<typeof assistantModelOutputSchema>;
+
+// "Resumen objetivo" — feature separada de la lectura completa (con
+// diferenciales/banderas rojas/plan), a petición explícita del
+// usuario (2026-09-02): "un espacio estratégico donde en cualquier
+// momento de la consulta se pueda identificar" y "debe durar menos".
+// Un solo campo de texto — nunca diagnostica, nunca sugiere, solo
+// refleja objetivamente lo ya escrito. Deliberadamente SIN meta, SIN
+// persistencia: se regenera bajo demanda, siempre sobre el estado
+// actual de la nota — un resumen viejo no aporta nada una vez que la
+// nota cambió.
+export const assistantSummarySchema = z.object({ resumen: z.string() }).strict();
+export type AssistantSummary = z.infer<typeof assistantSummarySchema>;

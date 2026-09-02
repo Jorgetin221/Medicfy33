@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { AllergySummary } from "@/components/clinical/allergy-summary";
 import { AntecedentesSummary } from "@/components/clinical/antecedentes-editor";
+import { ResumenObjetivo } from "@/components/clinical/resumen-objetivo";
 import { LoadingState } from "@/components/ui/states";
 import type { ActiveDiagnosis, PatientAllergy, PatientMedication, PatientHistoryItem, PatientPregnancy, PatientTimeline } from "@/lib/use-patient-clinical";
 import { patientAgeYears, patientFullName, type AppointmentDetail } from "./types";
@@ -28,6 +29,8 @@ export function ConsultaSidebar({
   pregnancy,
   activeDiagnoses,
   isLoadingClinical,
+  encounterId,
+  accessToken,
 }: {
   patientId: string;
   patient: SidebarPatient;
@@ -38,6 +41,11 @@ export function ConsultaSidebar({
   pregnancy: PatientPregnancy | null;
   activeDiagnoses: ActiveDiagnosis[];
   isLoadingClinical: boolean;
+  // Resumen objetivo (petición explícita del usuario, 2026-09-02):
+  // opcionales porque ConsultaSidebar se re-usa también fuera de una
+  // consulta activa.
+  encounterId?: string;
+  accessToken?: string;
 }) {
   const activeMedications = medications.filter((m) => m.status === "ACTIVE");
   const lastThreeEncounters = (timeline?.encounters ?? []).filter((e) => e.status === "SIGNED").slice(0, 3);
@@ -62,6 +70,8 @@ export function ConsultaSidebar({
           {patient.medicfyId} · {patientAgeYears(patient.birthDate)} años · {patient.sexAtBirth === "F" ? "Mujer" : "Hombre"}
         </p>
       </div>
+
+      {encounterId && accessToken ? <ResumenObjetivo encounterId={encounterId} accessToken={accessToken} /> : null}
 
       {isLoadingClinical ? (
         <LoadingState label="Cargando contexto clínico…" />

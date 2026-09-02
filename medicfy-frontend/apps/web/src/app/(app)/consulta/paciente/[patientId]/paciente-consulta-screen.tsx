@@ -142,6 +142,8 @@ export function PacienteConsultaScreen({ patientId, accessToken }: { patientId: 
         pregnancy={pregnancy}
         activeDiagnoses={activeDiagnoses}
         isLoadingClinical={isLoadingClinical}
+        encounterId={encounter.id}
+        accessToken={accessToken}
       />
       {phase === "readonly" ? (
         <ConsultaReadonly encounter={encounter} patientId={patientId} historyItems={historyItems} />
@@ -156,7 +158,13 @@ export function PacienteConsultaScreen({ patientId, accessToken }: { patientId: 
           onAbandoned={() => setPhase("abandoned")}
         />
       )}
-      <ConsultaZona3 doctorKey={tokenSubject(accessToken)} patientId={patientId} accessToken={accessToken} birthDate={patient.birthDate} />
+      <ConsultaZona3
+        doctorKey={tokenSubject(accessToken)}
+        patientId={patientId}
+        accessToken={accessToken}
+        birthDate={patient.birthDate}
+        encounterId={encounter.id}
+      />
     </main>
   );
 }

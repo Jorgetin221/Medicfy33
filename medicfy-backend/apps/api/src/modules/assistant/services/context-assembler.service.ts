@@ -4,6 +4,7 @@ import { calculateAge } from "@medicfy/contracts";
 import { PrismaService } from "../../../prisma/prisma.service";
 import { PatientClinicalService } from "../../records/services/patient-clinical.service";
 import { LabResultAnalyteService } from "../../labs/services/lab-result-analyte.service";
+import { LabReferenceRangeService } from "../../labs/services/lab-reference-range.service";
 import { omitUndefined } from "../../../common/omit-undefined";
 import type {
   AssembledAssistantContext,
@@ -38,7 +39,8 @@ export class ContextAssemblerService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly patientClinical: PatientClinicalService,
-    private readonly labResultAnalytes: LabResultAnalyteService
+    private readonly labResultAnalytes: LabResultAnalyteService,
+    private readonly labReferenceRanges: LabReferenceRangeService
   ) {}
 
   // Arma el contexto completo de un pase y su hash. El endpoint que lo
@@ -149,7 +151,10 @@ export class ContextAssemblerService {
   }
 
   private async buildLaboratorioBlock(patientId: string): Promise<AssistantLabBlock[]> {
-    const analytes = await this.labResultAnalytes.listForPatient(patientId);
+    const [analytes, patient] = await Promise.all([
+      this.labResultAnalytes.listForPatient(patientId),
+      this.prisma.patient.findUniqueOrThrow({ where: { id: patientId }, select: { birthDate: true, sexAtBirth: true } }),
+    ]);
     // "últimos analitos": un valor por analito (el más reciente), no
     // el historial completo — mismo criterio de "agrupar y quedarse
     // con lo último" que activeDiagnoses ya usa arriba.
@@ -157,16 +162,30 @@ export class ContextAssemblerService {
     for (const analyte of analytes) {
       latestByAnalyte.set(analyte.analyteName, analyte);
     }
-    return [...latestByAnalyte.values()]
-      .sort((a, b) => b.measuredAt.getTime() - a.measuredAt.getTime())
-      .map((analyte) => ({
-        analito: analyte.analyteName,
-        valor: analyte.value.toString(),
-        unidad: analyte.unit,
-        rangoMin: analyte.referenceMin?.toString() ?? null,
-        rangoMax: analyte.referenceMax?.toString() ?? null,
-        fecha: analyte.measuredAt.toISOString(),
-      }));
+    const sex = patient.sexAtBirth === "F" ? "F" : "M";
+    return Promise.all(
+      [...latestByAnalyte.values()]
+        .sort((a, b) => b.measuredAt.getTime() - a.measuredAt.getTime())
+        .map(async (analyte) => {
+          const ageYears = (analyte.measuredAt.getTime() - patient.birthDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
+          const printedRange =
+            analyte.referenceMin !== null && analyte.referenceMax !== null
+              ? { min: Number(analyte.referenceMin), max: Number(analyte.referenceMax) }
+              : null;
+          // Capa 2 (M10-RN-008), NUNCA el modelo — el bloque de
+          // contexto solo lleva el estado ya decidido por el servidor.
+          const evaluation = await this.labReferenceRanges.evaluateForAnalyte(analyte.analyteName, Number(analyte.value), sex, ageYears, printedRange);
+          return {
+            analito: analyte.analyteName,
+            valor: analyte.value.toString(),
+            unidad: analyte.unit,
+            rangoMin: analyte.referenceMin?.toString() ?? null,
+            rangoMax: analyte.referenceMax?.toString() ?? null,
+            fecha: analyte.measuredAt.toISOString(),
+            estado: evaluation.status,
+          };
+        })
+    );
   }
 
   private async buildTrayectoriaBlock(patientId: string): Promise<AssistantTrajectoryNoteBlock[]> {

@@ -1,11 +1,13 @@
 import { Injectable, Logger } from "@nestjs/common";
 import Anthropic from "@anthropic-ai/sdk";
 import { zodToJsonSchema } from "zod-to-json-schema";
-import { assistantModelOutputSchema, type AssistantModelOutput, type AssistantPass } from "@medicfy/contracts";
+import { assistantModelOutputSchema, assistantSummarySchema, type AssistantModelOutput, type AssistantPass } from "@medicfy/contracts";
 import type {
   AssistantModelCallInput,
   AssistantModelOutcome,
   AssistantModelPort,
+  AssistantSummaryCallInput,
+  AssistantSummaryOutcome,
 } from "./assistant-model.port";
 
 // Fase 8 · Prompt 51 — adaptador real contra la API de Claude. Puerto/
@@ -106,6 +108,7 @@ function buildSystemPrompt(pase: AssistantPass): string {
     "- Cada entrada de `fuentes` lleva su propio id (\"f1\", \"f2\"...) y un afirmacion_id que DEBE ser el id de un elemento que ya emitiste en esta misma respuesta (un hallazgo_clave, una bandera_roja, un diferencial, una pregunta/maniobra pendiente, un estudio sugerido o una intervención de plan_sugerido) — nunca un id inventado ni el nombre del campo. Si no hay ningún elemento al que asociar una fuente, no emitas esa fuente.",
     "- plan_sugerido describe la intervención a nivel conceptual (qué hacer y por qué), NUNCA con una dosis, vía o duración numérica específica — la verificación de dosis contra catálogo licenciado todavía no existe en este sistema, así que una dosis exacta tuya no se puede verificar antes de llegar al médico.",
     "- Cuando el contexto incluya medicación vigente o alergias del paciente, razona explícitamente sobre interacciones, contraindicaciones o riesgos relevantes de comorbilidades en hallazgos_clave o banderas_rojas — no lo omitas por brevedad.",
+    "- Cada analito de laboratorio ya trae su `estado` (normal/low/high/critical) decidido por el servidor contra el rango de referencia correcto — nunca lo recalcules ni lo contradigas comparando el valor tú mismo; correlaciona e interpreta sobre ese estado ya dado.",
     "- confianza_global y por_que_esa_confianza son tu propia autoevaluación honesta, no una formalidad.",
     `- ${PASS_INSTRUCTIONS[pase]}`,
     "Respondes ÚNICAMENTE llamando a la herramienta emitir_lectura_clinica — nunca con texto.",
@@ -125,6 +128,51 @@ function buildUserMessage(input: AssistantModelCallInput): string {
 function validateModelOutput(rawInput: unknown): AssistantModelOutput | null {
   const parsed = assistantModelOutputSchema.safeParse(rawInput);
   return parsed.success ? parsed.data : null;
+}
+
+// "Resumen objetivo" — a petición explícita del usuario (2026-09-02):
+// "un espacio estratégico donde en cualquier momento de la consulta
+// se pueda identificar" y "debe durar menos". Deliberadamente una
+// llamada aparte y mucho más pequeña que generateReading(): un solo
+// campo de salida, max_tokens bajo, sin pase — nunca sustituye a la
+// lectura completa (diferenciales/banderas rojas siguen viviendo solo
+// ahí, en la pestaña Asistente), solo refleja objetivamente lo ya
+// escrito, rápido.
+const SUMMARY_TOOL_NAME = "emitir_resumen_objetivo";
+const SUMMARY_MAX_OUTPUT_TOKENS = 500;
+
+const untypedZodToJsonSchemaForSummary = zodToJsonSchema as (schema: unknown, options: unknown) => Record<string, unknown>;
+
+function buildSummaryInputSchema(): Anthropic.Tool.InputSchema {
+  const { $schema: _omit, ...schema } = untypedZodToJsonSchemaForSummary(assistantSummarySchema, {
+    $refStrategy: "none",
+    target: "jsonSchema7",
+  });
+  return schema as Anthropic.Tool.InputSchema;
+}
+
+const SUMMARY_TOOL: Anthropic.Tool = {
+  name: SUMMARY_TOOL_NAME,
+  description: "Emite el resumen objetivo de la consulta. Es la ÚNICA forma de responder.",
+  input_schema: buildSummaryInputSchema(),
+};
+
+const SUMMARY_SYSTEM_PROMPT = [
+  "Eres el 'Resumen objetivo' de Medicfy: un espejo de lo que el médico ya escribió en esta consulta, NUNCA un diagnóstico ni una sugerencia.",
+  "Resume en 3 a 5 líneas, en tono formal y neutral, exactamente lo que está capturado hasta ahora (motivo de consulta, padecimiento actual, exploración física, análisis y plan — los que existan).",
+  "No agregues interpretación clínica, no sugieras diferenciales, no falta_por_preguntar, no señales lo que falta — eso vive en la lectura completa de la pestaña Asistente, esto es solo un espejo objetivo de lo ya escrito.",
+  "Si el contexto no tiene nada capturado todavía en la nota actual, dilo en una sola línea breve.",
+  "Respondes ÚNICAMENTE llamando a la herramienta emitir_resumen_objetivo — nunca con texto.",
+].join("\n");
+
+function buildSummaryUserMessage(input: AssistantSummaryCallInput): string {
+  return [
+    `Contexto de la consulta (paciente ya seudonimizado por el servidor; hash_contexto=${input.hashContexto}):`,
+    "```json",
+    JSON.stringify(input.context, null, 2),
+    "```",
+    "Emite el resumen objetivo llamando a la herramienta.",
+  ].join("\n");
 }
 
 @Injectable()
@@ -258,5 +306,40 @@ export class ClaudeModelAdapter implements AssistantModelPort {
     }
 
     return { kind: "unavailable", reason: "INVALID_OUTPUT" };
+  }
+
+  async generateSummary(input: AssistantSummaryCallInput): Promise<AssistantSummaryOutcome> {
+    const client = this.getClient();
+    if (!client) return { kind: "unavailable", reason: "NOT_CONFIGURED" };
+
+    const modelId = process.env.ASSISTANT_MODEL_ID ?? DEFAULT_MODEL_ID;
+    let message: Anthropic.Message;
+    try {
+      message = await client.messages.create(
+        {
+          model: modelId,
+          max_tokens: SUMMARY_MAX_OUTPUT_TOKENS,
+          system: SUMMARY_SYSTEM_PROMPT,
+          messages: [{ role: "user", content: buildSummaryUserMessage(input) }],
+          tools: [SUMMARY_TOOL],
+          tool_choice: { type: "tool", name: SUMMARY_TOOL_NAME, disable_parallel_tool_use: true },
+        },
+        { signal: input.signal }
+      );
+    } catch (error) {
+      if (error instanceof Anthropic.APIUserAbortError) return { kind: "cancelled" };
+      this.logger.error(`Claude summary call failed: ${(error as Error).message}`);
+      return { kind: "unavailable", reason: "PROVIDER_ERROR" };
+    }
+
+    const toolUse = message.content.find(
+      (block): block is Anthropic.ToolUseBlock => block.type === "tool_use" && block.name === SUMMARY_TOOL_NAME
+    );
+    const parsed = toolUse ? assistantSummarySchema.safeParse(toolUse.input) : null;
+    if (!parsed?.success) {
+      this.logger.warn(`Summary output failed validation (stop_reason=${message.stop_reason}, output_tokens=${message.usage.output_tokens})`);
+      return { kind: "unavailable", reason: "INVALID_OUTPUT" };
+    }
+    return { kind: "ok", resumen: parsed.data.resumen };
   }
 }
