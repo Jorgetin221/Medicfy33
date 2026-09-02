@@ -16,6 +16,8 @@ import { VerificationCodeService } from "./verification-code.service";
 import { CryptoService } from "./crypto.service";
 import { NOTIFICATION_PORT, type NotificationPort } from "./notification.port";
 import { CURRENT_PRIVACY_NOTICE_VERSION } from "../legal-document-versions";
+import { generateDoctorSlug } from "../../../common/slug.util";
+import { nextMedicfyId } from "../../../common/medicfy-id.util";
 
 // M1-RN-005: PATIENT is the only role that never requires MFA.
 const MFA_REQUIRED_ROLES: readonly RoleName[] = ["DOCTOR", "ASSISTANT", "LAB", "SUPPORT", "ADMIN", "SUPERADMIN"];
@@ -64,6 +66,10 @@ export class AuthService {
   async registerPatient(input: RegisterPatientInput, meta: RequestMeta): Promise<{ userId: string }> {
     await this.assertEmailAvailable(input.email);
     const passwordHash = await this.passwordService.hash(input.password);
+    // Secuencia de Postgres, no transaccional por diseño (ver
+    // medicfy-id.util.ts) — se pide antes de abrir la transacción,
+    // igual que PatientService.createByDoctor.
+    const medicfyId = await nextMedicfyId(this.prisma);
 
     const user = await this.prisma.$transaction(async (tx) => {
       const created = await tx.user.create({
@@ -75,6 +81,26 @@ export class AuthService {
         },
       });
       await tx.userRole.create({ data: { userId: created.id, role: "PATIENT" } });
+      // M5-RN-009: antes de v2.3 esta operación solo creaba el `user`
+      // — la fila `patients` quedaba pendiente para siempre, así que
+      // "For My Patients" y el agendamiento público no tenían dueño
+      // real. Misma forma que PatientService.createByDoctor, pero
+      // source=SELF_SIGNUP y sin tutor (registerPatientSchema exige
+      // mayoría de edad).
+      await tx.patient.create({
+        data: {
+          userId: created.id,
+          medicfyId,
+          firstName: input.firstName,
+          lastNamePaternal: input.lastNamePaternal,
+          lastNameMaternal: input.lastNameMaternal ?? null,
+          birthDate: new Date(`${input.birthDate}T00:00:00Z`),
+          sexAtBirth: input.sexAtBirth,
+          phoneE164: input.phone,
+          email: input.email,
+          source: "SELF_SIGNUP",
+        },
+      });
       return created;
     });
 
@@ -168,6 +194,9 @@ export class AuthService {
           professionalLicense: input.professionalLicense,
           primarySpecialtyId: specialty.id,
           verificationStatus: "SUBMITTED",
+          // M5-RN-007: el slug del enlace público se fija una sola vez
+          // aquí, a partir del nombre legal — nunca editable después.
+          slug: generateDoctorSlug(input.legalFirstName, input.legalLastName),
         },
       });
       return created;

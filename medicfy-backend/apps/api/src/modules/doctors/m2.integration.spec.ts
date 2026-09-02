@@ -617,4 +617,128 @@ describe("M2 — Perfil médico y verificación", () => {
       expect(patch.body.error.code).toBe("VALIDATION_ERROR");
     });
   });
+
+  // M5-RN-007: "/dr/{slug}" — sin guard, resuelve por slug, nunca precio.
+  describe("M5-RN-007 — perfil público por slug", () => {
+    it("GET /doctors/:slug/public resolves the doctor with no Authorization header, and never carries a price field", async () => {
+      const { userId, accessToken } = await registerAndVerifyDoctor();
+      const doctor = await prisma.doctor.findUniqueOrThrow({ where: { userId } });
+      await request(app.getHttpServer())
+        .patch("/doctors/me")
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({ displayName: "Dra. Ana García", acceptsTeleconsultation: true });
+
+      const res = await request(app.getHttpServer()).get(`/doctors/${doctor.slug}/public`);
+      expect(res.status).toBe(200);
+      expect(res.body.slug).toBe(doctor.slug);
+      expect(res.body.displayName).toBe("Dra. Ana García");
+      expect(res.body.isBookable).toBe(true);
+      expect(JSON.stringify(res.body)).not.toMatch(/price/i);
+    });
+
+    it("GET /doctors/:slug/public/services lists only active services, with no price field", async () => {
+      const { userId, accessToken } = await registerAndVerifyDoctor();
+      const doctor = await prisma.doctor.findUniqueOrThrow({ where: { userId } });
+
+      const active = await request(app.getHttpServer())
+        .post("/doctors/me/services")
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({ serviceType: "FIRST_VISIT", name: "Consulta activa", durationMinutes: 30, priceMxn: 500 });
+      expect(active.status).toBe(201);
+      const inactive = await request(app.getHttpServer())
+        .post("/doctors/me/services")
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({ serviceType: "FOLLOW_UP", name: "Consulta inactiva", durationMinutes: 20, priceMxn: 300, isActive: false });
+      expect(inactive.status).toBe(201);
+
+      const res = await request(app.getHttpServer()).get(`/doctors/${doctor.slug}/public/services`);
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(1);
+      expect(res.body[0].id).toBe(active.body.id);
+      expect(JSON.stringify(res.body)).not.toMatch(/price/i);
+    });
+
+    it("returns 404 for an unknown slug on both public endpoints", async () => {
+      const profileRes = await request(app.getHttpServer()).get("/doctors/no-existe-este-slug/public");
+      expect(profileRes.status).toBe(404);
+      const servicesRes = await request(app.getHttpServer()).get("/doctors/no-existe-este-slug/public/services");
+      expect(servicesRes.status).toBe(404);
+    });
+
+    // M2-CA-006: sin ubicación activa ni teleconsulta, no puede recibir citas.
+    it("reports isBookable:false when the doctor has no active location and no teleconsultation", async () => {
+      const { userId } = await registerAndVerifyDoctor();
+      const doctor = await prisma.doctor.findUniqueOrThrow({ where: { userId } });
+
+      const res = await request(app.getHttpServer()).get(`/doctors/${doctor.slug}/public`);
+      expect(res.status).toBe(200);
+      expect(res.body.isBookable).toBe(false);
+      expect(res.body.practiceLocations).toEqual([]);
+    });
+
+    it("excludes an inactive practice location from the public view's practiceLocations", async () => {
+      const { userId, accessToken } = await registerAndVerifyDoctor();
+      const doctor = await prisma.doctor.findUniqueOrThrow({ where: { userId } });
+
+      const location = await request(app.getHttpServer())
+        .post("/doctors/me/locations")
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({ name: "Consultorio Centro" });
+      expect(location.status).toBe(201);
+      await request(app.getHttpServer())
+        .patch(`/doctors/me/locations/${location.body.id}`)
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({ isActive: false });
+
+      const res = await request(app.getHttpServer()).get(`/doctors/${doctor.slug}/public`);
+      expect(res.status).toBe(200);
+      expect(res.body.isBookable).toBe(false);
+      expect(res.body.practiceLocations).toEqual([]);
+    });
+
+    // M2-CA-008, mitad diferida hasta ahora: la cédula de especialidad
+    // vencida degrada el sello aunque verificationStatus siga VERIFIED.
+    it("degrades the verified badge to false once specialtyLicenseExpiresAt is in the past, even though verificationStatus stays VERIFIED", async () => {
+      const { userId, accessToken } = await registerAndVerifyDoctor();
+      const admin = await createAdmin();
+      const doctor = await prisma.doctor.findUniqueOrThrow({ where: { userId } });
+
+      await request(app.getHttpServer())
+        .patch("/doctors/me")
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({ specialtyLicense: "ESP-12345" });
+
+      const verifyRes = await request(app.getHttpServer())
+        .post(`/admin/doctors/${doctor.id}/verify`)
+        .set("Authorization", `Bearer ${admin.accessToken}`)
+        .send({ specialtyLicenseExpiresAt: "2020-01-01" });
+      expect(verifyRes.status).toBe(200);
+      expect(verifyRes.body.verificationStatus).toBe("VERIFIED");
+
+      const res = await request(app.getHttpServer()).get(`/doctors/${doctor.slug}/public`);
+      expect(res.status).toBe(200);
+      expect(res.body.verified).toBe(false);
+    });
+
+    it("keeps the verified badge true when specialtyLicenseExpiresAt is in the future", async () => {
+      const { userId, accessToken } = await registerAndVerifyDoctor();
+      const admin = await createAdmin();
+      const doctor = await prisma.doctor.findUniqueOrThrow({ where: { userId } });
+
+      await request(app.getHttpServer())
+        .patch("/doctors/me")
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({ specialtyLicense: "ESP-12345" });
+
+      const verifyRes = await request(app.getHttpServer())
+        .post(`/admin/doctors/${doctor.id}/verify`)
+        .set("Authorization", `Bearer ${admin.accessToken}`)
+        .send({ specialtyLicenseExpiresAt: "2099-01-01" });
+      expect(verifyRes.status).toBe(200);
+
+      const res = await request(app.getHttpServer()).get(`/doctors/${doctor.slug}/public`);
+      expect(res.status).toBe(200);
+      expect(res.body.verified).toBe(true);
+    });
+  });
 });

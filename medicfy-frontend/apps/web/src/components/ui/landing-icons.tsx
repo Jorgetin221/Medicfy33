@@ -74,3 +74,17 @@ export function IconClipboardList(props: IconProps) {
     </svg>
   );
 }
+
+// v2.4 (M3): un solo ícono, reutilizado en cada tarjeta de
+// especialidad — consistente a propósito, no finge una ilustración
+// distinta por especialidad que no existe.
+export function IconStethoscope(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M6 3.5v6a4 4 0 0 0 8 0v-6" />
+      <path d="M6 3.5H4.5M14 3.5h1.5" />
+      <path d="M10 13.5v3a5 5 0 0 0 10 0v-1.2" />
+      <circle cx="20.5" cy="14.3" r="1.7" />
+    </svg>
+  );
+}

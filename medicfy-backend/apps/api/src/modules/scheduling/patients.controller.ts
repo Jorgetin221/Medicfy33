@@ -1,13 +1,16 @@
-import { Body, Controller, Get, Param, Post, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpStatus, Param, Post, Req, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import type { Request } from "express";
 import { patientCreateSchema, type PatientCreateInput } from "@medicfy/contracts";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
+import { ApiException } from "../../common/api-exception";
 import { JwtAuthGuard } from "../identity/guards/jwt-auth.guard";
 import type { AuthenticatedRequest } from "../identity/guards/jwt-auth.guard";
 import { SchedulingAuthService } from "./services/scheduling-auth.service";
 import { PatientService } from "./services/patient.service";
 import { PatientGuardianService } from "./services/patient-guardian.service";
+import { AppointmentStateMachineService } from "./services/appointment-state-machine.service";
+import { CareRelationshipService } from "./services/care-relationship.service";
 import { AuditService } from "../identity/services/audit.service";
 import { getRequestMeta } from "../identity/request-meta";
 
@@ -24,7 +27,9 @@ export class PatientsController {
     private readonly schedulingAuth: SchedulingAuthService,
     private readonly patientService: PatientService,
     private readonly guardianService: PatientGuardianService,
-    private readonly auditService: AuditService
+    private readonly auditService: AuditService,
+    private readonly appointments: AppointmentStateMachineService,
+    private readonly careRelationships: CareRelationshipService
   ) {}
 
   @Get()
@@ -40,6 +45,68 @@ export class PatientsController {
     const { user } = req as AuthenticatedRequest;
     const doctor = await this.schedulingAuth.resolveActingDoctor(user.sub);
     return this.patientService.createByDoctor(doctor.id, user.sub, body);
+  }
+
+  // M5-RN-009 (v2.3). Declarado ANTES de :patientId a propósito — dos
+  // rutas de dos segmentos bajo el mismo prefijo ("patients/me" vs
+  // "patients/:patientId") solo se resuelven sin ambigüedad por orden
+  // de declaración dentro del mismo controller.
+  @Get("me")
+  @ApiOperation({ summary: "M5-RN-009: la fila patients del propio usuario autenticado (portal de paciente)" })
+  async getOwnProfile(@Req() req: Request) {
+    const { user } = req as AuthenticatedRequest;
+    const patient = await this.patientService.findByUserId(user.sub);
+    if (!patient) {
+      throw new ApiException(
+        "PATIENT_PROFILE_NOT_FOUND",
+        "Todavía no tienes un expediente de paciente propio.",
+        HttpStatus.NOT_FOUND
+      );
+    }
+    return patient;
+  }
+
+  // M5-RN-009 (v2.3) — mismo motivo de orden que getOwnProfile arriba:
+  // declarado antes de :patientId.
+  @Get("me/appointments")
+  @ApiOperation({ summary: "M5-RN-009: todas las citas del propio paciente autenticado, con cada médico" })
+  async getOwnAppointments(@Req() req: Request) {
+    const { user } = req as AuthenticatedRequest;
+    const patient = await this.patientService.findByUserId(user.sub);
+    if (!patient) {
+      throw new ApiException(
+        "PATIENT_PROFILE_NOT_FOUND",
+        "Todavía no tienes un expediente de paciente propio.",
+        HttpStatus.NOT_FOUND
+      );
+    }
+    return this.appointments.listForPatient(patient.id);
+  }
+
+  // M3-RN-007 (v2.4): "Tus médicos" del home de descubrimiento — nunca
+  // el Doctor crudo (traería subscriptionPlan, verificationNotes,
+  // cancellationPolicy...), solo lo que un visitante público ya vería.
+  @Get("me/doctors")
+  @ApiOperation({ summary: "M3-RN-007: médicos con care_relationship activo con el paciente autenticado" })
+  async getOwnDoctors(@Req() req: Request) {
+    const { user } = req as AuthenticatedRequest;
+    const patient = await this.patientService.findByUserId(user.sub);
+    if (!patient) {
+      throw new ApiException(
+        "PATIENT_PROFILE_NOT_FOUND",
+        "Todavía no tienes un expediente de paciente propio.",
+        HttpStatus.NOT_FOUND
+      );
+    }
+    const doctors = await this.careRelationships.listActiveDoctorsForPatient(patient.id);
+    return doctors.map((d) => ({
+      id: d.id,
+      slug: d.slug,
+      displayName: d.displayName,
+      photoUrl: d.photoUrl,
+      primarySpecialtyName: d.primarySpecialty?.nameEs ?? "Medicina General",
+      verified: d.verificationStatus === "VERIFIED",
+    }));
   }
 
   // No en la lista explícita de endpoints de M5a, pero es la mitad

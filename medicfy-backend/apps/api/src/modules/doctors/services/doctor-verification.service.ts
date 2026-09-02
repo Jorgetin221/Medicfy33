@@ -2,6 +2,7 @@ import { HttpStatus, Inject, Injectable } from "@nestjs/common";
 import type { Doctor, DoctorVerificationStatus } from "@prisma/client";
 import { PrismaService } from "../../../prisma/prisma.service";
 import { ApiException } from "../../../common/api-exception";
+import { omitUndefined } from "../../../common/omit-undefined";
 import { AuditService } from "../../identity/services/audit.service";
 import type { RequestMeta } from "../../identity/services/auth.service";
 import { DOCTOR_SUSPENSION_EFFECTS, type DoctorSuspensionEffects } from "./doctor-suspension-effects.port";
@@ -41,7 +42,13 @@ export class DoctorVerificationService {
   // VERIFIED_SPECIALTY_UNCONFIRMED en vez de VERIFIED — la cédula
   // profesional ya se verificó, el certificado de especialidad no.
   // Omitir el parámetro conserva el comportamiento previo (VERIFIED).
-  async verify(doctorId: string, adminUserId: string, meta: RequestMeta, specialtyConfirmed?: boolean): Promise<Doctor> {
+  async verify(
+    doctorId: string,
+    adminUserId: string,
+    meta: RequestMeta,
+    specialtyConfirmed?: boolean,
+    specialtyLicenseExpiresAt?: string
+  ): Promise<Doctor> {
     const existing = await this.prisma.doctor.findUnique({
       where: { id: doctorId },
       include: { primarySpecialty: true },
@@ -56,7 +63,18 @@ export class DoctorVerificationService {
 
     const doctor = await this.prisma.doctor.update({
       where: { id: doctorId },
-      data: { verificationStatus: status, verifiedByUserId: adminUserId, verifiedAt: new Date(), verificationNotes: null },
+      data: omitUndefined({
+        verificationStatus: status,
+        verifiedByUserId: adminUserId,
+        verifiedAt: new Date(),
+        verificationNotes: null,
+        // M2-RN-006: el admin confirma/corrige la fecha leída del
+        // documento; el valor que el médico capturó antes de revisar
+        // era solo un borrador.
+        specialtyLicenseExpiresAt: specialtyLicenseExpiresAt
+          ? new Date(`${specialtyLicenseExpiresAt}T00:00:00Z`)
+          : undefined,
+      }),
     });
     await this.auditService.log({
       actorUserId: adminUserId,
@@ -67,7 +85,7 @@ export class DoctorVerificationService {
       result: "SUCCESS",
       ipAddress: meta.ip,
       userAgent: meta.userAgent,
-      metadata: { specialtyConfirmed, status },
+      metadata: { specialtyConfirmed, status, specialtyLicenseExpiresAt },
     });
     return doctor;
   }

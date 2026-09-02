@@ -14,10 +14,13 @@ import { AvailabilityRulesController } from "./availability-rules.controller";
 import { AvailabilityExceptionsController } from "./availability-exceptions.controller";
 import { PatientsController } from "./patients.controller";
 import { AppointmentsController } from "./appointments.controller";
+import { PublicBookingController } from "./public-booking.controller";
 
-// M4 — AGENDA Y DISPONIBILIDAD, M5a — PACIENTES Y CITAS (núcleo).
-// M5b (notificaciones, pantallas públicas de agendamiento, resto de
-// M12) queda para otra sesión — ver docs/CRITERIOS_DIFERIDOS.md.
+// M4 — AGENDA Y DISPONIBILIDAD, M5a — PACIENTES Y CITAS (núcleo),
+// M5-RN-009 a 012 (v2.3) — agendamiento público real del paciente
+// (PublicBookingController) y su listado propio (PatientsController
+// /patients/me/appointments). Notificaciones (M12) siguen sin
+// construir.
 @Module({
   // forwardRef: DoctorsModule ahora importa SchedulingModule también
   // (AppointmentCancellationSuspensionAdapter, M2-RN-005) — ver el
@@ -29,6 +32,7 @@ import { AppointmentsController } from "./appointments.controller";
     AvailabilityExceptionsController,
     PatientsController,
     AppointmentsController,
+    PublicBookingController,
   ],
   providers: [
     SchedulingAuthService,

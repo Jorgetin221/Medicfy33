@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -9,6 +10,7 @@ import QRCode from "qrcode";
 import {
   practiceLocationSchema,
   doctorProfileUpdateSchema,
+  doctorLegalFieldsUpdateSchema,
   assistantInviteSchema,
   containsContactInfo,
   type PracticeLocationInput,
@@ -99,20 +101,80 @@ function PerfilContent({ accessToken }: { accessToken: string }) {
 
   return (
     <main className="mx-auto flex max-w-3xl flex-col gap-8 p-6">
-      <div>
-        <h1 className="font-heading text-2xl text-brand-900">Mi perfil</h1>
-        <p className="text-base text-gray-500">Así se identifica tu consultorio en cada documento que emitas.</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="font-heading text-2xl text-brand-900">Mi perfil</h1>
+          <p className="text-base text-gray-500">Así se identifica tu consultorio en cada documento que emitas.</p>
+        </div>
+        {/* M5-RN-007: el slug se genera al registrarse — siempre existe. */}
+        <Link href={`/dr/${doctor.slug}`} className="mt-1 shrink-0 text-sm font-medium text-brand-700 underline">
+          Ver mi perfil público
+        </Link>
       </div>
 
+      <HeroSection doctor={doctor} specialtyName={specialtyName} />
       <VerificationSection doctor={doctor} accessToken={accessToken} />
       <MfaSection accessToken={accessToken} />
       <LockedFieldsSection doctor={doctor} specialtyName={specialtyName} />
+      <SpecialtyLicenseSection doctor={doctor} accessToken={accessToken} onSaved={reload} />
       <ProfessionalInfoSection doctor={doctor} accessToken={accessToken} onSaved={reload} />
       <LocationsSection accessToken={accessToken} locations={locations} error={locationsError} onReload={loadLocations} />
       <ContactSection doctor={doctor} accessToken={accessToken} onSaved={reload} />
       <BrandingSection doctor={doctor} accessToken={accessToken} onSaved={reload} specialtyName={specialtyName} primaryLocation={primaryLocation} />
       <AssistantsSection accessToken={accessToken} />
     </main>
+  );
+}
+
+// Parte C del plan aprobado: cabecera con los mismos datos reales que
+// ya vive el resto de la pantalla (nada nuevo se inventa) — solo se
+// presentan primero, como en la página pública, para que el médico
+// vea de un vistazo cómo se ve su perfil.
+function HeroSection({ doctor, specialtyName }: { doctor: DoctorProfile; specialtyName: string | null }) {
+  return (
+    <Card>
+      <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:items-start sm:text-left">
+        {doctor.photoUrl ? (
+          <img src={doctor.photoUrl} alt="" className="h-24 w-24 shrink-0 rounded-full object-cover" />
+        ) : (
+          <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-full bg-gray-100 text-2xl text-gray-400" aria-hidden="true">
+            {doctor.legalFirstName.charAt(0).toUpperCase()}
+          </div>
+        )}
+        <div className="flex-1">
+          <h2 className="font-heading text-xl text-brand-900">
+            {doctor.displayName ?? `${doctor.legalFirstName} ${doctor.legalLastName}`}
+          </h2>
+          <p className="mt-1 text-base text-gray-700">{specialtyName ?? "Medicina General"}</p>
+          {doctor.verificationStatus === "VERIFIED" ? (
+            <span className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-success-600 bg-success-50 px-3 py-1 text-sm font-medium text-success-600">
+              ✓ Médico verificado
+            </span>
+          ) : null}
+          <dl className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm text-gray-700">
+            {doctor.university ? (
+              <div>
+                <dt className="inline text-gray-500">Universidad: </dt>
+                <dd className="inline">{doctor.university}</dd>
+              </div>
+            ) : null}
+            {doctor.yearsExperience !== null ? (
+              <div>
+                <dt className="inline text-gray-500">Experiencia: </dt>
+                <dd className="inline">{doctor.yearsExperience} años</dd>
+              </div>
+            ) : null}
+            {doctor.languages.length > 0 ? (
+              <div>
+                <dt className="inline text-gray-500">Idiomas: </dt>
+                <dd className="inline">{doctor.languages.join(", ")}</dd>
+              </div>
+            ) : null}
+            {doctor.acceptsTeleconsultation ? <div>Ofrece teleconsulta</div> : null}
+          </dl>
+        </div>
+      </div>
+    </Card>
   );
 }
 
@@ -381,6 +443,134 @@ function LockedFieldsSection({ doctor, specialtyName }: { doctor: DoctorProfile;
       <p className="mt-4 text-sm text-gray-500">
         Estos campos no se pueden modificar una vez verificada la cuenta. Contacta a soporte.
       </p>
+    </Card>
+  );
+}
+
+// M2-RN-006: mismo estatus de inmutabilidad que legalFirstName/
+// legalLastName/professionalLicense (LockedFieldsSection, arriba) —
+// editable solo en DRAFT/SUBMITTED/REJECTED, revierte a DRAFT al
+// guardar en SUBMITTED/REJECTED (updateLegalFields, backend). Va por
+// PATCH /doctors/me igual que las demás secciones: el controller
+// enruta specialtyLicense/specialtyLicenseExpiresAt al camino legal
+// por nombre de campo, sin importar qué formulario los mande.
+const LEGAL_FIELD_EDITABLE_STATUSES: DoctorVerificationStatus[] = ["DRAFT", "SUBMITTED", "REJECTED"];
+
+const specialtyLicenseFormSchema = z.object({
+  specialtyLicense: z.string().trim(),
+  specialtyLicenseExpiresAt: z.string().trim(),
+});
+type SpecialtyLicenseFormValues = z.infer<typeof specialtyLicenseFormSchema>;
+
+function SpecialtyLicenseSection({
+  doctor,
+  accessToken,
+  onSaved,
+}: {
+  doctor: DoctorProfile;
+  accessToken: string;
+  onSaved: () => void;
+}) {
+  const editable = LEGAL_FIELD_EDITABLE_STATUSES.includes(doctor.verificationStatus);
+  const [error, setError] = useState<unknown>(null);
+  const [saved, setSaved] = useState(false);
+  const form = useForm<SpecialtyLicenseFormValues>({
+    resolver: zodResolver(specialtyLicenseFormSchema),
+    defaultValues: {
+      specialtyLicense: doctor.specialtyLicense ?? "",
+      specialtyLicenseExpiresAt: doctor.specialtyLicenseExpiresAt ? doctor.specialtyLicenseExpiresAt.slice(0, 10) : "",
+    },
+  });
+
+  async function onSubmit(values: SpecialtyLicenseFormValues) {
+    setError(null);
+    setSaved(false);
+    const payload = {
+      specialtyLicense: values.specialtyLicense || undefined,
+      specialtyLicenseExpiresAt: values.specialtyLicenseExpiresAt || undefined,
+    };
+    const parsed = doctorLegalFieldsUpdateSchema
+      .pick({ specialtyLicense: true, specialtyLicenseExpiresAt: true })
+      .safeParse(payload);
+    if (!parsed.success) {
+      setError(parsed.error);
+      return;
+    }
+    try {
+      await apiFetch("/doctors/me", { method: "PATCH", body: parsed.data, accessToken });
+      setSaved(true);
+      onSaved();
+    } catch (err) {
+      setError(err);
+    }
+  }
+
+  return (
+    <Card>
+      <h2 className="font-heading text-xl text-brand-900">Cédula de especialidad</h2>
+      <p className="text-sm text-gray-500">
+        Opcional. Si tu especialidad exige certificación de consejo, regístrala aquí — el sello de verificado se
+        degrada automáticamente cuando vence, sin que tengas que hacer nada.
+      </p>
+
+      {!editable ? (
+        <div className="mt-4">
+          {doctor.specialtyLicense ? (
+            <dl className="grid grid-cols-2 gap-4">
+              <div>
+                <dt className="text-sm text-gray-500">Cédula de especialidad</dt>
+                <dd className="text-base text-gray-900">{doctor.specialtyLicense}</dd>
+              </div>
+              <div>
+                <dt className="text-sm text-gray-500">Vence</dt>
+                <dd className="text-base text-gray-900">
+                  {doctor.specialtyLicenseExpiresAt
+                    ? new Date(doctor.specialtyLicenseExpiresAt).toLocaleDateString("es-MX")
+                    : "—"}
+                </dd>
+              </div>
+            </dl>
+          ) : (
+            <p className="text-base text-gray-500">No registrada.</p>
+          )}
+          <p className="mt-4 text-sm text-gray-500">
+            Estos campos no se pueden modificar una vez verificada la cuenta. Contacta a soporte.
+          </p>
+        </div>
+      ) : (
+        <form onSubmit={form.handleSubmit(onSubmit)} className="mt-4 flex flex-col gap-4" noValidate>
+          <div className="grid grid-cols-2 gap-4">
+            <FieldWrapper
+              label="Número de cédula de especialidad"
+              htmlFor="specialtyLicense"
+              error={form.formState.errors.specialtyLicense?.message}
+            >
+              <TextInput
+                id="specialtyLicense"
+                error={!!form.formState.errors.specialtyLicense}
+                {...form.register("specialtyLicense")}
+              />
+            </FieldWrapper>
+            <FieldWrapper
+              label="Fecha de vencimiento"
+              htmlFor="specialtyLicenseExpiresAt"
+              error={form.formState.errors.specialtyLicenseExpiresAt?.message}
+            >
+              <TextInput
+                id="specialtyLicenseExpiresAt"
+                type="date"
+                error={!!form.formState.errors.specialtyLicenseExpiresAt}
+                {...form.register("specialtyLicenseExpiresAt")}
+              />
+            </FieldWrapper>
+          </div>
+          {error ? <ErrorState error={error} /> : null}
+          {saved && !error ? <Aviso variant="exito" title="Guardado" /> : null}
+          <Button type="submit" isLoading={form.formState.isSubmitting} className="w-fit">
+            Guardar
+          </Button>
+        </form>
+      )}
     </Card>
   );
 }

@@ -92,6 +92,10 @@ describe("M1 — Identidad, cuentas y sesión", () => {
         email,
         password: STRONG_PASSWORD,
         phone: uniquePhone(),
+        firstName: "Karla",
+        lastNamePaternal: "Núñez",
+        birthDate: "1990-01-01",
+        sexAtBirth: "F",
         consents: {
           privacyNotice: overrides?.privacyNotice ?? true,
           sensitiveData: overrides?.sensitiveData ?? true,

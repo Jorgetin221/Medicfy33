@@ -3,6 +3,8 @@ import { MAX_EMAIL_LENGTH, normalizeEmail } from "../validators/email";
 import { isStrongPassword } from "../validators/password";
 import { isValidMxPhoneE164 } from "../validators/phone";
 import { isValidCedulaFormat } from "../validators/cedula";
+import { calculateAge } from "../validators/age";
+import { birthDateSchema } from "./patient.schema";
 
 const emailSchema = z
   .string()
@@ -24,20 +26,43 @@ const cedulaSchema = z
 // "Sin la (a) y la (b) no hay cuenta". (c) is optional; its absence
 // only blocks digital prescription delivery later (M9-RN-011), it
 // never blocks account creation.
-export const registerPatientSchema = z.object({
-  email: emailSchema,
-  password: passwordSchema,
-  phone: mxPhoneSchema,
-  consents: z.object({
-    privacyNotice: z.literal(true, {
-      errorMap: () => ({ message: "Debes aceptar el aviso de privacidad." }),
+// M5-RN-009 (v2.3): cierra el hueco de M5-RN-008 — el registro ahora
+// crea también la fila `patients`, así que pide los campos mínimos que
+// esa fila exige (nombre, apellidos, fecha de nacimiento, sexo),
+// además de lo que M1-RN-003 ya pedía. Requiere mayoría de edad: un
+// menor no puede otorgar por sí mismo el consentimiento de datos
+// sensibles de salud (§6.4) — sigue dado de alta por un adulto vía
+// POST /patients (DOCTOR/ASSISTANT), con su tutor.
+export const registerPatientSchema = z
+  .object({
+    email: emailSchema,
+    password: passwordSchema,
+    phone: mxPhoneSchema,
+    firstName: z.string().min(1).max(120),
+    lastNamePaternal: z.string().min(1).max(120),
+    lastNameMaternal: z.string().max(120).optional(),
+    birthDate: birthDateSchema,
+    sexAtBirth: z.enum(["F", "M"]),
+    consents: z.object({
+      privacyNotice: z.literal(true, {
+        errorMap: () => ({ message: "Debes aceptar el aviso de privacidad." }),
+      }),
+      sensitiveData: z.literal(true, {
+        errorMap: () => ({ message: "Debes aceptar el tratamiento de datos sensibles de salud." }),
+      }),
+      digitalPrescriptionChannel: z.boolean(),
     }),
-    sensitiveData: z.literal(true, {
-      errorMap: () => ({ message: "Debes aceptar el tratamiento de datos sensibles de salud." }),
-    }),
-    digitalPrescriptionChannel: z.boolean(),
-  }),
-});
+  })
+  .superRefine((data, ctx) => {
+    const age = calculateAge(new Date(`${data.birthDate}T00:00:00Z`));
+    if (age < 18) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Debes ser mayor de edad para registrarte por tu cuenta. Un adulto responsable puede darte de alta como paciente.",
+        path: ["birthDate"],
+      });
+    }
+  });
 export type RegisterPatientInput = z.infer<typeof registerPatientSchema>;
 
 // Fields per the M1 flow text (§7 M1, step 1): "email, contraseña,

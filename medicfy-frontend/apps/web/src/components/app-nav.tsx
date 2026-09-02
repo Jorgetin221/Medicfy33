@@ -14,6 +14,7 @@ import {
   IconUserCircle,
   IconShieldNav,
   IconClipboardCheckNav,
+  IconMegaphone,
   IconChevronNav,
   IconLogout,
 } from "@/components/ui/nav-icons";
@@ -26,6 +27,8 @@ const NAV_LINKS = [
   // Fase 6 · Prompt 45: bitácora de acceso — "panel de auditoría para
   // el médico titular: quién ha visto a sus pacientes".
   { href: "/auditoria", label: "Auditoría", Icon: IconClipboardCheckNav },
+  // M2B (spec §7, v2.2): publicaciones del médico y control de audiencia.
+  { href: "/publicaciones", label: "Publicaciones", Icon: IconMegaphone },
 ];
 
 // Preferencia de UI (qué tan ancho se ve el rail), no dato clínico —

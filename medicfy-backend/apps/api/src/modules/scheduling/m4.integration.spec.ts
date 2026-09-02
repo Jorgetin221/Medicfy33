@@ -113,6 +113,10 @@ describe("M4 — Agenda y disponibilidad", () => {
         email,
         password: STRONG_PASSWORD,
         phone: uniquePhone(),
+        firstName: "Karla",
+        lastNamePaternal: "Núñez",
+        birthDate: "1990-01-01",
+        sexAtBirth: "F",
         consents: { privacyNotice: true, sensitiveData: true, digitalPrescriptionChannel: false },
       });
     expect(res.status).toBe(201);

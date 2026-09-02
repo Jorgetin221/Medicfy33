@@ -19,16 +19,21 @@ export function AuthLayout({
   panelTitle,
   panelBody,
   trustItems = DEFAULT_TRUST_ITEMS,
+  homeHref = "/",
 }: {
   children: ReactNode;
   panelTitle: string;
   panelBody: string;
   trustItems?: readonly { icon: (props: { className?: string }) => ReactNode; label: string }[];
+  // v2.4: "/" pasó a ser el home de descubrimiento del paciente —
+  // registro-medico pasa "/para-medicos" para no mandar a un médico a
+  // media inscripción a una pantalla de pacientes.
+  homeHref?: string;
 }) {
   return (
     <div className="grid min-h-screen lg:grid-cols-2">
       <div className="flex flex-col gap-8 px-6 py-8 sm:px-10 sm:py-10 lg:justify-center lg:px-16 lg:py-16">
-        <Link href="/" className="font-brand w-fit text-xl font-bold text-brand-900">
+        <Link href={homeHref} className="font-brand w-fit text-xl font-bold text-brand-900">
           Medicfy
         </Link>
         <div className="mx-auto w-full max-w-md">{children}</div>

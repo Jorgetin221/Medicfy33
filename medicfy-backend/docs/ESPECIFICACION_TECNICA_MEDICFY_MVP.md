@@ -11,7 +11,7 @@
 | Alcance del documento | MVP v1.0 (ver §2). Fases posteriores se especifican en §12 |
 | Reemplaza a | Manual Maestro, Diseño de Medicfy Completo, Funciones Medicfy, Informe de Análisis, Proceso de Generación de Pantallas (Fases 1–4), Principales cambios 6-jun-2025 |
 | Estado | **v2.0 — APROBADA Y CONGELADA.** Todas las decisiones de producto, alcance y arquitectura están cerradas. Quedan 2 insumos abiertos que no bloquean el desarrollo: capital declarado (§12.5) y material clínico del fundador (§9.4) |
-| Revisión | v2.1.1 · agosto 2026 — ver registro de cambios en §17. Anterior: v2.1 · agosto 2026; v2.0 · agosto 2026 · incorpora el addendum v1.1 y las respuestas del fundador. `ADDENDUM_v1.1` y `PREGUNTAS_BLOQUEANTES.md` quedan como archivo histórico: **ya no son documentos de consulta** |
+| Revisión | v2.4 · 1 septiembre 2026 — ver registro de cambios en §17. Anterior: v2.3 · 1 septiembre 2026; v2.2 · 1 septiembre 2026; v2.1.1 · 14 agosto 2026; v2.1 · agosto 2026; v2.0 · agosto 2026 · incorpora el addendum v1.1 y las respuestas del fundador. `ADDENDUM_v1.1` y `PREGUNTAS_BLOQUEANTES.md` quedan como archivo histórico: **ya no son documentos de consulta** |
 | Decisión estratégica base | **Opción 1 aprobada** — herramienta clínica del médico primero; el directorio es consecuencia, no punto de partida |
 
 ### Cómo usar este documento
@@ -77,8 +77,11 @@ Esto invierte la estrategia de tu documentación y es la recomendación más imp
 |---|---|---|
 | M1 | Identidad, cuentas y sesión | Base de todo |
 | M2 | Perfil médico + verificación de cédula | Es tu diferenciador declarado. Sin esto Medicfy es un directorio más |
+| M2B | Publicaciones del médico y control de audiencia *(agregado v2.2)* | Ver §7 — extensión de M2, no el directorio (M3) completo |
+| M3 | Directorio y búsqueda de médicos, sin reseñas/calificaciones *(agregado v2.3)* | Ver §7 y la nota de reversión consciente de §1.3, abajo |
 | M4 | Agenda y disponibilidad del médico | El médico no adopta nada que no gestione su día |
 | M5 | Citas (creación por médico y por paciente vía enlace) | Núcleo operativo |
+| M5b | Identidad de paciente y agendamiento público *(agregado v2.3)* | Ver §7 — completa el "paso de pago" que M5-RN-007 ya daba por hecho |
 | M8 | Expediente clínico electrónico — perfil mínimo NOM-004 | **El corazón del MVP** |
 | M9 | Receta electrónica no controlada (Grupos III–VI) | **El segundo corazón del MVP** |
 | M12 | Notificaciones transaccionales (email + WhatsApp) | Sin recordatorios, el no-show mata la propuesta de valor |
@@ -95,7 +98,7 @@ Esto invierte la estrategia de tu documentación y es la recomendación más imp
 | **Chat médico-paciente (M11)** | v1.1 | Abre responsabilidad clínica sin cita de por medio (¿qué pasa si un paciente reporta dolor torácico por chat un domingo?). Requiere política de tiempos de respuesta y triage que aún no existe |
 | **Teleconsulta con video propio (M7)** | v1.1 parcial | En MVP: la cita de modalidad "en línea" genera un enlace de videollamada de proveedor externo (ver §4.4). No construimos WebRTC |
 | **Suscripción de pacientes ("Medicfy Plus")** | v1.2+ | No hay evidencia de que el paciente mexicano pague por esto. Ver §11.2 |
-| **Directorio público + búsqueda + reseñas (M3)** | v1.1 | Ver §1.3 |
+| **Reseñas y calificaciones de pacientes sobre médicos** | v1.1 | Ver §1.3. *(v2.3: el fundador autorizó explícitamente el resto de M3 — búsqueda y directorio, ver §7 — con conocimiento consciente de que esto revierte "la recomendación más importante" de §1.3 sobre no competir con Doctoralia en efecto de red. Las reseñas/calificaciones NO se autorizaron — nadie las pidió — y siguen fuera del MVP.)* |
 | **Microservicios, multi-región, blockchain, FHIR/DICOM** | v3.0 o nunca | Ver §4.2 |
 | **Facturación CFDI automática** | v1.1 | Se resuelve manualmente con 20 médicos |
 | **Integración con aseguradoras** | v2.0+ | Ciclo de venta de 12+ meses |
@@ -261,6 +264,13 @@ Optimizamos para **velocidad de entrega y bajo costo operativo con un equipo de 
 | Desactivar cuenta | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
 | Ver bitácora de auditoría | ❌ | ✅ (accesos a sus pacientes) | ❌ | ❌ | ✅ (lectura) | ✅ |
 | Acceder a expediente sin vínculo | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Publicar contenido en el perfil propio *(v2.2, M2B)* | — | ✅ (propio) | ❌ | — | ❌ | ❌ |
+| Ver publicación con audiencia "solo mis pacientes" *(v2.2/v2.3, M2B)* | ✅ (solo con `care_relationship` activo, vía el portal de paciente de M5-RN-009+) | ✅ (propias) | ❌ | — | ❌ | ❌ |
+| Archivar publicación de cualquier médico *(v2.2, M2B, moderación mínima)* | ❌ | ❌ (solo las propias) | ❌ | — | ❌ | ✅ |
+| Dar like / comentar una publicación que puede ver *(v2.3, M2B)* | ✅ | ✅ | ✅ | — | ❌ | ❌ |
+| Borrar un comentario ajeno *(v2.3, M2B)* | ❌ | ✅ (solo en publicaciones propias) | ❌ | — | ❌ | ✅ |
+| Buscar/listar médicos en el directorio *(v2.3, M3)* | ✅ (público, sin sesión) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Agendar cita por el enlace público, a nombre propio *(v2.3, M5-RN-009+)* | ✅ | — | — | — | ❌ | ❌ |
 
 ### 5.3 Reglas de autorización no negociables
 
@@ -321,6 +331,9 @@ patients
   address_municipality, address_state, address_postal_code,
   emergency_contact_name, emergency_contact_phone, emergency_contact_relation,
   created_by_user_id, source ENUM(self_signup, created_by_doctor)
+  -- M5-RN-009 (v2.3): source=self_signup ahora sí crea esta fila en el
+  -- mismo momento que auth/register/patient crea el user — antes solo
+  -- creaba el user y esta fila quedaba pendiente para siempre.
 
 patient_guardians         -- menores de edad: APROBADO en alcance (pediatría en piloto)
   patient_id FK, guardian_name, guardian_relation ENUM(madre, padre,
@@ -380,6 +393,36 @@ doctor_services           -- precios NO públicos (regla de Jorge)
   name, duration_minutes, price_mxn, currency,
   price_visibility ENUM(private, shared_on_booking),  -- default: private
   is_active
+
+doctor_posts               -- M2B (v2.2), ver §7 — independiente de doctors,
+                            -- NO sujeta a R1 (no es dato clínico): sí admite
+                            -- DELETE real por el propio autor.
+  doctor_id FK,
+  title NULLABLE, body,
+  category ENUM(health_education, health_tip, health_fact,
+    professional_update, congress, research, certification,
+    patient_notice, prevention, lifestyle, video, photo, announcement),
+  visibility ENUM(public, patients_only, private),  -- independiente de category
+  status ENUM(draft, published, archived),
+  published_at NULLABLE, archived_at NULLABLE,
+  archived_by_user_id NULLABLE  -- admin que archivó, si no fue el propio autor
+
+doctor_post_media          -- M2B (v2.2)
+  post_id FK, media_type ENUM(photo, video), file_key, display_order
+
+doctor_post_likes          -- M2B (v2.3)
+  post_id FK, user_id FK,
+  UNIQUE(post_id, user_id)  -- M2B-RN-010: un like por usuario por post
+
+doctor_post_comments       -- M2B (v2.3)
+  post_id FK, author_user_id FK, body, created_at
+  -- M2B-RN-012: sin campo de edición — se borra y se vuelve a escribir.
+
+doctor_education            -- M2 (v2.3)
+  doctor_id FK, institution,
+  kind ENUM(degree, residency, fellowship, certification),
+  start_year, end_year NULLABLE,  -- NULL = en curso
+  display_order
 ```
 
 ### 6.4 Agenda y citas
@@ -726,6 +769,114 @@ Convención de IDs: `M<n>-RN-<nnn>` reglas, `M<n>-CA-<nnn>` criterios de aceptac
 
 - **M2-CA-009** *(reasignado a M5)* Un médico crea un paciente sin cuenta de usuario, queda con `medicfy_id` legible y `source = created_by_doctor`, y se genera automáticamente el `care_relationship` correspondiente. Se verifica al cerrar M5.
 
+#### Formación académica de varias instituciones *(agregado v2.3)*
+
+**Origen.** La referencia visual del fundador mostraba varias entradas (título, residencia, fellowship) en vez del campo único `university` que M2 ya tiene. Confirmado como pedido explícito, no como algo inferido.
+
+- **M2-RN-007** *(v2.3)*. `doctor_education` es una tabla independiente, muchas filas por médico: institución, tipo (`degree` | `residency` | `fellowship` | `certification` — catálogo cerrado, sin texto libre para el tipo), año de inicio, año de fin (nullable — en curso), orden de despliegue.
+- **M2-RN-008** *(v2.3)*. El campo `university` original de `doctors` **no se elimina** (evita una migración de datos destructiva) pero deja de ser lo único que se muestra: si el médico tiene entradas en `doctor_education`, esas reemplazan al chip único en el perfil público; si no tiene ninguna, se sigue mostrando `university` como hoy.
+
+**Permisos.** El propio médico administra sus entradas (crear/editar/borrar/reordenar) — mismo criterio de "el médico sí edita" que el resto de M2's campos editables (AUTH-RN-004).
+
+**Criterios de aceptación**
+
+- **M2-CA-010** *(v2.3)* Un médico con entradas en `doctor_education` las ve, en el orden que definió, en su perfil público — nunca inventadas ni completadas automáticamente.
+- **M2-CA-011** *(v2.3)* Un médico sin ninguna entrada sigue mostrando su `university` como antes — no aparece una sección vacía.
+
+---
+
+### M2B — PUBLICACIONES DEL MÉDICO Y CONTROL DE AUDIENCIA *(agregado v2.2)*
+
+**Origen.** Pedido directo del fundador en conversación, 1 septiembre 2026: que el perfil del médico funcione también como un espacio de publicación continua (fotos, avisos, educación en salud, actividad profesional), con una audiencia elegible por publicación. Se verificó contra §1.3/§2.2: el MVP excluye a propósito **M3 — directorio con búsqueda y reseñas**, por el riesgo de competir con Doctoralia en efecto de red antes de tener densidad de médicos. Se confirmó con el fundador que este módulo es una cosa distinta: publicar contenido en el perfil de un médico que un paciente **ya visitó** no ayuda a nadie a *descubrir* médicos nuevos, así que no reabre ese riesgo. M3 (búsqueda + reseñas) sigue fuera del MVP.
+
+**Objetivo.** Que el perfil del médico deje de ser solo una ficha estática y se convierta en un espacio donde el médico comparte contenido de forma continua, con control real — no cosmético — de quién puede verlo.
+
+**Alcance de esta versión.** Publicaciones de texto + medios (foto/video), con tres audiencias (`public`, `patients_only`, `private`) y tres estados (`draft`, `published`, `archived`), gestionadas desde el panel privado del médico y mostradas en su perfil público existente (M5, `/dr/{slug}`). **Ampliado en v2.3** (ver M2B-RN-010 a M2B-RN-013 abajo) con reacciones (like) y comentarios — el fundador los pidió explícitamente al mostrar una referencia visual con ambos. **Sigue explícitamente fuera de esta versión:** seguir médicos, guardar publicaciones, notificaciones de nuevas publicaciones, feed personalizado entre médicos, cola de moderación con revisión editorial, y la visibilidad **del perfil completo** (público/limitado/privado-para-pacientes que pidió el fundador como sistema aparte de la audiencia por publicación) — esa última queda pendiente de alcance propio si se decide construir; hoy el perfil público (M5) sigue mostrando siempre los mismos campos ya definidos ahí.
+
+**Reglas de negocio**
+
+- **M2B-RN-001.** `doctor_posts` es una entidad independiente de `doctors`, no un campo del perfil. Cada publicación tiene, en ejes independientes entre sí: `category` (de qué trata), `visibility` (quién puede verla) y `status` (en qué momento de su ciclo de vida está). Cualquier combinación de los tres es válida — por ejemplo `category=patient_notice` con `visibility=public` es una combinación legítima (un aviso que el médico decide hacer público), igual que `category=health_tip` con `visibility=patients_only`.
+- **M2B-RN-002 — Audiencia, autorizada en backend, nunca en frontend.**
+  - `public`: visible para cualquiera, autenticado o no, únicamente si `status=published`. Se sirve por `GET /doctors/{slug}/public/posts`, la misma familia de rutas públicas de M5.
+  - `patients_only`: visible únicamente a un usuario autenticado con `care_relationship` **activo** con ese médico (misma regla que AUTH-RN-001, sin excepción ni caso especial). El backend nunca descarga la publicación al cliente para luego ocultarla con CSS o JavaScript: si no hay vínculo activo, el endpoint responde 403 y el cuerpo no contiene la publicación.
+  - `private`: visible únicamente para el propio médico autor.
+  - **Nota de arquitectura, importante:** hoy no existe ningún portal ni sesión de paciente en el frontend (se verificó explícitamente esta sesión — los pacientes son registros que administra el médico, casi ninguno tiene cuenta propia, y no hay una sola pantalla donde un paciente inicie sesión). Esta versión construye la autorización de `patients_only` completa y correcta en el backend, y el médico ya puede crear, publicar y administrar estas publicaciones desde su panel — pero **no existe todavía ningún visitante real que pueda autenticarse como paciente y verlas**. `GET /doctors/{id}/posts/patients-only` es correcto y probado, sin consumidor real hasta que exista un portal de pacientes, que es un módulo propio, no construido aquí.
+- **M2B-RN-003 — Ciclo de vida.** `draft` (visible solo al autor, en cualquier audiencia) → `published` (visible según `visibility`, fija `published_at`) → `archived` (deja de aparecer en cualquier respuesta pública o de pacientes, pero el autor sigue consultándola; fija `archived_at` y, si fue un admin quien archivó, `archived_by_user_id`). A diferencia de las tablas clínicas (R1, CLAUDE.md §2), una publicación **no es dato clínico** y sí admite `DELETE` real por su propio autor — archivar y borrar son dos acciones distintas, ambas disponibles.
+- **M2B-RN-004.** `category` es un catálogo cerrado de 13 valores fijos (ver §6.3) y es independiente de `visibility` — cambiar la categoría de una publicación nunca cambia quién puede verla, y viceversa.
+- **M2B-RN-005 — Medios.** Cada publicación admite cero o más archivos en `doctor_post_media` (foto o video), con orden de despliegue explícito. Se sirven por el mismo `FILE_STORAGE_PORT` que ya usan `doctor_documents` y los assets de marca — no se integra un proveedor de almacenamiento nuevo. Imagen: JPG/PNG/WebP, ≤5 MB (mismo límite que la foto de perfil de M2, sin la exigencia de detección de rostro). **Video: formato y límite de tamaño `PENDIENTE(jorge)` — no hay cifra definida en la documentación existente y no se inventa aquí.** Mientras no se decida, el límite aplicado es el mismo de 5 MB que una imagen, lo cual en la práctica bloqueará casi cualquier video real; es una salvaguarda intencional, no el límite final.
+- **M2B-RN-006 — Aviso educativo.** Toda publicación cuya `category` sea `health_education`, `health_tip`, `health_fact`, `prevention` o `lifestyle` se renderiza siempre con el aviso fijo, no editable por el médico: *"Información general con fines educativos. No sustituye una valoración médica individual."*
+- **M2B-RN-007 — Datos clínicos identificables, prohibidos.** Una publicación no debe incluir información clínica identificable de un paciente (nombre, fotografía reconocible, resultado, historia clínica) sin un proceso de consentimiento específico, que **no existe todavía** en la plataforma. Esta regla no se puede hacer cumplir automáticamente en esta versión (exigiría moderación de contenido con IA, fuera de alcance) — es una responsabilidad contractual del médico, respaldada por la moderación mínima de M2B-RN-008.
+- **M2B-RN-008 — Moderación mínima.** Un `ADMIN` puede archivar cualquier publicación de cualquier médico (`POST /admin/doctor-posts/{id}/archive`), auditado igual que el resto de acciones de admin. No existe cola de revisión editorial ni moderación automática en esta versión — se documenta como diferido, no se construye un panel de moderación completo.
+- **M2B-RN-009 — Asistente y suspensión.** `ASSISTANT` no gestiona publicaciones (no las crea, edita, publica ni archiva) — mismo criterio que M2 ya aplica a "perfil profesional": el asistente administra agenda y consultorios, no la imagen profesional del médico. Un médico con `verification_status = suspended` no puede crear ni publicar contenido nuevo (mismo bloqueo que el resto de escritura de perfil bajo M2-RN-005); sus publicaciones `public` ya publicadas antes de la suspensión permanecen visibles, sin ocultarse — mismo espíritu que M2-CA-007.
+- **M2B-RN-010 — Reacciones (like), agregado v2.3.** Cualquier usuario autenticado que **puede ver** la publicación (misma autorización de M2B-RN-002 — un `patients_only` exige el mismo `care_relationship` que verla) puede marcarla con like. Único por `(post, usuario)` — no se puede duplicar. Quitar el like es una acción real (borra la fila), no un contador que solo baja visualmente.
+- **M2B-RN-011 — Comentarios, agregado v2.3.** Mismo criterio de autorización que el like: solo quien puede ver la publicación puede comentarla, y solo si está `published` (nunca en `draft` ni `archived`). Texto libre acotado (ver Validaciones). No hay edición de comentarios en esta versión — se borra y se vuelve a escribir.
+- **M2B-RN-012 — Borrado de comentarios, agregado v2.3.** Tres roles pueden borrar un comentario: su propio autor, el autor de la publicación donde vive (moderación del médico sobre su propio espacio), y un `ADMIN`. Nadie más.
+- **M2B-RN-013 — Datos clínicos identificables en comentarios, agregado v2.3.** Mismo límite reconocido en M2B-RN-007: no se puede impedir automáticamente que un comentario describa un caso clínico identificable. La salvaguarda real es M2B-RN-012 — cualquiera de los tres roles autorizados puede borrarlo.
+
+**Validaciones.** `title`: opcional, máximo 200 caracteres. `body` de la publicación: 1–5,000 caracteres. Máximo 10 archivos de media por publicación. `body` de un comentario: 1–500 caracteres *(v2.3)*.
+
+**Permisos.** Médico gestiona (crea/edita/publica/archiva/borra) únicamente sus propias publicaciones. Asistente no gestiona publicaciones. Admin solo puede archivar, nunca editar el contenido de una publicación ajena. Paciente (con su portal, M5b) ve `public` siempre, y `patients_only` solo con vínculo activo con ese médico. Like/comentario *(v2.3)*: cualquier usuario autenticado que puede ver la publicación; borrado de un comentario: su autor, el autor de la publicación, o un admin.
+
+**Casos límite**
+
+- Publicación cambiada de `public` a `private` después de haber sido compartida por enlace directo → deja de responder de inmediato en la ruta pública; la autorización se evalúa en cada lectura, nunca desde una copia cacheada.
+- Publicación con `visibility=patients_only` de un médico que todavía no tiene ningún paciente vinculado → se guarda con normalidad, simplemente no la ve nadie todavía. No es un error.
+- Médico verificado que además tiene publicaciones `patients_only` y es suspendido → las públicas quedan visibles (ver M2B-RN-009); las `patients_only` y `private` no se tocan, siguen existiendo para cuando se reactive.
+
+**Criterios de aceptación**
+
+- **M2B-CA-001** Una publicación con `visibility=private` no aparece en ninguna respuesta de ningún endpoint salvo al propio autor autenticado.
+- **M2B-CA-002** Una publicación con `visibility=patients_only` nunca aparece en `GET /doctors/{slug}/public/posts`; solo es alcanzable por `GET /doctors/{id}/posts/patients-only`, que devuelve 403 sin `care_relationship` activo — probado con un usuario autenticado sin vínculo.
+- **M2B-CA-003** Cambiar la audiencia de una publicación de `public` a `private` la retira de inmediato de la respuesta pública, sin necesitar purgar ningún caché.
+- **M2B-CA-004** Una publicación en estado `draft` no aparece en ninguna respuesta salvo al autor, sin importar su `visibility`.
+- **M2B-CA-005** Una publicación en estado `archived` no aparece en ninguna respuesta pública ni de pacientes; el autor sigue pudiendo consultarla.
+- **M2B-CA-006** Toda publicación con categoría educativa (`health_education`, `health_tip`, `health_fact`, `prevention`, `lifestyle`) se renderiza siempre junto con el aviso de M2B-RN-006.
+- **M2B-CA-007** Un `ADMIN` puede archivar la publicación de cualquier médico, queda auditado, y ningún rol distinto del autor puede archivar o editar la publicación de otro médico (prueba negativa: un segundo médico intenta archivar la publicación del primero → 403).
+- **M2B-CA-008** Un médico `suspended` no puede crear ni publicar contenido nuevo (403); sus publicaciones `public` previamente publicadas siguen respondiendo con normalidad en la ruta pública.
+- **M2B-CA-009** *(v2.3)* Un usuario sin autorización para ver una publicación `patients_only` tampoco puede darle like ni comentarla (403 en ambos casos, mismo criterio que M2B-CA-002).
+- **M2B-CA-010** *(v2.3)* Dar like dos veces al mismo post por el mismo usuario no duplica la fila ni el conteo.
+- **M2B-CA-011** *(v2.3)* El autor de un comentario puede borrarlo; cualquier otro usuario que no sea el autor del comentario, el autor de la publicación, ni un admin, recibe 403 al intentarlo.
+- **M2B-CA-012** *(v2.3)* El autor de la publicación puede borrar un comentario ajeno hecho en ella, aunque no sea el autor de ese comentario.
+- **M2B-CA-013** *(v2.3)* No se puede comentar ni dar like en una publicación `draft` o `archived`.
+
+---
+
+### M3 — DIRECTORIO Y BÚSQUEDA DE MÉDICOS *(agregado v2.3)*
+
+**Origen.** El fundador pidió una referencia visual ("MedNetwork") con barra de búsqueda de profesionales y navegación por especialidad en el propio perfil público del médico. Se le señaló que esto es exactamente el M3 que §1.3/§2.2 excluyen a propósito del MVP — *"la recomendación más importante de este documento"*, para no competir con Doctoralia en efecto de red antes de tener densidad de médicos. El fundador confirmó explícitamente que quiere construirlo de todas formas, con esa advertencia ya sobre la mesa. Esta sección documenta esa decisión consciente, no una que el agente de código haya tomado por su cuenta.
+
+**Objetivo.** Que un visitante encuentre médicos por nombre o especialidad sin conocer de antemano el enlace `/dr/{slug}` de ninguno.
+
+**Alcance de esta versión.** Un endpoint público de búsqueda/listado y una pantalla que lo consume. **Explícitamente fuera de esta versión** (nadie los pidió — construirlos sería inventar, CLAUDE.md §7): reseñas y calificaciones de pacientes (siguen excluidas en §2.2), cualquier algoritmo de "relevancia" u orden patrocinado, geolocalización ("cerca de mí" con coordenadas+radio — no hay infraestructura de geocodificación), publicidad o promoción pagada de perfiles.
+
+**Reglas de negocio**
+
+- **M3-RN-001.** Solo aparecen médicos con `verification_status` distinto de `draft`/`rejected`/`suspended` — mismo umbral que ya protege el resto de vistas públicas del médico (M2/M5).
+- **M3-RN-002.** `q` (un solo cuadro de búsqueda, sin pedirle al usuario distinguir "nombre" de "especialidad") hace coincidencia de texto simple contra el nombre de despliegue **o** el nombre de la especialidad (`specialties.name_es`) — nunca contra el nombre legal. `specialty` es un segundo filtro independiente, por código exacto del catálogo cerrado, para cuando el cliente ya sabe cuál quiere (p. ej. las tarjetas de "explora por especialidad"). Sin motor de texto libre difuso inventado en ninguno de los dos. **No existe búsqueda por síntoma** ("dolor de rodilla" → especialidad): mapear un síntoma a una especialidad es un juicio clínico, y CLAUDE.md prohíbe inventar reglas clínicas sin que un médico las valide — queda `PENDIENTE(jorge)`.
+- **M3-RN-003.** El orden de resultados es determinista y explicable: alfabético por `displayName`, o por estado de verificación primero — nunca un "score de relevancia" no auditable.
+- **M3-RN-004.** Los campos devueltos son exactamente los de `toPublicDoctorView` (`doctor-public-view.ts`) — nunca precio (M2-RN-003/M2-CA-001), nunca un campo nuevo inventado para esta pantalla.
+- **M3-RN-005.** Paginación por cursor, máximo 50 resultados por página — misma regla transversal que el resto de la API (§8, "Reglas transversales").
+- **M3-RN-006** *(v2.4)*. Filtros adicionales, todos sobre datos que YA existen (ninguno inventa un campo nuevo): `teleconsultation` (`acceptsTeleconsultation`), `acceptsNewPatients`, `language` (contra `doctors.languages[]`), `location` (coincidencia de texto simple contra `addressMunicipality`/`addressState` de los `practice_locations` **activos** del médico — no geolocalización, no distancia). Subespecialidad y hospital/institución **no son filtros de esta versión**: ese dato no existe en el modelo (`doctors` no tiene esos campos) — filtrar por algo que no se captura sería fingir precisión que no hay.
+
+**Validaciones.** `q` (nombre): 0–120 caracteres. `specialty`: debe existir en el catálogo activo o se ignora (nunca error 500 por un código desconocido). `location`: 0–120 caracteres, comparación insensible a mayúsculas/acentos.
+
+**Permisos.** Público, sin autenticación — mismo nivel que `/doctors/{slug}/public`.
+
+**Criterios de aceptación**
+
+- **M3-CA-001** El precio no aparece en ninguna respuesta de búsqueda (re-verificación de M2-CA-001 en una superficie nueva).
+- **M3-CA-002** Un médico `draft`, `rejected` o `suspended` no aparece en los resultados.
+- **M3-CA-003** Buscar por un código de especialidad inexistente no produce error 500 — regresa lista vacía o ignora el filtro.
+- **M3-CA-004** Paginar con cursor no repite ni omite médicos entre páginas consecutivas.
+- **M3-CA-005** *(v2.4)* Filtrar por `teleconsultation=true` excluye a un médico con `acceptsTeleconsultation=false`; filtrar por `location=` excluye a un médico sin ningún `practice_location` activo que coincida.
+
+#### Home de descubrimiento del paciente y "tus médicos" *(agregado v2.4)*
+
+**Origen.** El fundador pidió reemplazar la pantalla raíz (`/`) — hasta ahora la página de reclutamiento de médicos (PUB-01, construida alrededor de §1.3: "véndele al médico") — por un marketplace de descubrimiento orientado a pacientes. Decisión explícita del fundador, confirmada tras señalarle el conflicto: la página de reclutamiento **se conserva íntegra**, movida a `/para-medicos`, no se descarta.
+
+- **M3-RN-007** *(v2.4)*. Nuevo `GET /patients/me/doctors` (PATIENT) — médicos con `care_relationship` activo con el paciente autenticado, para la sección "Tus médicos" y para armar el feed de publicaciones de sus médicos en el cliente (reutiliza `GET /doctors/{slug}/public/posts` y `GET /doctors/{id}/posts/patients-only` por cada médico vinculado — no se crea un endpoint de feed agregado nuevo en el servidor en esta versión).
+- **M3-CA-006** *(v2.4)* Un paciente sin ningún `care_relationship` activo recibe una lista vacía de `/patients/me/doctors`, nunca un error.
+
 ---
 
 ### M4 — AGENDA Y DISPONIBILIDAD
@@ -811,6 +962,23 @@ cancelled_* ──> [terminal]
 - **M5-CA-003** El paciente ve y acepta la política de cancelación antes de pagar, y esa versión queda almacenada en la cita.
 - **M5-CA-004** Los recordatorios se envían una sola vez incluso si el worker se reintenta.
 - **M5-CA-005** Un paciente nuevo agenda desde el enlace del médico en ≤4 pantallas.
+
+#### Completando M5-RN-007/M5-RN-008 — identidad de paciente y agendamiento público real *(v2.3)*
+
+**Origen.** M5-RN-007 y M5-RN-008 ya describían esto desde la v2.0/v2.1 —*"paciente sin cuenta que agenda por enlace"*, *"nunca precio hasta el paso de pago"*— pero nunca se implementó de punta a punta: hoy `POST /appointments` exige `JwtAuthGuard` + rol médico/asistente (`SchedulingAuthService.resolveActingDoctor`), y no existe ninguna pantalla de registro/login de paciente en el frontend. Esta sub-sección no abre un módulo nuevo — cierra el que ya estaba escrito, con las reglas de seguridad que faltaban especificar.
+
+**Reglas de negocio**
+
+- **M5-RN-009** *(v2.3)*. El registro mínimo de M5-RN-008 crea una cuenta real (`users`, rol `PATIENT`) **y** su fila `patients` en la misma operación — hoy `POST /auth/register/patient` solo crea la primera; es el hueco que cierra esta versión.
+- **M5-RN-010** *(v2.3, regla de seguridad — no se puede relajar)*. En la ruta de agendamiento iniciada por el paciente, el `patient_id` de la cita se resuelve **siempre en el servidor** a partir del usuario autenticado (`patients.user_id = usuario del token`), nunca de un campo del cuerpo de la petición. Motivo: `appointment-state-machine.service.ts` documenta un IDOR real, ya cerrado, donde la ruta del médico creaba un `care_relationship` desde cualquier `patientId` del body — aceptar un `patientId` de cliente en la ruta del paciente reabriría el mismo patrón desde el otro lado.
+- **M5-RN-011** *(v2.3)*. Esta ruta, a diferencia de la del médico (que solo renueva un vínculo ya existente, ver el hallazgo de Bloque 0 citado arriba), sí puede **crear** el `care_relationship` desde cero, con `origin = appointment` — es exactamente el caso para el que ese valor de origen se reservó.
+- **M5-RN-012** *(v2.3)*. Sin pasarela de pago: **[DECISIÓN POR DEFECTO], reafirmada]** M6-RN-006 ya estableció que el cobro de la consulta ocurre fuera de la plataforma. "El paso de pago" de M5-RN-007 es, en esta versión, la reserva del espacio en `pending_payment` — el médico confirma el pago manualmente, igual que ya hace hoy con una cita creada por él mismo.
+
+**Criterios de aceptación**
+
+- **M5-CA-006** *(v2.3)* Un paciente autenticado agenda un espacio real desde `/dr/{slug}` y la cita aparece en la agenda del médico con `created_via = patient_link` y el `care_relationship` correspondiente creado con `origin = appointment`.
+- **M5-CA-007** *(v2.3, prueba de seguridad)* Enviar un `patientId` distinto al del usuario autenticado en el cuerpo de la petición no tiene efecto — la cita se crea siempre a nombre del paciente resuelto por el token, nunca del valor del body.
+- **M5-CA-008** *(v2.3)* Un visitante sin sesión que intenta agendar es dirigido a iniciar sesión o registrarse, nunca ve un botón que no responde (CLAUDE.md §7).
 
 ---
 
@@ -1113,7 +1281,19 @@ REST versionada bajo `/api/v1`. Autenticación `Authorization: Bearer <jwt>`. Er
 | GET/POST/PATCH/DELETE | `/doctors/me/services` | DOCTOR | M2 |
 | POST | `/doctors/me/assistants/invite` | DOCTOR | M1 |
 | GET | `/doctors/{slug}/public` | público | M5 |
+| GET | `/doctors/{slug}/public/services` | público | M5 *(agregado v2.2, sin precio — necesario para elegir `service_id` antes de consultar disponibilidad)* |
 | GET | `/doctors/{id}/availability?from&to&service_id` | público | M4 |
+| GET | `/doctors/public?q=&specialty=&cursor=` | público | M3 *(agregado v2.3, nunca precio — mismos campos que `/doctors/{slug}/public`)* |
+| GET/POST | `/doctors/me/posts` | DOCTOR | M2B *(agregado v2.2)* |
+| GET/PATCH/DELETE | `/doctors/me/posts/{id}` | DOCTOR autor | M2B *(agregado v2.2)* |
+| POST | `/doctors/me/posts/{id}/media` | DOCTOR autor | M2B *(agregado v2.2)* |
+| GET | `/doctors/{slug}/public/posts` | público | M2B *(agregado v2.2 — solo `visibility=public` y `status=published`)* |
+| GET | `/doctors/{id}/posts/patients-only` | autenticado, con `care_relationship` activo | M2B *(agregado v2.2, con portal real desde v2.3/M5-RN-009)* |
+| POST | `/admin/doctor-posts/{id}/archive` | ADMIN | M2B *(agregado v2.2, moderación mínima)* |
+| POST/DELETE | `/doctors/{slug}/public/posts/{id}/like` | autenticado, con acceso al post | M2B *(agregado v2.3)* |
+| GET/POST | `/doctors/{slug}/public/posts/{id}/comments` | GET según acceso al post; POST autenticado con acceso al post | M2B *(agregado v2.3)* |
+| DELETE | `/doctors/{slug}/public/posts/{id}/comments/{commentId}` | autor del comentario, autor del post, o ADMIN | M2B *(agregado v2.3, M2B-RN-012)* |
+| GET/POST/PATCH/DELETE | `/doctors/me/education` | DOCTOR | M2 *(agregado v2.3)* |
 | GET/POST/PATCH/DELETE | `/doctors/me/availability-rules` | DOCTOR, ASSISTANT | M4 |
 | GET/POST/DELETE | `/doctors/me/availability-exceptions` | DOCTOR, ASSISTANT | M4 |
 | GET/POST | `/patients` | DOCTOR, ASSISTANT | M5 *(corregido en v2.1; la v2.0 decía M2)* |
@@ -1121,6 +1301,8 @@ REST versionada bajo `/api/v1`. Autenticación `Authorization: Bearer <jwt>`. Er
 | GET/POST/DELETE | `/patients/{id}/allergies` | DOCTOR | M8 |
 | GET/POST | `/patients/{id}/conditions` | DOCTOR | M8 |
 | GET | `/patients/{id}/timeline` | PATIENT (propio), DOCTOR (vinculado) | M8 |
+| GET | `/patients/me` | PATIENT | M5-RN-009 *(agregado v2.3 — resuelve la fila `patients` del usuario autenticado)* |
+| GET/POST | `/patients/me/appointments` | PATIENT | M5-RN-009 a 012 *(agregado v2.3 — POST es el agendamiento público real: `patient_id` siempre resuelto del token, nunca del body, ver M5-RN-010)* |
 | GET/POST | `/appointments` | según rol | M5 |
 | GET | `/appointments/{id}` | participantes | M5 |
 | POST | `/appointments/{id}/confirm` | participantes | M5 |
@@ -1557,6 +1739,51 @@ Si el resultado es menor a 7 meses, la decisión correcta no es empezar más bar
 ---
 
 ## 17. REGISTRO DE CAMBIOS
+
+### v2.4 — 1 septiembre 2026
+
+Origen: el fundador pidió reemplazar `/` (hoy la página de reclutamiento de médicos, PUB-01) por un marketplace de descubrimiento de pacientes, mostrando una segunda referencia visual ("MedMarket"). Se le señaló el conflicto (`/` está construida alrededor de §1.3, "véndele al médico") antes de tocar código. Decisión del fundador: mover el reclutamiento a `/para-medicos` en vez de descartarlo, y construir el marketplace en `/`.
+
+| Cambio | Tipo |
+|---|---|
+| `/para-medicos` (antes `/`) | Reubicación de contenido existente, sin cambios de copy |
+| `/` — home de descubrimiento del paciente | Pantalla nueva |
+| M3-RN-006/M3-CA-005 — filtros `teleconsultation`/`acceptsNewPatients`/`language`/`location` en `GET /doctors/public` | Extensión de M3 sobre campos que ya existen — ninguno nuevo |
+| M3-RN-007/M3-CA-006 — `GET /patients/me/doctors` | Endpoint nuevo, sección "Tus médicos" |
+| Búsqueda por síntoma, subespecialidad, hospital/institución, "cerca de mí" con geolocalización | Pedidos por el fundador pero **no construidos**: el primero exige un juicio clínico que CLAUDE.md prohíbe inventar sin validación médica (`PENDIENTE(jorge)`); los otros tres exigen datos que el modelo no captura hoy — agregarlos habría sido fingir precisión inexistente (CLAUDE.md §7) |
+
+### v2.3 — 1 septiembre 2026
+
+Origen: el fundador compartió una captura de referencia de otra aplicación ("MedNetwork") pidiendo un perfil de médico "tal cual, con todo" — búsqueda de directorio, agendamiento real del paciente, likes/comentarios, y formación académica de varias instituciones. Antes de escribir código se le presentó explícitamente que esto reabre tres decisiones ya tomadas y documentadas: §1.3 (no competir con Doctoralia en efecto de red — la exclusión de M3), la ausencia total de portal de paciente en el frontend, y M6-RN-006 (sin pasarela de pago para la consulta). El fundador confirmó, con esa información ya sobre la mesa, que quiere construirlo de todas formas. Esta versión documenta esa decisión consciente **antes** de instalar el código, siguiendo la regla de procedencia que la v2.1 estableció.
+
+| Cambio | Tipo |
+|---|---|
+| Módulo nuevo M3 — Directorio y búsqueda de médicos, sin reseñas (§7) | Reversión consciente de la exclusión de §2.2/§1.3 — autorizada explícitamente por el fundador, con la advertencia estratégica ya conocida. Las reseñas/calificaciones NO se autorizaron y siguen excluidas |
+| M5-RN-009 a M5-RN-012, M5-CA-006 a M5-CA-008 (§7, dentro de M5) | Completa M5-RN-007/M5-RN-008 y M5-CA-005, que ya estaban escritos desde la v2.0/v2.1 pero nunca se implementaron de punta a punta — no es una regla nueva, es cerrar una ya existente. La única regla genuinamente nueva es M5-RN-010 (resolución server-side del `patient_id`, motivada por el hallazgo de IDOR ya documentado en el código de `appointment-state-machine.service.ts`) |
+| M2B-RN-010 a M2B-RN-013, M2B-CA-009 a M2B-CA-013 (§7, dentro de M2B) | Reacciones y comentarios — la v2.2 los había excluido explícitamente ("fuera de esta versión"); el fundador los pidió al mostrar la referencia visual |
+| M2-RN-007/M2-RN-008, M2-CA-010/M2-CA-011 (§7, dentro de M2) — formación académica | Extensión nueva. `university` no se elimina (evita migración destructiva); `doctor_education` la complementa cuando existe |
+| `doctor_education`, `doctor_post_likes`, `doctor_post_comments` (§6.3) | Entidades nuevas |
+| Nota en `patients` (§6.2): `source=self_signup` ahora crea la fila, no solo el `user` | Cierra un hueco real, confirmado leyendo `auth.service.ts`: el registro de paciente nunca creaba esta fila |
+| `GET /doctors/public`, endpoints de like/comentario, `/doctors/me/education`, `/patients/me`, `/patients/me/appointments` (§8.1) | Endpoints nuevos |
+| Filas nuevas en la matriz de permisos (§5.2): directorio, like/comentario, agendamiento por enlace público | Consecuencia directa de los módulos nuevos |
+
+**Fuera de esta versión, deliberadamente** (nadie los pidió — construirlos sería inventar, CLAUDE.md §7): reseñas/calificaciones de pacientes sobre médicos, pasarela de pago para la consulta (M6-RN-006 ya decidió que no), mensajería médico-paciente, "seguir médicos" y "guardar publicaciones" (ya excluidos en v2.2, sin cambios).
+
+### v2.2 — 1 septiembre 2026
+
+Origen: pedido directo del fundador al agente de código, en conversación, el 1 de septiembre de 2026 — que el perfil del médico admita publicaciones con audiencia elegible (pública / solo mis pacientes / privada). Se verificó contra §1.3/§2.2 antes de escribir código: el pedido original (recibido primero en una versión mucho más amplia, con feed tipo red social, congresos y publicaciones como contenido, seguir/guardar/reaccionar médicos) se solapaba con **M3 — directorio con búsqueda y reseñas**, excluido a propósito del MVP por riesgo de competir con Doctoralia en efecto de red (la recomendación de mayor peso del documento, §1.3). Se le presentó esta tensión al fundador explícitamente, junto con el hallazgo de que no existe portal de pacientes en el frontend. Decisión del fundador, en dos pasos: (1) autorizar las tres audiencias, incluida la pública, aceptando conscientemente que esto adelanta la parte de M3 que consiste en *enriquecer un perfil que un paciente ya visitó* — no la parte de *búsqueda/descubrimiento de médicos nuevos ni reseñas*, que sigue excluida; (2) para "solo mis pacientes", construir la autorización real en backend ahora y dejar la vista del lado del paciente pendiente de que exista un portal de pacientes, en vez de construir ese portal en este mismo pase o dejar la opción sin ningún efecto real.
+
+| Cambio | Tipo |
+|---|---|
+| Módulo nuevo M2B — Publicaciones del médico y control de audiencia (§7) | Módulo nuevo, no estaba en ningún borrador anterior de este documento |
+| `doctor_posts`, `doctor_post_media` (§6.3) | Entidades nuevas |
+| `GET/POST /doctors/me/posts`, `GET/PATCH/DELETE /doctors/me/posts/{id}`, `POST /doctors/me/posts/{id}/media`, `GET /doctors/{slug}/public/posts`, `GET /doctors/{id}/posts/patients-only`, `POST /admin/doctor-posts/{id}/archive` (§8.1) | Endpoints nuevos |
+| `GET /doctors/{slug}/public/services` (§8.1) | Documenta un endpoint que ya existía en el código (construido junto con M5-RN-007) pero no estaba listado en el inventario — corrección de una omisión, no una regla nueva |
+| Fila de M3 en §2.2 aclarada: la búsqueda/descubrimiento y las reseñas de pacientes siguen fuera del MVP; solo se autorizó la publicación de contenido en un perfil ya existente (M2B) | Aclaración de alcance sobre una exclusión ya existente, no una reversión de M3 completo |
+| Video en `doctor_post_media`: formato y límite de tamaño | Marcado `PENDIENTE(jorge)` — no hay cifra definida, no se inventa aquí (protocolo de CLAUDE.md §12) |
+| Visibilidad del **perfil completo** (público/limitado/privado-para-pacientes, distinta de la audiencia por publicación) | Pedida por el fundador en el mismo mensaje, pero sin alcance operativo definido todavía (qué campos exactos gatilla, si un perfil "limitado" sigue siendo agendable) — queda explícitamente fuera de esta versión, no construida, para no inventar ese diseño sin su decisión |
+
+**Pendiente, no resuelto por esta versión:** el límite de tamaño/formato de video en publicaciones (`PENDIENTE(jorge)`), el diseño de "visibilidad del perfil completo" como sistema aparte de la audiencia por publicación, y el portal de pacientes del que depende la vista real de "solo mis pacientes".
 
 ### v2.1 — agosto 2026
 

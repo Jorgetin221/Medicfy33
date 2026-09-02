@@ -1,177 +1,91 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { apiFetch } from "@/lib/api-client";
+import { useAuth } from "@/lib/auth-context";
+import { useSpecialties } from "@/lib/use-specialties";
+import { Card, LoadingState, EmptyState } from "@/components/ui/states";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/states";
-import { IconFile, IconPrescription, IconCalendar, IconShieldCheck, IconLock, IconClipboardList } from "@/components/ui/landing-icons";
+import { TextInput } from "@/components/ui/field";
+import { IconShieldCheck, IconLock, IconClipboardList, IconStethoscope } from "@/components/ui/landing-icons";
+import { SiteHeader } from "@/components/site-header";
 
-// PUB-01. No hay criterios de aceptación específicos en la
-// especificación más allá del nombre de la pantalla — es la puerta de
-// entrada del MVP: "se vende al médico" (§1.3), no un directorio de
-// pacientes. Cada afirmación de esta página corresponde a un módulo
-// real del MVP (M2, M4, M8, M9, M15); nada aquí promete algo que el
-// producto no hace todavía.
-const FEATURES = [
-  {
-    icon: IconFile,
-    title: "Expediente NOM-004",
-    body: "Historial clínico completo que se construye consulta a consulta. Nunca se sobrescribe ni se pierde.",
-  },
-  {
-    icon: IconPrescription,
-    title: "Receta con validez legal",
-    body: "Emítela sin salir de la consulta. Los medicamentos controlados quedan bloqueados por diseño, no por advertencia.",
-  },
-  {
-    icon: IconCalendar,
-    title: "Agenda del día",
-    body: "Antecedentes, alergias y tus últimas consultas con cada paciente, visibles sin saltar entre WhatsApp y una libreta.",
-  },
-  {
-    icon: IconShieldCheck,
-    title: "Cédula verificada",
-    body: "Tu perfil muestra tu cédula profesional verificada — la confianza que un directorio genérico no puede dar.",
-  },
-] as const;
-
-const STEPS = [
-  {
-    title: "Crea tu cuenta",
-    body: "Regístrate con tu cédula profesional. La verificamos contra el registro de la SEP antes de que recibas pacientes.",
-  },
-  {
-    title: "Configura tu consultorio",
-    body: "Agrega tus horarios, tus servicios y, si los tienes, a tus asistentes.",
-  },
-  {
-    title: "Atiende y documenta",
-    body: "Cada consulta queda registrada, cada receta lista en segundos, sin papeleo extra.",
-  },
-] as const;
-
+// v2.4 (spec §7, M3): home de descubrimiento del paciente — reemplaza
+// lo que vivía en "/" (reclutamiento de médicos, ahora en
+// /para-medicos). Cada sección consume un endpoint real; nada aquí es
+// una maqueta (CLAUDE.md §7).
 const TRUST_ITEMS = [
-  { icon: IconLock, label: "Datos clínicos cifrados" },
-  { icon: IconClipboardList, label: "Bitácora de cada acceso" },
-  { icon: IconShieldCheck, label: "Controlados bloqueados por diseño" },
+  { icon: IconShieldCheck, label: "Especialistas con cédula verificada ante la SEP" },
+  { icon: IconLock, label: "Tus datos, cifrados siempre" },
+  { icon: IconClipboardList, label: "Bitácora de cada acceso a tu expediente" },
 ] as const;
+
+interface PublicDoctorSummary {
+  id: string;
+  slug: string;
+  displayName: string | null;
+  photoUrl: string | null;
+  primarySpecialtyName: string | null;
+  university: string | null;
+  verified: boolean;
+  acceptsTeleconsultation: boolean;
+}
 
 export default function HomePage() {
+  const router = useRouter();
+  const { accessToken } = useAuth();
+  const [q, setQ] = useState("");
+
+  function onSearch(e: React.FormEvent) {
+    e.preventDefault();
+    router.push(`/doctores${q ? `?q=${encodeURIComponent(q)}` : ""}`);
+  }
+
   return (
-    <>
-      <a
-        href="#contenido"
-        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-brand-900 focus:px-4 focus:py-2 focus:text-white"
-      >
-        Saltar al contenido principal
-      </a>
+    <div className="min-h-screen bg-gray-100">
+      <SiteHeader />
 
-      <header className="sticky top-0 z-40 border-b border-gray-300 bg-white/95 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
-          <Link href="/" className="font-brand text-xl font-bold text-brand-900">
-            Medicfy
-          </Link>
-          <nav className="flex items-center gap-1 sm:gap-4" aria-label="Principal">
-            <Link
-              href="/login"
-              className="inline-flex min-h-[44px] items-center rounded-md px-2 text-base font-medium text-brand-700 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-700 sm:px-3"
-            >
-              Iniciar sesión
-            </Link>
-            <Link href="/registro-medico">
-              <Button className="px-3 sm:px-4">Regístrate</Button>
-            </Link>
-          </nav>
-        </div>
-      </header>
-
-      <main id="contenido">
-        {/* Hero */}
-        <section className="mx-auto grid max-w-6xl gap-12 px-6 py-16 md:grid-cols-2 md:items-center md:py-24">
-          <div className="flex flex-col gap-6 motion-safe:animate-[fade-in-up_0.6s_ease-out_both]">
+      <main>
+        {/* Hero + búsqueda */}
+        <section className="bg-white px-6 py-16 md:py-20">
+          <div className="mx-auto flex max-w-3xl flex-col items-center gap-6 text-center">
             <span className="w-fit rounded-full bg-brand-100 px-3 py-1 text-sm font-medium text-brand-900">
-              Para médicos privados en Guadalajara
+              Médicos verificados en Guadalajara
             </span>
             <h1 className="font-heading text-3xl leading-tight text-brand-900 md:text-[44px]">
-              Tu consultorio, sin WhatsApp, sin Excel y sin recetario de papel
+              Encuentra al especialista que necesitas
             </h1>
-            <p className="text-lg text-gray-700">
-              Expediente clínico conforme a NOM-004, receta electrónica con validez legal y la agenda de tu día, en
-              un solo lugar.
-            </p>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-              <Link href="/registro-medico">
-                <Button className="w-full sm:w-auto">Crear cuenta gratis</Button>
+            <p className="text-lg text-gray-700">Conecta con médicos verificados y conoce su formación antes de agendar.</p>
+
+            <form onSubmit={onSearch} className="mt-2 flex w-full max-w-xl flex-col gap-3 sm:flex-row">
+              <TextInput
+                aria-label="Especialidad o nombre del médico"
+                placeholder="Ej. Cardiología, Dra. López…"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                className="flex-1"
+              />
+              <Button type="submit" className="sm:w-auto">
+                Buscar
+              </Button>
+            </form>
+
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <Link href="/doctores?teleconsultation=true" className="rounded-full border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-brand-100">
+                Consulta en línea
               </Link>
-              <Link href="/login" className="sm:hidden">
-                <Button variant="secondary" className="w-full">
-                  Ya tengo cuenta
-                </Button>
+              <Link
+                href="/doctores?acceptsNewPatients=true"
+                className="rounded-full border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-brand-100"
+              >
+                Acepta pacientes nuevos
               </Link>
             </div>
-            <p className="text-sm text-gray-500">Verificamos tu cédula ante la SEP. Sin tarjeta de crédito.</p>
           </div>
 
-          <div
-            className="relative mx-auto mb-8 w-full max-w-sm motion-safe:animate-[fade-in-up_0.7s_ease-out_0.12s_both]"
-            aria-hidden="true"
-          >
-            <Card className="relative z-10 flex flex-col gap-3">
-              <p className="text-sm font-medium text-gray-500">Agenda de hoy</p>
-              <AgendaMockRow time="09:00" label="Consulta de seguimiento" status="Confirmada" statusClass="border-success-600 text-success-600" />
-              <AgendaMockRow time="10:30" label="Primera vez" status="En curso" statusClass="border-brand-700 text-brand-700" />
-              <AgendaMockRow time="12:00" label="Consulta de seguimiento" status="Agendada" statusClass="border-gray-500 text-gray-700" />
-            </Card>
-            <div className="absolute -bottom-5 -right-5 z-0 hidden rounded-lg border border-gray-300 bg-white p-4 shadow-card sm:block">
-              <p className="flex items-center gap-2 text-sm font-medium text-success-600">
-                <IconPrescription className="h-5 w-5" /> Receta lista
-              </p>
-            </div>
-          </div>
-        </section>
-
-        {/* Features */}
-        <section className="border-t border-gray-300 bg-gray-100 px-6 py-16 md:py-20">
-          <div className="mx-auto max-w-6xl">
-            <h2 className="font-heading text-2xl text-brand-900">Todo lo que necesita tu consultorio</h2>
-            <p className="mt-2 max-w-2xl text-base text-gray-700">
-              No es un directorio con visibilidad. Es la herramienta clínica del día a día.
-            </p>
-            <div className="mt-10 grid gap-6 sm:grid-cols-2">
-              {FEATURES.map(({ icon: Icon, title, body }) => (
-                <Card
-                  key={title}
-                  className="flex flex-col gap-3 transition-shadow duration-200 hover:shadow-[0_4px_16px_rgba(0,0,0,0.1),0_2px_6px_rgba(0,0,0,0.06)]"
-                >
-                  <span className="flex h-11 w-11 items-center justify-center rounded-md bg-brand-100 text-brand-700">
-                    <Icon className="h-6 w-6" />
-                  </span>
-                  <h3 className="font-heading text-lg text-brand-900">{title}</h3>
-                  <p className="text-base text-gray-700">{body}</p>
-                </Card>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* How it works */}
-        <section className="px-6 py-16 md:py-20">
-          <div className="mx-auto max-w-6xl">
-            <h2 className="font-heading text-2xl text-brand-900">Cómo funciona</h2>
-            <ol className="mt-10 grid gap-8 md:grid-cols-3">
-              {STEPS.map((step, i) => (
-                <li key={step.title} className="flex flex-col gap-3">
-                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-900 font-heading text-base text-white">
-                    {i + 1}
-                  </span>
-                  <h3 className="font-heading text-lg text-brand-900">{step.title}</h3>
-                  <p className="text-base text-gray-700">{step.body}</p>
-                </li>
-              ))}
-            </ol>
-          </div>
-        </section>
-
-        {/* Trust strip */}
-        <section className="border-y border-gray-300 bg-gray-100 px-6 py-8">
-          <ul className="mx-auto flex max-w-6xl flex-wrap items-center justify-center gap-3">
+          <ul className="mx-auto mt-10 flex max-w-4xl flex-wrap items-center justify-center gap-3">
             {TRUST_ITEMS.map(({ icon: Icon, label }) => (
               <li
                 key={label}
@@ -184,49 +98,236 @@ export default function HomePage() {
           </ul>
         </section>
 
-        {/* Final CTA */}
-        <section className="bg-brand-900 px-6 py-16 text-center md:py-20">
-          <div className="mx-auto flex max-w-2xl flex-col items-center gap-6">
-            <h2 className="font-heading text-2xl text-white md:text-3xl">Empieza a documentar tu consulta de hoy</h2>
-            <p className="text-lg text-brand-100">Crea tu cuenta en unos minutos y verifica tu cédula profesional.</p>
-            <Link href="/registro-medico">
-              <Button variant="secondary">Crear cuenta gratis</Button>
-            </Link>
-          </div>
-        </section>
+        {accessToken ? <MyDoctorsSection accessToken={accessToken} /> : null}
+
+        <SpecialtiesSection />
+        <FeaturedDoctorsSection />
       </main>
 
-      <footer className="px-6 py-10">
+      <footer className="border-t border-gray-300 bg-white px-6 py-10">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 text-center sm:flex-row sm:text-left">
           <div>
             <p className="font-brand text-base text-brand-900">Medicfy</p>
-            <p className="text-sm text-gray-500">La herramienta clínica del médico privado mexicano.</p>
+            <p className="text-sm text-gray-500">Encuentra y conoce a tu médico, dentro de la plataforma.</p>
           </div>
-          <p className="text-sm text-gray-500">© {new Date().getFullYear()} Medicfy · Guadalajara, Jalisco</p>
+          <p className="text-sm text-gray-500">
+            <Link href="/para-medicos" className="underline">
+              ¿Eres médico? Regístrate aquí
+            </Link>
+          </p>
         </div>
       </footer>
-    </>
+    </div>
   );
 }
 
-function AgendaMockRow({
-  time,
-  label,
-  status,
-  statusClass,
-}: {
-  time: string;
-  label: string;
-  status: string;
-  statusClass: string;
-}) {
+function SpecialtiesSection() {
+  const { specialties, isLoading } = useSpecialties();
+  if (isLoading || specialties.length === 0) return null;
+
   return (
-    <div className="flex items-center justify-between gap-3 rounded-md border border-gray-300 px-3 py-2">
-      <div>
-        <p className="text-sm font-medium text-gray-900">{time}</p>
-        <p className="text-sm text-gray-500">{label}</p>
+    <section className="mx-auto max-w-6xl px-6 py-12">
+      <div className="flex items-center justify-between">
+        <h2 className="font-heading text-2xl text-brand-900">Explora por especialidad</h2>
+        <Link href="/doctores" className="text-sm font-medium text-brand-700 underline">
+          Ver todas →
+        </Link>
       </div>
-      <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${statusClass}`}>{status}</span>
-    </div>
+      <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+        {specialties.slice(0, 12).map((s) => (
+          <Link
+            key={s.code}
+            href={`/doctores?specialty=${s.code}`}
+            className="flex items-center gap-3 rounded-lg border border-gray-300 bg-white p-4 transition-shadow hover:shadow-card"
+          >
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-brand-100 text-brand-700">
+              <IconStethoscope className="h-5 w-5" />
+            </span>
+            <span className="text-base font-medium text-gray-900">{s.nameEs}</span>
+          </Link>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function FeaturedDoctorsSection() {
+  const [doctors, setDoctors] = useState<PublicDoctorSummary[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch<{ items: PublicDoctorSummary[] }>("/doctors/public?limit=6")
+      .then((res) => {
+        if (!cancelled) setDoctors(res.items);
+      })
+      .catch(() => {
+        if (!cancelled) setDoctors([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (doctors === null) {
+    return (
+      <section className="mx-auto max-w-6xl px-6 py-12">
+        <LoadingState />
+      </section>
+    );
+  }
+  if (doctors.length === 0) return null;
+
+  return (
+    <section className="mx-auto max-w-6xl px-6 py-12">
+      <div className="flex items-center justify-between">
+        <h2 className="font-heading text-2xl text-brand-900">Especialistas que podrían ayudarte</h2>
+        <Link href="/doctores" className="text-sm font-medium text-brand-700 underline">
+          Ver todos →
+        </Link>
+      </div>
+      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {doctors.map((d) => (
+          <Card key={d.id} className="flex flex-col gap-3">
+            <div className="flex items-center gap-3">
+              {d.photoUrl ? (
+                <img src={d.photoUrl} alt="" className="h-14 w-14 shrink-0 rounded-full object-cover" />
+              ) : (
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xl text-gray-400" aria-hidden="true">
+                  {d.displayName ? d.displayName.charAt(0).toUpperCase() : "?"}
+                </div>
+              )}
+              <div className="min-w-0">
+                <p className="truncate text-base font-medium text-gray-900">{d.displayName ?? "Perfil en configuración"}</p>
+                <p className="truncate text-sm text-gray-500">{d.primarySpecialtyName ?? "Medicina General"}</p>
+              </div>
+            </div>
+            {d.verified ? (
+              <span className="inline-flex w-fit items-center gap-1 text-sm font-medium text-success-600">
+                <IconShieldCheck className="h-4 w-4" />
+                Verificado
+              </span>
+            ) : null}
+            <Link href={`/dr/${d.slug}`}>
+              <Button type="button" variant="secondary" className="w-full">
+                Ver perfil
+              </Button>
+            </Link>
+          </Card>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+interface LinkedDoctor {
+  id: string;
+  slug: string;
+  displayName: string | null;
+  photoUrl: string | null;
+  primarySpecialtyName: string;
+  verified: boolean;
+}
+interface FeedPost {
+  id: string;
+  doctor: LinkedDoctor;
+  title: string | null;
+  body: string;
+  publishedAt: string | null;
+}
+
+// M3-RN-007 (v2.4): "Tus médicos" — solo visible con sesión de
+// paciente y al menos un care_relationship activo. El feed reutiliza
+// las rutas de publicaciones que ya existen por médico (M2B); no hay
+// un endpoint de feed agregado nuevo en el servidor.
+function MyDoctorsSection({ accessToken }: { accessToken: string }) {
+  const [doctors, setDoctors] = useState<LinkedDoctor[] | null>(null);
+  const [feed, setFeed] = useState<FeedPost[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch<LinkedDoctor[]>("/patients/me/doctors", { accessToken })
+      .then((data) => {
+        if (!cancelled) setDoctors(data);
+      })
+      .catch(() => {
+        if (!cancelled) setDoctors([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken]);
+
+  useEffect(() => {
+    if (!doctors || doctors.length === 0) {
+      setFeed(doctors ? [] : null);
+      return;
+    }
+    let cancelled = false;
+    Promise.all(
+      doctors.slice(0, 5).map((doc) =>
+        apiFetch<Omit<FeedPost, "doctor">[]>(`/doctors/${doc.slug}/public/posts`)
+          .then((posts) => posts.slice(0, 2).map((p) => ({ ...p, doctor: doc })))
+          .catch(() => [])
+      )
+    ).then((byDoctor) => {
+      if (cancelled) return;
+      const merged = byDoctor
+        .flat()
+        .sort((a, b) => (b.publishedAt ?? "").localeCompare(a.publishedAt ?? ""))
+        .slice(0, 6);
+      setFeed(merged);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [doctors]);
+
+  if (doctors === null) return null;
+  if (doctors.length === 0) return null;
+
+  return (
+    <section className="mx-auto max-w-6xl px-6 py-12">
+      <h2 className="font-heading text-2xl text-brand-900">Tus médicos</h2>
+      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {doctors.map((d) => (
+          <Card key={d.id} className="flex items-center gap-3">
+            {d.photoUrl ? (
+              <img src={d.photoUrl} alt="" className="h-12 w-12 shrink-0 rounded-full object-cover" />
+            ) : (
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gray-100 text-lg text-gray-400" aria-hidden="true">
+                {d.displayName ? d.displayName.charAt(0).toUpperCase() : "?"}
+              </div>
+            )}
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-base font-medium text-gray-900">{d.displayName ?? "Médico"}</p>
+              <p className="truncate text-sm text-gray-500">{d.primarySpecialtyName}</p>
+            </div>
+            <Link href={`/dr/${d.slug}`} className="shrink-0 text-sm font-medium text-brand-700 underline">
+              Ver perfil
+            </Link>
+          </Card>
+        ))}
+      </div>
+
+      {feed && feed.length > 0 ? (
+        <div className="mt-8">
+          <h3 className="font-heading text-lg text-brand-900">Actualizaciones de tus médicos</h3>
+          <div className="mt-4 flex flex-col gap-3">
+            {feed.map((post) => (
+              <Card key={post.id} className="flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-gray-900">{post.doctor.displayName ?? "Tu médico"}</p>
+                  <p className="truncate text-base text-gray-700">{post.title ?? post.body}</p>
+                </div>
+                <Link href={`/dr/${post.doctor.slug}`} className="shrink-0 text-sm font-medium text-brand-700 underline">
+                  Ver
+                </Link>
+              </Card>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {feed && feed.length === 0 ? <EmptyState title="Sin actualizaciones recientes de tus médicos" /> : null}
+    </section>
   );
 }

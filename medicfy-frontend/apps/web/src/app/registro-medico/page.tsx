@@ -17,6 +17,10 @@ import { Aviso } from "@/components/ui/alert";
 const PANEL_COPY = {
   panelTitle: "Verificamos tu cédula ante la SEP antes de que recibas pacientes",
   panelBody: "Tu perfil verificado es la confianza que un directorio genérico no puede dar. Sin tarjeta de crédito para empezar.",
+  // v2.4: "/" ahora es el marketplace de pacientes — el logo de esta
+  // pantalla debe volver a la página de reclutamiento de médicos, no
+  // ahí.
+  homeHref: "/para-medicos",
 };
 
 // PUB-03. M1-RN-002: registro de médico, queda en verification_status
@@ -127,8 +131,24 @@ export default function RegistroMedicoPage() {
             </SelectInput>
           </FieldWrapper>
 
-          <FieldWrapper label="Teléfono" htmlFor="phone" error={form.formState.errors.phone?.message} hint="+52 y 10 dígitos.">
-            <TextInput id="phone" type="tel" placeholder="+523312345678" error={!!form.formState.errors.phone} {...form.register("phone")} />
+          <FieldWrapper label="Teléfono" htmlFor="phone" error={form.formState.errors.phone?.message} hint="10 dígitos.">
+            <TextInput
+              id="phone"
+              type="tel"
+              inputMode="numeric"
+              maxLength={10}
+              placeholder="3312345678"
+              error={!!form.formState.errors.phone}
+              {...form.register("phone", {
+                // El +52 es obligatorio para el backend (E.164, spec M1)
+                // pero no hace falta que el médico lo escriba — se
+                // antepone aquí antes de validar/enviar.
+                setValueAs: (v: string) => {
+                  const digits = typeof v === "string" ? v.replace(/\D/g, "") : "";
+                  return digits ? `+52${digits}` : "";
+                },
+              })}
+            />
           </FieldWrapper>
 
           {submitError ? <ErrorState error={submitError} /> : null}

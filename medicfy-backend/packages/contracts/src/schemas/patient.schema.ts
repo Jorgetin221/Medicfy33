@@ -20,7 +20,10 @@ const phoneSchema = z.string().refine(isValidMxPhoneE164, "Ingresa un teléfono 
 const curpSchema = z.string().refine(isValidCurp, "CURP inválida.");
 
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-const birthDateSchema = z
+// Exportado (v2.3): identity.schema.ts lo reutiliza para el registro
+// de paciente con cuenta propia (M5-RN-009) — misma validación, un
+// solo lugar que decide qué es una fecha de nacimiento válida.
+export const birthDateSchema = z
   .string()
   .regex(DATE_ONLY_PATTERN, "Fecha inválida, usa formato YYYY-MM-DD.")
   .refine(
@@ -98,6 +101,14 @@ export const appointmentCreateSchema = z
   })
   .strict();
 export type AppointmentCreateInput = z.infer<typeof appointmentCreateSchema>;
+
+// M5-RN-010 (v2.3): a propósito SIN patientId — el agendamiento
+// público lo resuelve siempre el servidor a partir del usuario
+// autenticado, nunca de un campo del cuerpo. Aceptar patientId aquí
+// reabriría el mismo patrón de IDOR que appointment-state-machine.service.ts
+// ya documenta y cerró del lado del médico.
+export const publicAppointmentCreateSchema = appointmentCreateSchema.omit({ patientId: true });
+export type PublicAppointmentCreateInput = z.infer<typeof publicAppointmentCreateSchema>;
 
 // M5-RN-002/003: quién cancela cambia el reembolso (100% si el
 // médico, según política si el paciente) — como M5a solo autentica

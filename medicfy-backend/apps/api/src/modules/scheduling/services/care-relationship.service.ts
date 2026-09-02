@@ -45,6 +45,19 @@ export class CareRelationshipService {
     });
   }
 
+  // M3-RN-007 (spec §7, v2.4): "Tus médicos" — mismo criterio de
+  // lectura sin efecto secundario que PatientService.list() (su
+  // simétrico del lado del médico): ACTIVE y no vencido, sin la
+  // limpieza perezosa a EXPIRED que sí hace hasActiveRelationship.
+  async listActiveDoctorsForPatient(patientId: string) {
+    const relationships = await this.prisma.careRelationship.findMany({
+      where: { patientId, status: "ACTIVE", expiresAt: { gt: new Date() } },
+      orderBy: { lastInteractionAt: "desc" },
+      include: { doctor: { include: { primarySpecialty: true } } },
+    });
+    return relationships.map((r) => r.doctor);
+  }
+
   async revoke(careRelationshipId: string, revokedBy: string): Promise<CareRelationship> {
     return this.prisma.careRelationship.update({
       where: { id: careRelationshipId },

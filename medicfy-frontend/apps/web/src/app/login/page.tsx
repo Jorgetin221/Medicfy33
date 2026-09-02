@@ -1,25 +1,52 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { loginSchema, mfaLoginVerifySchema, type LoginInput, type MfaLoginVerifyInput } from "@medicfy/contracts";
 import { apiFetch } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
+import { tokenPrimaryRole } from "@/lib/jwt-claims";
 import { AuthLayout } from "@/components/auth-layout";
 import { Button } from "@/components/ui/button";
 import { FieldWrapper, TextInput } from "@/components/ui/field";
-import { ErrorState } from "@/components/ui/states";
+import { ErrorState, LoadingState } from "@/components/ui/states";
 
 type LoginResult = { accessToken: string } | { mfaRequired: true; mfaSessionToken: string };
+
+// M5-RN-009 (v2.3): antes SIEMPRE mandaba a /agenda, una pantalla de
+// médico — una cuenta PATIENT terminaba viendo la agenda de nadie.
+// `redirectTo` (M5-RN-010): "Agendar" desde un perfil público sin
+// sesión manda aquí con ?redirect=/dr/{slug} para volver exactamente
+// a donde estaba, en vez de perder el contexto en /mi-cuenta.
+function landingRouteFor(accessToken: string, redirectTo: string | null): string {
+  if (redirectTo && redirectTo.startsWith("/")) return redirectTo;
+  return tokenPrimaryRole(accessToken) === "PATIENT" ? "/mi-cuenta" : "/agenda";
+}
 
 // PUB-04. M1-RN-004/005/006: consentimiento vigente, MFA y bloqueo
 // por fuerza bruta ya viven en el backend — esta pantalla solo
 // necesita ramificar en la respuesta de /auth/login.
 export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center">
+          <LoadingState />
+        </div>
+      }
+    >
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectTo = searchParams.get("redirect");
   const { login } = useAuth();
   const [mfaSessionToken, setMfaSessionToken] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<unknown>(null);
@@ -35,14 +62,14 @@ export default function LoginPage() {
         return;
       }
       login(res.accessToken);
-      router.push("/agenda");
+      router.push(landingRouteFor(res.accessToken, redirectTo));
     } catch (error) {
       setSubmitError(error);
     }
   }
 
   if (mfaSessionToken) {
-    return <MfaStep mfaSessionToken={mfaSessionToken} />;
+    return <MfaStep mfaSessionToken={mfaSessionToken} redirectTo={redirectTo} />;
   }
 
   return (
@@ -53,7 +80,7 @@ export default function LoginPage() {
       <div className="flex flex-col gap-8">
         <div>
           <h1 className="font-heading text-3xl text-brand-900">Iniciar sesión</h1>
-          <p className="mt-2 text-base text-gray-500">Para médicos y asistentes de Medicfy.</p>
+          <p className="mt-2 text-base text-gray-500">Médicos, asistentes y pacientes de Medicfy.</p>
         </div>
 
         <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-5" noValidate>
@@ -77,8 +104,12 @@ export default function LoginPage() {
 
         <p className="text-center text-base text-gray-700">
           ¿No tienes cuenta?{" "}
+          <Link href="/registro-paciente" className="font-medium text-brand-700 underline">
+            Regístrate como paciente
+          </Link>{" "}
+          o{" "}
           <Link href="/registro-medico" className="font-medium text-brand-700 underline">
-            Regístrate
+            como médico
           </Link>
         </p>
       </div>
@@ -86,7 +117,7 @@ export default function LoginPage() {
   );
 }
 
-function MfaStep({ mfaSessionToken }: { mfaSessionToken: string }) {
+function MfaStep({ mfaSessionToken, redirectTo }: { mfaSessionToken: string; redirectTo: string | null }) {
   const router = useRouter();
   const { login } = useAuth();
   const [error, setError] = useState<unknown>(null);
@@ -101,7 +132,7 @@ function MfaStep({ mfaSessionToken }: { mfaSessionToken: string }) {
     try {
       const res = await apiFetch<{ accessToken: string }>("/auth/mfa/verify", { method: "POST", body: values });
       login(res.accessToken);
-      router.push("/agenda");
+      router.push(landingRouteFor(res.accessToken, redirectTo));
     } catch (err) {
       setError(err);
     }

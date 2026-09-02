@@ -12,8 +12,29 @@ export const IMMUTABLE_DOCTOR_FIELDS = [
   "legalLastName",
   "professionalLicense",
   "specialtyLicense",
+  "specialtyLicenseExpiresAt",
   "primarySpecialtyCode",
 ] as const;
+
+const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+// M2-RN-006: vencimiento de la cédula de especialidad — mismo estatus
+// de inmutabilidad que specialtyLicense (se corrige junto con ella
+// antes de VERIFIED, la confirma/ajusta un admin en la verificación,
+// nunca la edita libremente un médico ya verificado; si pudiera, el
+// degradado del sello al vencer no serviría de nada).
+const specialtyLicenseExpiresAtSchema = z
+  .string()
+  .regex(DATE_ONLY_PATTERN, "Fecha inválida, usa formato YYYY-MM-DD.");
+
+// DT-05 / M5-RN-002: "configurable por médico" — mismo shape que
+// CancellationPolicy en scheduling/cancellation-policy.ts. NULL en BD
+// (no capturado aún) cae al default del spec ahí mismo, no aquí.
+export const cancellationPolicySchema = z.object({
+  fullRefundHoursBefore: z.number().int().min(0).max(720),
+  partialRefundHoursBefore: z.number().int().min(0).max(720),
+  partialRefundPercent: z.number().int().min(0).max(100),
+});
+export type CancellationPolicyInput = z.infer<typeof cancellationPolicySchema>;
 
 const biographySchema = z
   .string()
@@ -45,6 +66,9 @@ export const doctorProfileUpdateSchema = z
     professionalPhone: z.string().refine(isValidMxPhoneE164, "Ingresa un teléfono a 10 dígitos.").optional(),
     professionalEmail: z.string().email("Ingresa un correo electrónico válido.").optional(),
     letterheadPhrase: z.string().max(200).optional(),
+    // DT-05: ausente del PATCH hasta ahora aunque la columna y su
+    // resolución (M5-RN-002) ya existen.
+    cancellationPolicy: cancellationPolicySchema.optional(),
   })
   .strict();
 export type DoctorProfileUpdateInput = z.infer<typeof doctorProfileUpdateSchema>;
@@ -63,6 +87,7 @@ export const doctorLegalFieldsUpdateSchema = z
       .refine(isValidCedulaFormat, "No encontramos esta cédula en el registro de la SEP. Verifica el número.")
       .optional(),
     specialtyLicense: z.string().min(1).max(60).optional(),
+    specialtyLicenseExpiresAt: specialtyLicenseExpiresAtSchema.optional(),
     primarySpecialtyCode: z.string().min(1).max(60).optional(),
   })
   .strict();
@@ -143,7 +168,33 @@ export type BrandingAssetUploadMetadataInput = z.infer<typeof brandingAssetUploa
 export const verifyDoctorSchema = z
   .object({
     specialtyConfirmed: z.boolean().optional(),
+    // M2-RN-006: el admin confirma/corrige la fecha de vencimiento
+    // leída del documento subido (CERTIFICADO_CONSEJO) al momento de
+    // verificar — el valor que el médico capturó antes de la revisión
+    // es solo un borrador.
+    specialtyLicenseExpiresAt: specialtyLicenseExpiresAtSchema.optional(),
   })
   .optional()
   .default({});
 export type VerifyDoctorInput = z.infer<typeof verifyDoctorSchema>;
+
+// M3 (spec §7, v2.3/v2.4): GET /doctors/public — todo opcional, todo
+// sobre campos que ya existen (M3-RN-006). Los booleans llegan como
+// query string, nunca como JSON — z.coerce.boolean() trataría "false"
+// como string no vacío -> true, por eso el enum explícito.
+const queryBooleanSchema = z
+  .enum(["true", "false"])
+  .transform((v) => v === "true")
+  .optional();
+
+export const doctorPublicSearchQuerySchema = z.object({
+  q: z.string().max(120).optional(),
+  specialty: z.string().max(60).optional(),
+  location: z.string().max(120).optional(),
+  language: z.string().max(40).optional(),
+  teleconsultation: queryBooleanSchema,
+  acceptsNewPatients: queryBooleanSchema,
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(50).optional(),
+});
+export type DoctorPublicSearchQuery = z.infer<typeof doctorPublicSearchQuerySchema>;

@@ -47,6 +47,7 @@ describe("append-only enforcement — clinical_notes, prescriptions, lab_orders"
         legalFirstName: "Ana",
         legalLastName: "García",
         professionalLicense: randomUUID().replace(/-/g, "").slice(0, 7),
+        slug: `ana-garcia-${randomUUID().slice(0, 8)}`,
       },
     });
     doctorId = doctor.id;

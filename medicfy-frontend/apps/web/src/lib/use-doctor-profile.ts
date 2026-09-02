@@ -14,10 +14,15 @@ export type DoctorVerificationStatus =
 
 export interface DoctorProfile {
   id: string;
+  slug: string;
   legalFirstName: string;
   legalLastName: string;
   professionalLicense: string;
   specialtyLicense: string | null;
+  // M2-RN-006: ISO datetime (vía JSON.stringify de un DateTime de
+  // Prisma) o null si nunca se capturó — el sello "Médico verificado"
+  // se degrada cuando pasa (calculado en el backend, toPublicDoctorView).
+  specialtyLicenseExpiresAt: string | null;
   primarySpecialtyId: string | null;
   displayName: string | null;
   photoUrl: string | null;
@@ -28,6 +33,7 @@ export interface DoctorProfile {
   professionalPhone: string | null;
   professionalEmail: string | null;
   letterheadPhrase: string | null;
+  acceptsTeleconsultation: boolean;
   logoUrl: string | null;
   signatureImageUrl: string | null;
   verificationStatus: DoctorVerificationStatus;

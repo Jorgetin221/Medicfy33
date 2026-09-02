@@ -92,6 +92,16 @@ export function IconClipboardCheckNav(props: IconProps) {
   );
 }
 
+// M2B: publicaciones del médico.
+export function IconMegaphone(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M3 11v2a1 1 0 0 0 1 1h1.5l1 5h2l-1-5H10l7 4V7l-7 4H4a1 1 0 0 0-1 1Z" />
+      <path d="M18 9.5a3 3 0 0 1 0 5" />
+    </svg>
+  );
+}
+
 // Botón de plegar/desplegar el rail — apunta a la izquierda expandido,
 // gira 180° (vía className del llamador) cuando está plegado.
 export function IconChevronNav(props: IconProps) {

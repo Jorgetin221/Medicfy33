@@ -1,11 +1,12 @@
 import { HttpStatus, Injectable } from "@nestjs/common";
-import type { Doctor } from "@prisma/client";
-import type { DoctorLegalFieldsUpdateInput, DoctorProfileUpdateInput } from "@medicfy/contracts";
+import type { Doctor, Prisma } from "@prisma/client";
+import type { DoctorLegalFieldsUpdateInput, DoctorProfileUpdateInput, DoctorPublicSearchQuery } from "@medicfy/contracts";
 import { PrismaService } from "../../../prisma/prisma.service";
 import { ApiException } from "../../../common/api-exception";
 import { omitUndefined } from "../../../common/omit-undefined";
 import { AuditService } from "../../identity/services/audit.service";
 import type { RequestMeta } from "../../identity/services/auth.service";
+import { toPublicDoctorView, type PublicDoctorView } from "../doctor-public-view";
 
 // M2-CA-002 (aclaración post-v2.1, §17): legal fields are correctable
 // while verificationStatus is DRAFT, SUBMITTED, or REJECTED — blocked
@@ -111,6 +112,9 @@ export class DoctorProfileService {
         legalLastName: patch.legalLastName,
         professionalLicense: patch.professionalLicense,
         specialtyLicense: patch.specialtyLicense,
+        specialtyLicenseExpiresAt: patch.specialtyLicenseExpiresAt
+          ? new Date(`${patch.specialtyLicenseExpiresAt}T00:00:00Z`)
+          : undefined,
         primarySpecialtyId,
         verificationStatus: revertToDraft ? ("DRAFT" as const) : undefined,
       }),
@@ -129,6 +133,100 @@ export class DoctorProfileService {
     });
 
     return updated;
+  }
+
+  // M5-RN-007: "/dr/{slug}" — sin guard, cualquiera puede llamar esto.
+  // Resuelve por slug (nunca por id, que no es el identificador público)
+  // y arma la vista con toPublicDoctorView, el único lugar que decide
+  // qué campos son públicos.
+  async getPublicViewBySlug(slug: string): Promise<PublicDoctorView> {
+    const doctor = await this.prisma.doctor.findUnique({
+      where: { slug },
+      include: { primarySpecialty: true },
+    });
+    if (!doctor) {
+      throw new ApiException("DOCTOR_NOT_FOUND", "Médico no encontrado.", HttpStatus.NOT_FOUND);
+    }
+
+    const activeLocations = await this.prisma.practiceLocation.findMany({
+      where: { doctorId: doctor.id, isActive: true },
+    });
+
+    return toPublicDoctorView(doctor, doctor.primarySpecialty, activeLocations);
+  }
+
+  // M3 (spec §7, v2.3/v2.4): GET /doctors/public — sin guard. Cursor
+  // opaco = offset en base64url (no un id encadenado): a esta escala
+  // es correcto y mucho más simple que keyset pagination sobre un
+  // campo no-único (displayName), y sigue siendo un cursor real desde
+  // el contrato de la API (el cliente nunca ve ni decide el offset).
+  async searchPublic(query: DoctorPublicSearchQuery): Promise<{ items: PublicDoctorView[]; nextCursor: string | null }> {
+    const limit = query.limit ?? 20;
+    let offset = 0;
+    if (query.cursor) {
+      offset = Number(Buffer.from(query.cursor, "base64url").toString("utf8"));
+      if (!Number.isInteger(offset) || offset < 0) {
+        throw new ApiException("VALIDATION_ERROR", "cursor inválido.", HttpStatus.BAD_REQUEST);
+      }
+    }
+
+    // M3-RN-001: mismo umbral que el resto de vistas públicas del médico.
+    const where: Prisma.DoctorWhereInput = {
+      verificationStatus: { notIn: ["DRAFT", "REJECTED", "SUSPENDED"] },
+    };
+    // M3-RN-002: displayName o nombre de especialidad — el nombre
+    // legal nunca es buscable públicamente (mismo criterio que
+    // toPublicDoctorView). Un solo cuadro de búsqueda en el frontend
+    // manda todo como "q" (nunca pide al usuario distinguir "busco un
+    // nombre" de "busco una especialidad"), así que "q" coincide con
+    // cualquiera de los dos campos — sigue siendo coincidencia de
+    // texto simple, no un motor difuso ni un mapeo clínico inventado.
+    if (query.q) {
+      where.OR = [
+        { displayName: { contains: query.q, mode: "insensitive" } },
+        { primarySpecialty: { nameEs: { contains: query.q, mode: "insensitive" } } },
+      ];
+    }
+    if (query.specialty) where.primarySpecialty = { code: query.specialty };
+    if (query.teleconsultation !== undefined) where.acceptsTeleconsultation = query.teleconsultation;
+    if (query.acceptsNewPatients !== undefined) where.acceptsNewPatients = query.acceptsNewPatients;
+    if (query.language) where.languages = { has: query.language };
+    // M3-RN-006: texto simple contra ubicaciones activas — no geolocalización.
+    if (query.location) {
+      where.locations = {
+        some: {
+          isActive: true,
+          OR: [
+            { addressMunicipality: { contains: query.location, mode: "insensitive" } },
+            { addressState: { contains: query.location, mode: "insensitive" } },
+          ],
+        },
+      };
+    }
+
+    const doctors = await this.prisma.doctor.findMany({
+      where,
+      include: { primarySpecialty: true },
+      orderBy: [{ displayName: { sort: "asc", nulls: "last" } }, { id: "asc" }],
+      skip: offset,
+      take: limit + 1,
+    });
+
+    const hasMore = doctors.length > limit;
+    const page = doctors.slice(0, limit);
+
+    const locations = await this.prisma.practiceLocation.findMany({
+      where: { doctorId: { in: page.map((d) => d.id) }, isActive: true },
+    });
+    const locationsByDoctor = new Map<string, typeof locations>();
+    for (const loc of locations) {
+      locationsByDoctor.set(loc.doctorId, [...(locationsByDoctor.get(loc.doctorId) ?? []), loc]);
+    }
+
+    return {
+      items: page.map((d) => toPublicDoctorView(d, d.primarySpecialty, locationsByDoctor.get(d.id) ?? [])),
+      nextCursor: hasMore ? Buffer.from(String(offset + limit)).toString("base64url") : null,
+    };
   }
 
   async updateProfile(userId: string, patch: DoctorProfileUpdateInput): Promise<Doctor> {
@@ -166,6 +264,10 @@ export class DoctorProfileService {
         professionalPhone: patch.professionalPhone,
         professionalEmail: patch.professionalEmail,
         letterheadPhrase: patch.letterheadPhrase,
+        // DT-05: mismo shape que CancellationPolicy — resolveCancellationPolicy
+        // (scheduling/cancellation-policy.ts) rellena lo faltante contra el
+        // default del spec al leer, así que aquí se guarda tal cual.
+        cancellationPolicy: patch.cancellationPolicy as Prisma.InputJsonValue | undefined,
       }),
     });
   }

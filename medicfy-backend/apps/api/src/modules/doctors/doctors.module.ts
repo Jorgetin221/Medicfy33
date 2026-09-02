@@ -9,17 +9,23 @@ import { DoctorBrandingService } from "./services/doctor-branding.service";
 import { PracticeLocationService } from "./services/practice-location.service";
 import { ServiceOfferingService } from "./services/service-offering.service";
 import { DoctorVerificationService } from "./services/doctor-verification.service";
+import { DoctorPostService } from "./services/doctor-post.service";
 import { FILE_STORAGE_PORT } from "./services/file-storage.port";
 import { LocalDiskFileStorageAdapter } from "./services/local-disk-file-storage.adapter";
 import { DOCTOR_SUSPENSION_EFFECTS } from "./services/doctor-suspension-effects.port";
 import { AppointmentCancellationSuspensionAdapter } from "./services/appointment-cancellation-suspension.adapter";
 import { DoctorsController } from "./doctors.controller";
+import { DoctorPublicController } from "./doctor-public.controller";
 import { DoctorDocumentsController } from "./doctor-documents.controller";
 import { BrandingAssetsController } from "./branding-assets.controller";
 import { PracticeLocationsController } from "./practice-locations.controller";
 import { DoctorServicesController } from "./doctor-services.controller";
+import { DoctorPostsController } from "./doctor-posts.controller";
+import { DoctorPostPatientsController } from "./doctor-post-patients.controller";
 import { AdminDoctorsController } from "./admin-doctors.controller";
+import { AdminDoctorPostsController } from "./admin-doctor-posts.controller";
 import { SpecialtiesController } from "./specialties.controller";
+import { DoctorsSearchController } from "./doctors-search.controller";
 
 @Module({
   // Memory storage: DoctorDocumentService needs file.buffer (not a
@@ -34,12 +40,17 @@ import { SpecialtiesController } from "./specialties.controller";
   imports: [IdentityModule, forwardRef(() => SchedulingModule), MulterModule.register({ storage: memoryStorage() })],
   controllers: [
     DoctorsController,
+    DoctorPublicController,
     DoctorDocumentsController,
     BrandingAssetsController,
     PracticeLocationsController,
     DoctorServicesController,
+    DoctorPostsController,
+    DoctorPostPatientsController,
     AdminDoctorsController,
+    AdminDoctorPostsController,
     SpecialtiesController,
+    DoctorsSearchController,
   ],
   providers: [
     DoctorProfileService,
@@ -48,6 +59,7 @@ import { SpecialtiesController } from "./specialties.controller";
     PracticeLocationService,
     ServiceOfferingService,
     DoctorVerificationService,
+    DoctorPostService,
     { provide: FILE_STORAGE_PORT, useClass: LocalDiskFileStorageAdapter },
     { provide: DOCTOR_SUSPENSION_EFFECTS, useClass: AppointmentCancellationSuspensionAdapter },
   ],

@@ -4,6 +4,7 @@ import type { DoctorServiceInput, DoctorServiceUpdateInput } from "@medicfy/cont
 import { PrismaService } from "../../../prisma/prisma.service";
 import { ApiException } from "../../../common/api-exception";
 import { omitUndefined } from "../../../common/omit-undefined";
+import { toPublicServiceView, type PublicServiceView } from "../doctor-public-view";
 
 // Named "ServiceOffering" (not "DoctorService") to avoid colliding
 // with the Prisma model name and NestJS's own DI vocabulary.
@@ -13,6 +14,21 @@ export class ServiceOfferingService {
 
   async list(doctorId: string): Promise<DoctorServiceOffering[]> {
     return this.prisma.doctorService.findMany({ where: { doctorId }, orderBy: { createdAt: "asc" } });
+  }
+
+  // M5-RN-007: solo servicios activos, y nunca priceMxnCents —
+  // toPublicServiceView es el único lugar que decide la forma de un
+  // servicio público (GET /doctors/:slug/public/services, sin guard).
+  async listPublicBySlug(slug: string): Promise<PublicServiceView[]> {
+    const doctor = await this.prisma.doctor.findUnique({ where: { slug } });
+    if (!doctor) {
+      throw new ApiException("DOCTOR_NOT_FOUND", "Médico no encontrado.", HttpStatus.NOT_FOUND);
+    }
+    const services = await this.prisma.doctorService.findMany({
+      where: { doctorId: doctor.id, isActive: true },
+      orderBy: { createdAt: "asc" },
+    });
+    return services.map(toPublicServiceView);
   }
 
   async create(doctorId: string, input: DoctorServiceInput): Promise<DoctorServiceOffering> {

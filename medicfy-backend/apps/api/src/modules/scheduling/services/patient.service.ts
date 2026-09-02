@@ -3,6 +3,7 @@ import type { Patient } from "@prisma/client";
 import type { PatientCreateInput } from "@medicfy/contracts";
 import { PrismaService } from "../../../prisma/prisma.service";
 import { ApiException } from "../../../common/api-exception";
+import { nextMedicfyId } from "../../../common/medicfy-id.util";
 import { CareRelationshipService } from "./care-relationship.service";
 import { PatientGuardianService } from "./patient-guardian.service";
 
@@ -20,7 +21,7 @@ export class PatientService {
   // Todo en una transacción — el care_relationship no es una
   // consecuencia eventual, es parte de la misma operación atómica.
   async createByDoctor(actingDoctorId: string, actorUserId: string, input: PatientCreateInput): Promise<Patient> {
-    const medicfyId = await this.nextMedicfyId();
+    const medicfyId = await nextMedicfyId(this.prisma);
 
     return this.prisma.$transaction(async (tx) => {
       const patient = await tx.patient.create({
@@ -102,16 +103,11 @@ export class PatientService {
     return patient;
   }
 
-  // §6.2: "medicfy_id VARCHAR UNIQUE — folio legible: MDF-000123".
-  // Postgres sequence (patients_medicfy_id_seq, from the M5a
-  // migration), not app-level counting — stays correct under
-  // concurrent patient creation without needing a lock.
-  private async nextMedicfyId(): Promise<string> {
-    const rows = await this.prisma.$queryRaw<{ nextval: bigint }[]>`SELECT nextval('patients_medicfy_id_seq')`;
-    const value = rows[0]?.nextval;
-    if (value === undefined) {
-      throw new Error("unreachable: SELECT nextval(...) always returns exactly one row");
-    }
-    return `MDF-${value.toString().padStart(6, "0")}`;
+  // M5-RN-009: resuelve la fila propia de un paciente autoregistrado —
+  // GET /patients/me. Null, no 404 aquí: el controller decide el
+  // código de estado; una cuenta PATIENT sin fila patients todavía
+  // (creada antes de v2.3) es un estado real, no un error de programación.
+  async findByUserId(userId: string): Promise<Patient | null> {
+    return this.prisma.patient.findUnique({ where: { userId } });
   }
 }

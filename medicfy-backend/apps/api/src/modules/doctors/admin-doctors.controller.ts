@@ -42,7 +42,13 @@ export class AdminDoctorsController {
     @Req() req: Request
   ) {
     const { user } = req as AuthenticatedRequest;
-    return this.verificationService.verify(id, user.sub, getRequestMeta(req), body.specialtyConfirmed);
+    return this.verificationService.verify(
+      id,
+      user.sub,
+      getRequestMeta(req),
+      body.specialtyConfirmed,
+      body.specialtyLicenseExpiresAt
+    );
   }
 
   // ZodValidationPipe is bound to the @Body() parameter directly, not

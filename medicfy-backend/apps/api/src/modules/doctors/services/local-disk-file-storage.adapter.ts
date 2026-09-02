@@ -10,11 +10,13 @@ import type { FileStoragePort } from "./file-storage.port";
 const EXTENSION_BY_MIME_TYPE: Record<string, string> = {
   "image/png": ".png",
   "image/jpeg": ".jpg",
+  "image/webp": ".webp",
   "application/pdf": ".pdf",
 };
 const MIME_TYPE_BY_EXTENSION: Record<string, string> = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
+  ".webp": "image/webp",
   ".pdf": "application/pdf",
 };
 

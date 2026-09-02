@@ -1,6 +1,6 @@
 import { HttpStatus, Injectable } from "@nestjs/common";
 import type { Appointment, AppointmentCreatedVia, AppointmentStatus, Prisma } from "@prisma/client";
-import type { AppointmentCreateInput } from "@medicfy/contracts";
+import type { AppointmentCreateInput, PublicAppointmentCreateInput } from "@medicfy/contracts";
 import { PrismaService } from "../../../prisma/prisma.service";
 import { ApiException } from "../../../common/api-exception";
 import { modalityForServiceType } from "../service-modality";
@@ -60,18 +60,6 @@ export class AppointmentStateMachineService {
   // intenta el INSERT directamente y se traduce la violación en
   // SLOT_TAKEN.
   async create(actingDoctorId: string, actorUserId: string, createdVia: AppointmentCreatedVia, input: AppointmentCreateInput): Promise<Appointment> {
-    const service = await this.prisma.doctorService.findFirst({
-      where: { id: input.serviceId, doctorId: actingDoctorId, isActive: true },
-    });
-    if (!service) {
-      throw new ApiException("SERVICE_NOT_FOUND", "Servicio no encontrado para este médico.", HttpStatus.NOT_FOUND);
-    }
-
-    const patient = await this.prisma.patient.findUnique({ where: { id: input.patientId } });
-    if (!patient) {
-      throw new ApiException("PATIENT_NOT_FOUND", "Paciente no encontrado.", HttpStatus.NOT_FOUND);
-    }
-
     // R4 — HALLAZGO #1 DEL BLOQUE 0 (26 ago 2026), el más grave del
     // inventario. Esta ruta aceptaba cualquier patientId del cuerpo y
     // createOrRenew(..., "APPOINTMENT") le fabricaba al médico un
@@ -89,7 +77,8 @@ export class AppointmentStateMachineService {
     // crearlo siguen intactas:
     //   CREATED_BY_DOCTOR  el médico da de alta al paciente (POST /patients)
     //   PATIENT_GRANTED    el paciente autoriza
-    //   APPOINTMENT        agendamiento público iniciado por el paciente (M5b)
+    //   APPOINTMENT        agendamiento público iniciado por el paciente
+    //                      (createFromPublicBooking, abajo)
     //
     // EXPIRED sí cuenta: un paciente que el médico atendió hace dos
     // años vuelve a agendar y el vínculo se renueva. REVOKED no, y esa
@@ -107,7 +96,72 @@ export class AppointmentStateMachineService {
       );
     }
 
-    const doctor = await this.prisma.doctor.findUniqueOrThrow({ where: { id: actingDoctorId } });
+    return this.createAppointmentRecord({
+      doctorId: actingDoctorId,
+      patientId: input.patientId,
+      actorUserId,
+      createdVia,
+      input,
+      // Renovación, no alta: la comprobación de vínculo previo de
+      // arriba garantiza que ya existe uno.
+      linkCareRelationship: (tx) => this.careRelationshipService.createOrRenew(input.patientId, actingDoctorId, "APPOINTMENT", tx),
+    });
+  }
+
+  // M5-RN-010/M5-RN-011 (spec §7, v2.3) — agendamiento público
+  // iniciado por el propio paciente. `patientId` NUNCA viene del
+  // cuerpo de la petición (publicAppointmentCreateSchema ni siquiera
+  // tiene ese campo) — lo resuelve el controller a partir del usuario
+  // autenticado y lo pasa aquí ya resuelto. A diferencia de create()
+  // (arriba), esta ruta SÍ puede crear el care_relationship desde
+  // cero: es exactamente el caso para el que origin=APPOINTMENT se
+  // reservó (ver el comentario de create()).
+  async createFromPublicBooking(
+    doctorId: string,
+    patientId: string,
+    callerUserId: string,
+    input: PublicAppointmentCreateInput
+  ): Promise<Appointment> {
+    return this.createAppointmentRecord({
+      doctorId,
+      patientId,
+      actorUserId: callerUserId,
+      createdVia: "PATIENT_LINK",
+      input,
+      linkCareRelationship: (tx) => this.careRelationshipService.createOrRenew(patientId, doctorId, "APPOINTMENT", tx),
+    });
+  }
+
+  // Mecánica compartida entre create() y createFromPublicBooking():
+  // validar servicio/paciente/ventana de agenda, insertar la cita y su
+  // primera fila de historial, y vincular el care_relationship —
+  // exactamente atómico, misma transacción. `patientId` es siempre un
+  // parámetro explícito, nunca leído de `input` — así ninguna de las
+  // dos rutas puede, por accidente futuro, volver a confiar en un
+  // patientId de body (el error que el Bloque 0 cerró).
+  private async createAppointmentRecord(params: {
+    doctorId: string;
+    patientId: string;
+    actorUserId: string;
+    createdVia: AppointmentCreatedVia;
+    input: PublicAppointmentCreateInput;
+    linkCareRelationship: (tx: Prisma.TransactionClient) => Promise<unknown>;
+  }): Promise<Appointment> {
+    const { doctorId, patientId, actorUserId, createdVia, input, linkCareRelationship } = params;
+
+    const service = await this.prisma.doctorService.findFirst({
+      where: { id: input.serviceId, doctorId, isActive: true },
+    });
+    if (!service) {
+      throw new ApiException("SERVICE_NOT_FOUND", "Servicio no encontrado para este médico.", HttpStatus.NOT_FOUND);
+    }
+
+    const patient = await this.prisma.patient.findUnique({ where: { id: patientId } });
+    if (!patient) {
+      throw new ApiException("PATIENT_NOT_FOUND", "Paciente no encontrado.", HttpStatus.NOT_FOUND);
+    }
+
+    const doctor = await this.prisma.doctor.findUniqueOrThrow({ where: { id: doctorId } });
 
     // M2-RN-004/M2-CA-006: "necesita >=1 consultorio activo o
     // teleconsulta habilitada para recibir citas." DOCTOR_NOT_ACCEPTING_PATIENTS
@@ -115,7 +169,7 @@ export class AppointmentStateMachineService {
     // errores de M5 (§7) — no es un código inventado aquí.
     if (!doctor.acceptsTeleconsultation) {
       const activeLocationCount = await this.prisma.practiceLocation.count({
-        where: { doctorId: actingDoctorId, isActive: true },
+        where: { doctorId, isActive: true },
       });
       if (activeLocationCount === 0) {
         throw new ApiException(
@@ -147,8 +201,8 @@ export class AppointmentStateMachineService {
       return await this.prisma.$transaction(async (tx) => {
         const appointment = await tx.appointment.create({
           data: {
-            patientId: input.patientId,
-            doctorId: actingDoctorId,
+            patientId,
+            doctorId,
             locationId: input.locationId ?? service.locationId ?? null,
             serviceId: input.serviceId,
             modality: modalityForServiceType(service.serviceType),
@@ -167,11 +221,7 @@ export class AppointmentStateMachineService {
           data: { appointmentId: appointment.id, fromStatus: null, toStatus: "PENDING_PAYMENT", changedByUserId: actorUserId },
         });
 
-        // Renovación, no alta: la comprobación de vínculo previo de
-        // arriba garantiza que ya existe uno. createOrRenew extiende
-        // el ACTIVE si lo hay, y reabre el EXPIRED con origen
-        // APPOINTMENT — que es exactamente lo que acaba de pasar.
-        await this.careRelationshipService.createOrRenew(input.patientId, actingDoctorId, "APPOINTMENT", tx);
+        await linkCareRelationship(tx);
 
         return appointment;
       });
@@ -228,6 +278,20 @@ export class AppointmentStateMachineService {
       orderBy: { startsAt: "asc" },
       include: {
         patient: { select: { firstName: true, lastNamePaternal: true, lastNameMaternal: true, medicfyId: true } },
+        service: { select: { name: true, durationMinutes: true } },
+      },
+    });
+  }
+
+  // M5-RN-009 (v2.3): "Mis citas" del portal de paciente — todas las
+  // suyas, no acotadas a un día como listForDoctor (una agenda de
+  // médico se ve por día; las citas de un paciente se ven todas).
+  async listForPatient(patientId: string) {
+    return this.prisma.appointment.findMany({
+      where: { patientId },
+      orderBy: { startsAt: "desc" },
+      include: {
+        doctor: { select: { displayName: true, legalFirstName: true, legalLastName: true, slug: true } },
         service: { select: { name: true, durationMinutes: true } },
       },
     });
