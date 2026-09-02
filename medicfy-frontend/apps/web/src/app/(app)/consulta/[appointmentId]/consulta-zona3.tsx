@@ -9,6 +9,7 @@ import { HistoriaReadonly } from "@/components/clinical/historia-readonly";
 import { NotasTimeline } from "@/components/clinical/notas-timeline";
 import { DocumentosTab } from "@/components/clinical/documentos-tab";
 import { LabAnalytesPanel } from "@/components/clinical/lab-analytes-panel";
+import { LabSheetUpload } from "@/components/clinical/lab-sheet-upload";
 import { AsistenteTab } from "@/components/clinical/asistente-tab";
 
 // Prompt 14 — Zona 3, esqueleto: pestañas Hoja frontal / Historia /
@@ -60,6 +61,10 @@ export function ConsultaZona3({
   // Carga diferida real: solo las pestañas que el médico ABRIÓ en esta
   // sesión existen en el DOM.
   const [openedTabs, setOpenedTabs] = useState<Set<Zona3Tab>>(new Set());
+  // Capa 1 (v2.5): forzar que LabAnalytesPanel vuelva a cargar tras
+  // aceptar una hoja — sube su `key` en vez de levantarle una prop de
+  // recarga, más simple que refactorizar su estado interno.
+  const [labRefreshKey, setLabRefreshKey] = useState(0);
 
   useEffect(() => {
     try {
@@ -124,9 +129,20 @@ export function ConsultaZona3({
                       ageYears={(Date.now() - new Date(birthDate).getTime()) / (365.25 * 24 * 60 * 60 * 1000)}
                     />
                   </div>
-                  <div>
-                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Laboratorio</h3>
-                    <LabAnalytesPanel patientId={patientId} accessToken={accessToken} />
+                  <div className="flex flex-col gap-3">
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Laboratorio</h3>
+                    <LabSheetUpload
+                      patientId={patientId}
+                      accessToken={accessToken}
+                      onAccepted={() => setLabRefreshKey((k) => k + 1)}
+                    />
+                    <LabAnalytesPanel
+                      key={labRefreshKey}
+                      patientId={patientId}
+                      accessToken={accessToken}
+                      onOpenAsistente={() => openTab("Asistente")}
+                      {...(encounterId ? { encounterId } : {})}
+                    />
                   </div>
                 </div>
               ) : tab === "Asistente" && encounterId && accessToken ? (

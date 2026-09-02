@@ -18,6 +18,7 @@ import { SpecialtyScaleService } from "./specialty-scale.service";
 import { SignatureVerificationService } from "../../identity/services/signature-verification.service";
 import { PatientClinicalService } from "./patient-clinical.service";
 import { RedFlagService } from "./red-flag.service";
+import { LabReferenceRangeService } from "../../labs/services/lab-reference-range.service";
 
 const ABANDONED_AFTER_HOURS = 72;
 
@@ -42,7 +43,8 @@ export class ClinicalEncounterService {
     private readonly scales: SpecialtyScaleService,
     private readonly signatureVerification: SignatureVerificationService,
     private readonly patientClinical: PatientClinicalService,
-    private readonly redFlags: RedFlagService
+    private readonly redFlags: RedFlagService,
+    private readonly labReferenceRanges: LabReferenceRangeService
   ) {}
 
   // Fase 8 · Prompt 52 — corre en cada autoguardado y al firmar,
@@ -144,7 +146,11 @@ export class ClinicalEncounterService {
   async getById(encounterId: string) {
     const encounter = await this.prisma.clinicalEncounter.findUnique({
       where: { id: encounterId },
-      include: { notes: true, diagnoses: true },
+      // v2.5 · Capa 3: la sección de laboratorio de la nota firmada
+      // viaja con el detalle del encuentro, igual que diagnoses —
+      // única lectura, sin endpoint aparte (a diferencia de la SERIE
+      // histórica de analitos, que sí vive en /lab-analytes).
+      include: { notes: { include: { labResults: true } }, diagnoses: true },
     });
     if (!encounter) {
       throw new ApiException("ENCOUNTER_NOT_FOUND", "Encuentro no encontrado.", HttpStatus.NOT_FOUND);
@@ -227,6 +233,7 @@ export class ClinicalEncounterService {
       criticalVitalsConfirmed,
       patientInstructions,
       suggestedFollowUpDays,
+      labResultAnalyteIds,
       password: _password,
       totpCode: _totpCode,
       ...requiredNote
@@ -291,6 +298,54 @@ export class ClinicalEncounterService {
       ? (signingDoctor.displayName ?? `${signingDoctor.legalFirstName} ${signingDoctor.legalLastName}`)
       : null;
     const signedByLicenseSnapshot = signingDoctor?.professionalLicense ?? null;
+
+    // v2.5 · Capa 3: analitos que el médico eligió incluir en ESTA
+    // nota — verificados contra encounter.patientId (mismo hallazgo
+    // del Bloque 0 que ya obliga a todo el módulo labs: un id de otro
+    // paciente simplemente no aparece, nunca se congela). El estado
+    // se calcula aquí, con la edad AL MOMENTO DE LA MEDICIÓN (no la
+    // edad actual) — mismo criterio que measuredAt ya representa.
+    //
+    // PENDIENTE(jorge): note_lab_results no entra hoy al
+    // contentHashSha256 de la nota (a diferencia de vitals). Cada fila
+    // ya es individualmente append-only por su propio GRANT, pero si
+    // quieres que una alteración de esta sección específica también
+    // rompa la cadena de integridad de note-integrity.service.ts,
+    // dímelo — es un cambio deliberado aparte, no trivial de deshacer.
+    const selectedLabAnalytes =
+      labResultAnalyteIds && labResultAnalyteIds.length > 0
+        ? await this.prisma.labResultAnalyte.findMany({
+            where: { id: { in: labResultAnalyteIds }, patientId: encounter.patientId },
+          })
+        : [];
+    const noteLabResultsData = await Promise.all(
+      selectedLabAnalytes.map(async (a) => {
+        const ageYearsAtMeasurement =
+          (a.measuredAt.getTime() - patientForVitals.birthDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
+        const printedRange =
+          a.referenceMin !== null && a.referenceMax !== null ? { min: Number(a.referenceMin), max: Number(a.referenceMax) } : null;
+        const evaluation = await this.labReferenceRanges.evaluateForAnalyte(
+          a.analyteName,
+          Number(a.value),
+          patientForVitals.sexAtBirth === "F" ? "F" : "M",
+          ageYearsAtMeasurement,
+          printedRange
+        );
+        return {
+          sourceAnalyteId: a.id,
+          analyteName: a.analyteName,
+          value: a.value,
+          unit: a.unit,
+          referenceMin: evaluation.rangeMin,
+          referenceMax: evaluation.rangeMax,
+          rangeSource: evaluation.rangeSource.toUpperCase() as "SHEET" | "SYSTEM" | "NONE",
+          status: evaluation.status.toUpperCase() as "NORMAL" | "LOW" | "HIGH" | "CRITICAL" | "UNKNOWN",
+          measuredAt: a.measuredAt,
+          labName: a.labName,
+          source: a.source,
+        };
+      })
+    );
 
     // Autoritativo: IMC, superficie corporal y percentilas se calculan
     // aquí sobre lo que de verdad se firma — y entran al hash.
@@ -372,6 +427,14 @@ export class ClinicalEncounterService {
             outOfRangeFlags: rangeFlags.outOfRange,
             criticalFlags: rangeFlags.critical,
           },
+        });
+      }
+      // v2.5 · Capa 3: congelado en el mismo momento y con el mismo
+      // patrón que vital_sign_sets — append-only real (GRANT SELECT,
+      // INSERT, sin UPDATE/DELETE).
+      if (noteLabResultsData.length > 0) {
+        await tx.noteLabResult.createMany({
+          data: noteLabResultsData.map((d) => ({ noteId: note.id, ...d })),
         });
       }
       if (diagnoses.length > 0) {

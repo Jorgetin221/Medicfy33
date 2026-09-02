@@ -43,6 +43,10 @@ export interface AssistantLabBlock {
   rangoMin: string | null;
   rangoMax: string | null;
   fecha: string;
+  // v2.5 · Capa 4: ya decidido por el servidor (Capa 2,
+  // M10-RN-008/LabReferenceRangeService.evaluateForAnalyte) — el
+  // modelo correlaciona sobre esto, nunca lo redecide.
+  estado: "normal" | "low" | "high" | "critical" | "unknown";
 }
 
 export interface AssistantTrajectoryNoteBlock {

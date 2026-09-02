@@ -335,6 +335,9 @@ describe("ContextAssemblerService — El Segundo Lector (Prompt 50)", () => {
     expect(context.laboratorio).toHaveLength(1);
     expect(context.laboratorio[0]!.analito).toBe("Glucosa");
     expect(context.laboratorio[0]!.valor).toBe("98");
+    // v2.5 · Capa 4: el estado ya viene decidido por el servidor
+    // (Capa 2), nunca lo redecide el modelo — 98 está dentro de 70-100.
+    expect(context.laboratorio[0]!.estado).toBe("normal");
 
     expect(context.trayectoria).toHaveLength(3);
     expect(context.trayectoria[0]!.motivoConsulta).toBe(VALID_NOTE.chiefComplaint);

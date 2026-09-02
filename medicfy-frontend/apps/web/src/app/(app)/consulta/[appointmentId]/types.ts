@@ -23,6 +23,23 @@ export interface AppointmentDetail {
 
 export type EncounterType = "FIRST_VISIT" | "FOLLOW_UP" | "TELECONSULTATION" | "URGENT";
 
+// v2.5 · Capa 3 — congelado en clinical-encounter.service.ts (sign()),
+// mismo patrón que vital_sign_sets. status/rangeSource ya vienen
+// decididos por el servidor (M10-RN-008), nunca se recalculan aquí.
+export interface NoteLabResultRecord {
+  id: string;
+  analyteName: string;
+  value: string | number;
+  unit: string;
+  referenceMin: string | number | null;
+  referenceMax: string | number | null;
+  rangeSource: "SHEET" | "SYSTEM" | "NONE";
+  status: "NORMAL" | "LOW" | "HIGH" | "CRITICAL" | "UNKNOWN";
+  measuredAt: string;
+  labName: string | null;
+  source: "MANUAL" | "OCR_REVIEWED";
+}
+
 export interface ClinicalNoteRecord {
   id: string;
   chiefComplaint: string;
@@ -37,6 +54,7 @@ export interface ClinicalNoteRecord {
   patientInstructions: string | null;
   suggestedFollowUpDays: number | null;
   createdAt: string;
+  labResults: NoteLabResultRecord[];
 }
 
 export interface EncounterDiagnosisRecord {

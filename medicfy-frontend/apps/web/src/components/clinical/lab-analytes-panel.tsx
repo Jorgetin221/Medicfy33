@@ -18,6 +18,13 @@ interface LabAnalyteRecord {
   referenceMax: string | number | null;
   measuredAt: string;
   reviewedAt: string | null;
+  // Capa 2 (v2.5): calculados SIEMPRE por el servidor
+  // (LabReferenceRangeService.evaluateForAnalyte, M10-RN-008) — nunca
+  // recalculados aquí. rangeSource explica de dónde salió el rango
+  // usado: "sheet" (impreso/manual en la propia fila), "system"
+  // (lab_reference_ranges) o "none".
+  status: VitalRangeStatus;
+  rangeSource: "sheet" | "system" | "none";
 }
 
 const ANALYTE_LINE_COLOR = "var(--brand-700)";
@@ -25,16 +32,6 @@ const ANALYTE_LINE_COLOR = "var(--brand-700)";
 const MX_TIME_ZONE = "America/Mexico_City";
 function formatMxDate(iso: string): string {
   return new Intl.DateTimeFormat("es-MX", { timeZone: MX_TIME_ZONE, dateStyle: "long" }).format(new Date(iso));
-}
-
-// Mismo cálculo que vital-ranges.ts (bajo/alto/normal), pero contra el
-// rango de referencia DEL PROPIO ANALITO en vez de una tabla por edad
-// — así lo pide el prompt 42A.
-function analyteStatus(value: number, min: number | null, max: number | null): VitalRangeStatus {
-  if (min === null && max === null) return "unknown";
-  if (min !== null && value < min) return "low";
-  if (max !== null && value > max) return "high";
-  return "normal";
 }
 
 function AddAnalyteForm({ patientId, accessToken, onCreated }: { patientId: string; accessToken: string; onCreated: () => void }) {
@@ -137,10 +134,28 @@ function AddAnalyteForm({ patientId, accessToken, onCreated }: { patientId: stri
 // ESTRUCTURADOS ... NO como un PDF adjunto ni como número de orden."
 // Sección "Laboratorio" dentro de la pestaña Resultados existente,
 // junto a — no en lugar de — "Signos vitales" (ResultadosCharts).
-export function LabAnalytesPanel({ patientId, accessToken }: { patientId: string; accessToken: string }) {
+//
+// Capa 3 (v2.5): encounterId opcional — sin él (expediente fuera de
+// una consulta activa), el panel sigue funcionando para ver/capturar
+// analitos, solo sin los checkboxes de "incluir en esta nota".
+export function LabAnalytesPanel({
+  patientId,
+  accessToken,
+  encounterId,
+  onOpenAsistente,
+}: {
+  patientId: string;
+  accessToken: string;
+  encounterId?: string;
+  // Capa 4 (v2.5): "el médico puede pedir al Segundo Lector que
+  // interprete el conjunto en contexto clínico (endpoint existente)"
+  // — sin endpoint nuevo, solo abre la pestaña que ya dispara un pase.
+  onOpenAsistente?: () => void;
+}) {
   const [analytes, setAnalytes] = useState<LabAnalyteRecord[] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const load = useCallback(() => {
     apiFetch<LabAnalyteRecord[]>(`/lab-analytes/patients/${patientId}`, { accessToken })
@@ -149,6 +164,35 @@ export function LabAnalytesPanel({ patientId, accessToken }: { patientId: string
   }, [patientId, accessToken]);
 
   useEffect(load, [load]);
+
+  // Precarga la selección ya guardada del borrador — reabrir la
+  // pestaña no la pierde.
+  useEffect(() => {
+    if (!encounterId) return;
+    apiFetch<{ draftContent: Record<string, unknown> }>(`/records/encounters/${encounterId}`, { accessToken })
+      .then((detail) => {
+        const ids = detail.draftContent.labResultAnalyteIds;
+        if (Array.isArray(ids)) setSelectedIds(new Set(ids as string[]));
+      })
+      .catch(() => {});
+  }, [encounterId, accessToken]);
+
+  async function toggleIncluded(analyteId: string, included: boolean) {
+    if (!encounterId) return;
+    const next = new Set(selectedIds);
+    if (included) next.add(analyteId);
+    else next.delete(analyteId);
+    setSelectedIds(next);
+    try {
+      await apiFetch(`/records/encounters/${encounterId}/note`, {
+        method: "PATCH",
+        accessToken,
+        body: { labResultAnalyteIds: Array.from(next) },
+      });
+    } catch (err) {
+      setError(err);
+    }
+  }
 
   async function markReviewed(analyteId: string) {
     setError(null);
@@ -176,6 +220,11 @@ export function LabAnalytesPanel({ patientId, accessToken }: { patientId: string
   return (
     <div className="flex flex-col gap-3">
       {error ? <ErrorState error={error} /> : null}
+      {onOpenAsistente && groups.size > 0 ? (
+        <Button type="button" variant="secondary" onClick={onOpenAsistente} className="min-h-11 w-fit px-3 text-sm">
+          Interpretar con el Segundo Lector
+        </Button>
+      ) : null}
       {groups.size === 0 ? (
         <EmptyState title="Sin analitos capturados" description="Agrega un valor de laboratorio para empezar a graficar su tendencia." />
       ) : (
@@ -185,7 +234,7 @@ export function LabAnalytesPanel({ patientId, accessToken }: { patientId: string
           if (!latest) return null;
           const min = latest.referenceMin === null ? null : Number(latest.referenceMin);
           const max = latest.referenceMax === null ? null : Number(latest.referenceMax);
-          const status = analyteStatus(Number(latest.value), min, max);
+          const status = latest.status;
           const statusLabel = VITAL_RANGE_LABEL[status];
 
           return (
@@ -205,11 +254,24 @@ export function LabAnalytesPanel({ patientId, accessToken }: { patientId: string
                     {latest.reviewedAt ? ` · revisado ${formatMxDate(latest.reviewedAt)}` : ""}
                   </p>
                 </div>
-                {!latest.reviewedAt ? (
-                  <Button type="button" variant="secondary" isLoading={reviewingId === latest.id} onClick={() => void markReviewed(latest.id)} className="min-h-11 px-3 text-sm">
-                    Marcar como revisado
-                  </Button>
-                ) : null}
+                <div className="flex flex-col items-end gap-2">
+                  {encounterId ? (
+                    <label className="flex min-h-11 items-center gap-2 text-sm text-gray-700">
+                      <input
+                        type="checkbox"
+                        className="h-6 w-6"
+                        checked={selectedIds.has(latest.id)}
+                        onChange={(e) => void toggleIncluded(latest.id, e.target.checked)}
+                      />
+                      Incluir en esta nota
+                    </label>
+                  ) : null}
+                  {!latest.reviewedAt ? (
+                    <Button type="button" variant="secondary" isLoading={reviewingId === latest.id} onClick={() => void markReviewed(latest.id)} className="min-h-11 px-3 text-sm">
+                      Marcar como revisado
+                    </Button>
+                  ) : null}
+                </div>
               </div>
               {sorted.length >= 2 ? (
                 <div className="mt-3">

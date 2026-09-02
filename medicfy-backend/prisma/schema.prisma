@@ -129,6 +129,7 @@ model User {
   passwordResets    PasswordResetToken[]
   curatedTerms      ClinicalCatalogTerm[] @relation("CatalogTermCurator")
   termRequests      CatalogTermRequest[]  @relation("TermRequestRequester")
+  curatedLabReferenceRanges LabReferenceRange[] @relation("LabReferenceRangeCurator")
 
   @@map("users")
 }
@@ -613,6 +614,7 @@ model Patient {
   labOrders         LabOrder[]
   labResults        LabResult[]
   labResultAnalytes LabResultAnalyte[]
+  labSheetExtractions LabSheetExtraction[]
   protocolInstances PatientProtocolInstance[]
 
   @@map("patients")
@@ -1012,6 +1014,7 @@ model ClinicalNote {
   noteTypeTerm       ClinicalCatalogTerm? @relation("NoteTypeTerm", fields: [noteTypeTermId], references: [id])
   vitalSignSet       VitalSignSet?
   cancellation       ClinicalNoteCancellation?
+  labResults         NoteLabResult[]
 
   @@map("clinical_notes")
 }
@@ -1088,6 +1091,59 @@ model VitalSignSet {
 
   @@index([patientId, recordedAt])
   @@map("vital_sign_sets")
+}
+
+// v2.5 — Capa 3. Mismo patrón exacto que VitalSignSet: congelado en
+// sign() (ClinicalEncounterService), nunca editable después —
+// append-only real (ver GRANT), igual que clinical_notes. 1:muchos
+// (un vital_sign_sets por nota; aquí una nota puede incluir varios
+// analitos) — el médico elige cuáles con
+// draftContent.labResultAnalyteIds antes de firmar. status/rangeSource
+// son el resultado ya congelado de evaluateLabValue() en el momento
+// de la firma — la nota firmada nunca vuelve a recalcularlos aunque
+// lab_reference_ranges cambie después.
+model NoteLabResult {
+  id               String              @id @default(uuid())
+  noteId           String
+  sourceAnalyteId  String
+  analyteName      String
+  value            Decimal             @db.Decimal(10, 3)
+  unit             String
+  referenceMin     Decimal?            @db.Decimal(10, 3)
+  referenceMax     Decimal?            @db.Decimal(10, 3)
+  rangeSource      LabRangeSource
+  status           LabValueStatus
+  // measuredAt ES la fecha del estudio (mismo campo que ya trae
+  // LabResultAnalyte) — sin una columna resultDate separada y
+  // redundante.
+  measuredAt       DateTime            @db.Timestamptz(3)
+  labName          String?
+  source           LabResultAnalyteSource
+  createdAt        DateTime            @default(now()) @db.Timestamptz(3)
+
+  note           ClinicalNote     @relation(fields: [noteId], references: [id])
+  sourceAnalyte  LabResultAnalyte @relation(fields: [sourceAnalyteId], references: [id])
+
+  @@index([noteId])
+  @@map("note_lab_results")
+}
+
+enum LabRangeSource {
+  SHEET
+  SYSTEM
+  NONE
+
+  @@map("lab_range_source")
+}
+
+enum LabValueStatus {
+  NORMAL
+  LOW
+  HIGH
+  CRITICAL
+  UNKNOWN
+
+  @@map("lab_value_status")
 }
 
 // Prompt 27/30 — referencias LMS de crecimiento (OMS 2006 0-60 meses,
@@ -2191,6 +2247,10 @@ model LabResultAnalyte {
   referenceMin       Decimal?  @db.Decimal(10, 3)
   referenceMax       Decimal?  @db.Decimal(10, 3)
   measuredAt         DateTime  @db.Timestamptz(3)
+  // v2.5: laboratorio de origen si se conoce (detectado en la hoja o
+  // escrito por el médico al revisar una extracción) — nunca lo tenía
+  // esta tabla, a diferencia de LabResult (el archivo crudo).
+  labName            String?
   enteredByUserId    String
   reviewedByDoctorId String?
   reviewedAt         DateTime? @db.Timestamptz(3)
@@ -2198,9 +2258,137 @@ model LabResultAnalyte {
 
   labOrder LabOrder? @relation(fields: [labOrderId], references: [id])
   patient  Patient   @relation(fields: [patientId], references: [id])
+  noteReferences NoteLabResult[]
+
+  // v2.5: si el analito llegó por lectura automática ya revisada por
+  // el médico, la nota/PDF puede mostrar el aviso de validación
+  // correspondiente sin adivinar la procedencia. MANUAL es el default
+  // — cubre toda captura anterior a esta versión sin migrar datos.
+  source LabResultAnalyteSource @default(MANUAL)
 
   @@index([patientId, analyteName])
   @@map("lab_result_analytes")
+}
+
+enum LabResultAnalyteSource {
+  MANUAL
+  OCR_REVIEWED
+
+  @@map("lab_result_analyte_source")
+}
+
+// v2.5 — Capa 1 (extracción). "Ningún valor extraído se escribe en la
+// nota sin que el médico lo revise" (pedido explícito del usuario,
+// 2026-09-02): por eso esto vive en una tabla de espera separada de
+// LabResultAnalyte, nunca la toca hasta submitReview() promueve cada
+// candidata confirmada. status EXTRACTING es casi siempre transitorio
+// dentro de una misma petición (Capa 1 es síncrona, sin cola) — solo
+// sobrevive si el proceso murió a medio camino, y retry() lo retoma.
+enum LabSheetExtractionStatus {
+  UPLOADING
+  EXTRACTING
+  REVIEW_PENDING
+  ACCEPTED
+  FAILED
+
+  @@map("lab_sheet_extraction_status")
+}
+
+model LabSheetExtraction {
+  id                  String                   @id @default(uuid())
+  patientId           String
+  uploadedByUserId    String
+  fileKey             String
+  fileHashSha256      String
+  status              LabSheetExtractionStatus @default(EXTRACTING)
+  labNameDetected     String?
+  resultDateDetected  DateTime?                @db.Date
+  createdAt           DateTime                 @default(now()) @db.Timestamptz(3)
+  reviewedAt          DateTime?                @db.Timestamptz(3)
+  reviewedByUserId    String?
+
+  patient    Patient                     @relation(fields: [patientId], references: [id])
+  candidates LabSheetExtractionCandidate[]
+
+  @@index([patientId, createdAt])
+  @@map("lab_sheet_extractions")
+}
+
+enum LabSheetExtractionConfidence {
+  LOW
+  MEDIUM
+  HIGH
+
+  @@map("lab_sheet_extraction_confidence")
+}
+
+// Una fila por analito candidato dentro de una hoja. Los campos "Raw"
+// son lo que devolvió Textract sin tocar; los "doctorConfirmed*" solo
+// se llenan si el médico corrigió el valor durante la revisión —
+// wasEdited es la señal de auditoría de si hubo corrección, sin
+// tener que diffar texto. La regla de oro (M10-RN-007): una candidata
+// LOW sin wasEdited=true exige su propia confirmación explícita
+// aparte (ver LabSheetExtractionService.submitReview) antes de poder
+// promoverse — included por sí solo no basta.
+model LabSheetExtractionCandidate {
+  id                         String                        @id @default(uuid())
+  extractionId               String
+  analyteNameRaw             String
+  valueRaw                   String
+  unitRaw                    String?
+  referenceMinPrinted        Decimal?                      @db.Decimal(10, 3)
+  referenceMaxPrinted        Decimal?                      @db.Decimal(10, 3)
+  confidence                 LabSheetExtractionConfidence
+  doctorConfirmedAnalyteName String?
+  doctorConfirmedValue       Decimal?                      @db.Decimal(10, 3)
+  doctorConfirmedUnit        String?
+  wasEdited                  Boolean                       @default(false)
+  included                   Boolean                       @default(true)
+
+  extraction LabSheetExtraction @relation(fields: [extractionId], references: [id])
+
+  @@index([extractionId])
+  @@map("lab_sheet_extraction_candidates")
+}
+
+// v2.5 — Capa 2 (marcado determinista). Sin precedente en ninguna
+// versión anterior de la especificación — se documenta y autoriza por
+// primera vez en v2.5 (M10-RN-008/009), con pendingMedicalReview como
+// condición de aprobación. Mismo patrón exacto que
+// MedicationInteraction (pendingMedicalReview + source citada): las
+// filas sembradas son un punto de partida citado, NO la base clínica
+// final de la plataforma, hasta que un CURATOR/SUPERADMIN las aprueba.
+model LabReferenceRange {
+  id                   String    @id @default(uuid())
+  // normalizeTerm(analyteLabel) — mismo normalizador que catálogos,
+  // así "Glucosa"/"GLUCOSA"/"glucosa." casan con la misma fila.
+  analyteKey           String
+  analyteLabel         String
+  unit                 String
+  sex                  LabReferenceRangeSex
+  ageMinYears          Decimal   @db.Decimal(5, 2)
+  ageMaxYears          Decimal   @db.Decimal(5, 2)
+  valueMin             Decimal   @db.Decimal(10, 3)
+  valueMax             Decimal   @db.Decimal(10, 3)
+  criticalMin          Decimal?  @db.Decimal(10, 3)
+  criticalMax          Decimal?  @db.Decimal(10, 3)
+  pendingMedicalReview Boolean   @default(true)
+  curatedBy            String?
+  source               String
+  createdAt            DateTime  @default(now()) @db.Timestamptz(3)
+
+  curator User? @relation("LabReferenceRangeCurator", fields: [curatedBy], references: [id])
+
+  @@index([analyteKey, sex, ageMinYears, ageMaxYears])
+  @@map("lab_reference_ranges")
+}
+
+enum LabReferenceRangeSex {
+  M
+  F
+  ANY
+
+  @@map("lab_reference_range_sex")
 }
 
 // Prompt 7 (medicfy-50-prompts.md), R2 "los catálogos son cerrados".

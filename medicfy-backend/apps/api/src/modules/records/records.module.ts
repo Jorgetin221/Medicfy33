@@ -4,6 +4,7 @@ import { memoryStorage } from "multer";
 import { IdentityModule } from "../identity/identity.module";
 import { DoctorsModule } from "../doctors/doctors.module";
 import { SchedulingModule } from "../scheduling/scheduling.module";
+import { LabsModule } from "../labs/labs.module";
 import { CareRelationshipGuard } from "../../common/guards/care-relationship.guard";
 import { FILE_STORAGE_PORT } from "../doctors/services/file-storage.port";
 import { LocalDiskFileStorageAdapter } from "../doctors/services/local-disk-file-storage.adapter";
@@ -31,9 +32,12 @@ import { DocumentViewController } from "./document-view.controller";
 // la resolución del médico actuante, y completeWithSignedNote() (al
 // firmar) los necesitan. MulterModule con memoryStorage: mismo motivo
 // que DoctorsModule/LabsModule — ClinicalAttachmentService necesita
-// file.buffer para el hash SHA-256, no una ruta en disco.
+// file.buffer para el hash SHA-256, no una ruta en disco. LabsModule:
+// v2.5 · Capa 3 — ClinicalEncounterService.sign() usa
+// LabReferenceRangeService.evaluateForAnalyte() para congelar el
+// estado de cada analito seleccionado en note_lab_results.
 @Module({
-  imports: [IdentityModule, DoctorsModule, SchedulingModule, MulterModule.register({ storage: memoryStorage() })],
+  imports: [IdentityModule, DoctorsModule, SchedulingModule, LabsModule, MulterModule.register({ storage: memoryStorage() })],
   controllers: [
     PatientClinicalController,
     EncountersController,

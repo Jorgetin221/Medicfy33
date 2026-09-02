@@ -284,6 +284,24 @@ export function ConsultaForm({
     const values: ClinicalNoteSignInput = { ...rawValues };
     if (!values.patientInstructions?.trim()) delete values.patientInstructions;
     if (values.suggestedFollowUpDays === undefined || Number.isNaN(values.suggestedFollowUpDays)) delete values.suggestedFollowUpDays;
+    // v2.5 · Capa 3: labResultAnalyteIds lo maneja LabAnalytesPanel
+    // (pestaña Resultados, componente hermano), autoguardado vía su
+    // propio PATCH — este formulario no lo registra como campo. Se
+    // relee fresco del encuentro justo antes de firmar (en vez de
+    // confiar en el `encounter` de props, que puede estar desfasado
+    // respecto al último PATCH de ese panel) para que la selección
+    // real llegue a la nota firmada.
+    try {
+      const fresh = await apiFetch<EncounterDetail>(`/records/encounters/${encounter.id}`, { accessToken });
+      const freshIds = fresh.draftContent.labResultAnalyteIds;
+      if (Array.isArray(freshIds) && freshIds.length > 0) {
+        values.labResultAnalyteIds = freshIds as string[];
+      }
+    } catch {
+      // Si esta relectura falla, se firma sin sección de laboratorio
+      // en vez de bloquear la firma por completo — el resto de la
+      // nota no depende de esto.
+    }
     setSignError(null);
     setIsSigning(true);
     try {

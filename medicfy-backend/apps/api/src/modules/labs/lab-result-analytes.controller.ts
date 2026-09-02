@@ -6,7 +6,9 @@ import { JwtAuthGuard } from "../identity/guards/jwt-auth.guard";
 import { CareRelationshipGuard, type ClinicalRequest } from "../../common/guards/care-relationship.guard";
 import { AuditService } from "../identity/services/audit.service";
 import { getRequestMeta } from "../identity/request-meta";
+import { PrismaService } from "../../prisma/prisma.service";
 import { LabResultAnalyteService } from "./services/lab-result-analyte.service";
+import { LabReferenceRangeService } from "./services/lab-reference-range.service";
 
 // Fase 5 · Prompt 42A: analitos ESTRUCTURADOS (nombre, valor, unidad,
 // rango de referencia) — nunca un PDF adjunto ni un número de orden;
@@ -19,14 +21,36 @@ import { LabResultAnalyteService } from "./services/lab-result-analyte.service";
 export class LabResultAnalytesController {
   constructor(
     private readonly analytes: LabResultAnalyteService,
-    private readonly auditService: AuditService
+    private readonly ranges: LabReferenceRangeService,
+    private readonly auditService: AuditService,
+    private readonly prisma: PrismaService
   ) {}
 
+  // Capa 2 (v2.5): el estado ya NO se calcula en el cliente
+  // (analyteStatus() en lab-analytes-panel.tsx quedó retirado) — el
+  // servidor es la única autoridad (M10-RN-008). referenceMin/Max ya
+  // guardados en la fila SON el rango impreso/manual (prioridad 1);
+  // sin ellos, se resuelve contra lab_reference_ranges (prioridad 2).
   @Get()
-  @ApiOperation({ summary: "Prompt 42A: serie estructurada de analitos del paciente" })
+  @ApiOperation({ summary: "Prompt 42A + Capa 2 (v2.5): serie de analitos del paciente, con estado ya calculado por el servidor" })
   async list(@Param("patientId") patientId: string, @Req() req: ClinicalRequest) {
     await this.audit(req, patientId, "lab_analytes.list");
-    return this.analytes.listForPatient(patientId);
+    const [rows, patient] = await Promise.all([
+      this.analytes.listForPatient(patientId),
+      this.prisma.patient.findUnique({ where: { id: patientId }, select: { sexAtBirth: true, birthDate: true } }),
+    ]);
+    if (!patient) return rows;
+
+    const sex = patient.sexAtBirth === "F" ? "F" : "M";
+    return Promise.all(
+      rows.map(async (a) => {
+        const ageYears = (a.measuredAt.getTime() - patient.birthDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
+        const printedRange =
+          a.referenceMin !== null && a.referenceMax !== null ? { min: Number(a.referenceMin), max: Number(a.referenceMax) } : null;
+        const evaluation = await this.ranges.evaluateForAnalyte(a.analyteName, Number(a.value), sex, ageYears, printedRange);
+        return { ...a, ...evaluation };
+      })
+    );
   }
 
   @Post()

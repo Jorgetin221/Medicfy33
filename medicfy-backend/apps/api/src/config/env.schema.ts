@@ -31,6 +31,12 @@ export const envSchema = z.object({
   // AssistantPassOrchestratorService. Este default es solo un piso de
   // arranque conservador.
   ASSISTANT_MAX_TOKENS_PER_ENCOUNTER: z.coerce.number().int().positive().optional(),
+  // v2.5 — Capa 1 de lectura de laboratorio: reutiliza
+  // ANTHROPIC_API_KEY (misma clave, ClaudeLabOcrAdapter la lee de
+  // forma perezosa igual que ClaudeModelAdapter) — sin variable de
+  // credencial propia. Solo el tope de tiempo es específico de esta
+  // llamada (visión + potencialmente muchos analitos).
+  ASSISTANT_LAB_OCR_TIMEOUT_MS: z.coerce.number().int().positive().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

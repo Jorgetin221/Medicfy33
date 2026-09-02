@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Aviso } from "@/components/ui/alert";
 import { Card } from "@/components/ui/states";
 import { AntecedentesSummary } from "@/components/clinical/antecedentes-editor";
+import { VITAL_RANGE_LABEL, VITAL_RANGE_TILE_CLASS, type VitalRangeStatus } from "@/lib/vital-ranges";
 import type { PatientHistoryItem } from "@/lib/use-patient-clinical";
 import { ENCOUNTER_TYPE_LABEL, type EncounterDetail } from "./types";
 
@@ -75,6 +76,51 @@ export function ConsultaReadonly({
               )}
             </dl>
           </Card>
+
+          {note.labResults.length > 0 && (
+            <Card>
+              <p className="text-sm font-medium text-gray-500">Laboratorio</p>
+              {note.labResults.some((r) => r.source === "OCR_REVIEWED") && (
+                <p className="mt-1 text-sm text-gray-500">
+                  Resultados verificados por el médico tras lectura automática de la hoja de laboratorio.
+                </p>
+              )}
+              <div className="mt-2 overflow-x-auto">
+                <table className="w-full border-collapse text-base">
+                  <thead>
+                    <tr className="border-b border-gray-300 text-left text-sm text-gray-500">
+                      <th className="p-2">Analito</th>
+                      <th className="p-2">Valor</th>
+                      <th className="p-2">Rango de referencia</th>
+                      <th className="p-2">Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {note.labResults.map((r) => {
+                      const status = r.status.toLowerCase() as VitalRangeStatus;
+                      const label = VITAL_RANGE_LABEL[status];
+                      return (
+                        <tr key={r.id} className="border-b border-gray-200">
+                          <td className="p-2 text-gray-900">{r.analyteName}</td>
+                          <td className={`p-2 font-medium ${status === "high" || status === "low" ? "text-warn-600" : status === "critical" ? "text-critical-600" : "text-gray-900"}`}>
+                            {r.value} {r.unit}
+                          </td>
+                          <td className="p-2 text-gray-500">
+                            {r.referenceMin !== null && r.referenceMax !== null ? `${r.referenceMin} – ${r.referenceMax}` : "Sin rango"}
+                          </td>
+                          <td className="p-2">
+                            <span className={`inline-flex items-center rounded-md border px-2 py-1 text-sm font-medium ${VITAL_RANGE_TILE_CLASS[status]}`}>
+                              {label ?? "Normal"}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
 
           <Card>
             <p className="text-sm font-medium text-gray-500">Diagnósticos</p>

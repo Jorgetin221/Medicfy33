@@ -150,6 +150,25 @@ describe("Analitos de laboratorio estructurados — captura, listado y revisión
     expect(measuredAtTimestamps).toEqual([...measuredAtTimestamps].sort((a, b) => a - b));
   });
 
+  it("Capa 2 (v2.5): el listado trae el estado ya calculado por el servidor, contra el rango impreso de la propia fila", async () => {
+    const doctor = await registerDoctor();
+    const patientId = await createPatient(doctor.accessToken);
+
+    const created = await request(app.getHttpServer())
+      .post(`/lab-analytes/patients/${patientId}`)
+      .set("Authorization", `Bearer ${doctor.accessToken}`)
+      .send({ analyteName: "Glucosa", value: 250, unit: "mg/dL", referenceMin: 70, referenceMax: 99, measuredAt: "2026-08-01" });
+    expect(created.status).toBe(201);
+
+    const list = await request(app.getHttpServer())
+      .get(`/lab-analytes/patients/${patientId}`)
+      .set("Authorization", `Bearer ${doctor.accessToken}`);
+    expect(list.status).toBe(200);
+    const entry = list.body.find((a: { id: string }) => a.id === created.body.id);
+    expect(entry.status).toBe("high");
+    expect(entry.rangeSource).toBe("sheet");
+  });
+
   it("un médico sin vínculo no puede listar ni capturar analitos (403), y revisar con analyteId de otro paciente da 404", async () => {
     const owner = await registerDoctor();
     const ownerPatientId = await createPatient(owner.accessToken);

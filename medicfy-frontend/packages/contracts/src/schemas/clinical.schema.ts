@@ -71,6 +71,11 @@ export const clinicalNoteDraftUpdateSchema = z
     patientInstructions: z.string().max(2000).optional(),
     suggestedFollowUpDays: z.number().int().min(1).max(365).optional(),
     prognosis: z.string().optional(),
+    // v2.5 · Capa 3: ids de LabResultAnalyte que el médico elige
+    // incluir en esta nota — mismo patrón que presentingSymptomTermIds
+    // (ids de catálogo, nunca texto libre). El servidor congela cada
+    // uno en note_lab_results al firmar, con su estado ya calculado.
+    labResultAnalyteIds: z.array(z.string().uuid()).optional(),
   })
   .strict();
 export type ClinicalNoteDraftUpdateInput = z.infer<typeof clinicalNoteDraftUpdateSchema>;
@@ -125,6 +130,9 @@ export const clinicalNoteSignSchema = z
     plan: z.string().min(1, "El plan es obligatorio."),
     prognosis: z.string().optional(),
     diagnoses: z.array(encounterDiagnosisSchema).min(1, "Se requiere al menos un diagnóstico con código CIE-10."),
+    // v2.5 · Capa 3: mismo campo que en el borrador — se repite/
+    // finaliza en la firma (mismo patrón que presentingSymptomTermIds).
+    labResultAnalyteIds: z.array(z.string().uuid()).optional(),
     // Prompt 26: un signo vital en rango CRÍTICO exige confirmación
     // explícita del médico antes de permitir guardar/firmar.
     criticalVitalsConfirmed: z.boolean().optional(),

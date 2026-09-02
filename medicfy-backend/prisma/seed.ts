@@ -782,6 +782,81 @@ async function seedBanderasRojas(): Promise<void> {
   ]);
 }
 
+// v2.5 · Capa 2 — M10-RN-009: sin precedente previo en la
+// especificación, se documenta y siembra aquí por primera vez.
+// pendingMedicalReview=true en TODAS las filas — son valores de
+// referencia estándar de uso muy extendido (comparables entre
+// laboratorios clínicos como Mayo Clinic Laboratories/LabCorp), no
+// una base clínica ya validada por un médico responsable de Medicfy.
+// Los criticalMin/criticalMax solo se llenan donde existe una lista
+// de "valores de pánico" de uso generalizado (CAP y hospitales) — el
+// resto se deja sin crítico en vez de inventar un umbral no citable.
+// analyteKey usa normalizeTerm() para que "Glucosa"/"GLUCOSA"/etc.
+// casen igual al evaluar (LabReferenceRangeService.evaluateForAnalyte).
+async function seedLabReferenceRanges(): Promise<void> {
+  const SOURCE = "Rangos de referencia de uso generalizado en química clínica (p. ej. Mayo Clinic Laboratories, LabCorp) — PENDIENTE(jorge): validación médica formal antes de usarse como base clínica de Medicfy.";
+  const ADULT_MIN = 18;
+  const ADULT_MAX = 120;
+
+  interface RangeSeed {
+    analyteLabel: string;
+    unit: string;
+    sex: "M" | "F" | "ANY";
+    valueMin: number;
+    valueMax: number;
+    criticalMin?: number;
+    criticalMax?: number;
+  }
+
+  const ranges: RangeSeed[] = [
+    { analyteLabel: "Glucosa", unit: "mg/dL", sex: "ANY", valueMin: 70, valueMax: 99, criticalMin: 40, criticalMax: 500 },
+    { analyteLabel: "Creatinina", unit: "mg/dL", sex: "M", valueMin: 0.7, valueMax: 1.3 },
+    { analyteLabel: "Creatinina", unit: "mg/dL", sex: "F", valueMin: 0.6, valueMax: 1.1 },
+    { analyteLabel: "Urea", unit: "mg/dL", sex: "ANY", valueMin: 7, valueMax: 20 },
+    { analyteLabel: "Sodio", unit: "mEq/L", sex: "ANY", valueMin: 136, valueMax: 145, criticalMin: 120, criticalMax: 160 },
+    { analyteLabel: "Potasio", unit: "mEq/L", sex: "ANY", valueMin: 3.5, valueMax: 5.1, criticalMin: 2.5, criticalMax: 6.5 },
+    { analyteLabel: "Cloro", unit: "mEq/L", sex: "ANY", valueMin: 98, valueMax: 107 },
+    { analyteLabel: "Hemoglobina", unit: "g/dL", sex: "M", valueMin: 13.5, valueMax: 17.5, criticalMin: 7 },
+    { analyteLabel: "Hemoglobina", unit: "g/dL", sex: "F", valueMin: 12.0, valueMax: 15.5, criticalMin: 7 },
+    { analyteLabel: "Hematocrito", unit: "%", sex: "M", valueMin: 41, valueMax: 53 },
+    { analyteLabel: "Hematocrito", unit: "%", sex: "F", valueMin: 36, valueMax: 46 },
+    { analyteLabel: "Leucocitos", unit: "x10^3/uL", sex: "ANY", valueMin: 4.5, valueMax: 11.0, criticalMin: 2.0, criticalMax: 30.0 },
+    { analyteLabel: "Plaquetas", unit: "x10^3/uL", sex: "ANY", valueMin: 150, valueMax: 450, criticalMin: 20, criticalMax: 1000 },
+    { analyteLabel: "TSH", unit: "mUI/L", sex: "ANY", valueMin: 0.4, valueMax: 4.0 },
+    { analyteLabel: "ALT", unit: "U/L", sex: "ANY", valueMin: 7, valueMax: 56 },
+    { analyteLabel: "AST", unit: "U/L", sex: "ANY", valueMin: 8, valueMax: 48 },
+    { analyteLabel: "Bilirrubina total", unit: "mg/dL", sex: "ANY", valueMin: 0.3, valueMax: 1.2 },
+    { analyteLabel: "Calcio", unit: "mg/dL", sex: "ANY", valueMin: 8.5, valueMax: 10.5, criticalMin: 6, criticalMax: 13 },
+  ];
+
+  let inserted = 0;
+  for (const r of ranges) {
+    const analyteKey = normalizeTerm(r.analyteLabel);
+    const existing = await prisma.labReferenceRange.findFirst({
+      where: { analyteKey, sex: r.sex, ageMinYears: ADULT_MIN, ageMaxYears: ADULT_MAX },
+    });
+    if (existing) continue;
+    await prisma.labReferenceRange.create({
+      data: {
+        analyteKey,
+        analyteLabel: r.analyteLabel,
+        unit: r.unit,
+        sex: r.sex,
+        ageMinYears: ADULT_MIN,
+        ageMaxYears: ADULT_MAX,
+        valueMin: r.valueMin,
+        valueMax: r.valueMax,
+        ...(r.criticalMin !== undefined ? { criticalMin: r.criticalMin } : {}),
+        ...(r.criticalMax !== undefined ? { criticalMax: r.criticalMax } : {}),
+        pendingMedicalReview: true,
+        source: SOURCE,
+      },
+    });
+    inserted += 1;
+  }
+  console.log(`Seeded ${inserted} lab_reference_ranges (adultos, pendingMedicalReview=true).`);
+}
+
 async function main(): Promise<void> {
   for (const specialty of SPECIALTIES) {
     await prisma.specialty.upsert({
@@ -826,6 +901,7 @@ async function main(): Promise<void> {
   await seedFase7();
   await seedInteraccionesDemo();
   await seedBanderasRojas();
+  await seedLabReferenceRanges();
   await seedAdmin();
 }
 

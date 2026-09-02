@@ -85,3 +85,50 @@ export const labResultAnalyteCreateSchema = z
   })
   .strict();
 export type LabResultAnalyteCreateInput = z.infer<typeof labResultAnalyteCreateSchema>;
+
+// v2.5 — Capa 1 (lectura automática de la hoja). "Regla de oro":
+// ningún valor extraído se escribe en el expediente sin revisión —
+// este esquema es el de la REVISIÓN, nunca el de la extracción en sí
+// (esa la produce el servidor, no el cliente). Una candidata incluida
+// exige nombre/valor/unidad ya confirmados por el médico; la regla de
+// "confianza baja exige confirmación explícita aparte" no es
+// decidible solo con este payload (depende de la confidence guardada
+// en el servidor) — se aplica en LabSheetExtractionService, no aquí.
+export const labSheetExtractionReviewCandidateSchema = z
+  .object({
+    candidateId: z.string().uuid(),
+    included: z.boolean(),
+    analyteName: z.string().min(1).max(200).optional(),
+    value: z.number().optional(),
+    unit: z.string().min(1).max(50).optional(),
+    referenceMin: z.number().optional(),
+    referenceMax: z.number().optional(),
+    confirmedLowConfidence: z.boolean().optional(),
+  })
+  .strict()
+  .superRefine((val, ctx) => {
+    if (val.included && (val.analyteName === undefined || val.value === undefined || val.unit === undefined)) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Una candidata incluida necesita nombre, valor y unidad confirmados.",
+        path: ["included"],
+      });
+    }
+  });
+export type LabSheetExtractionReviewCandidateInput = z.infer<typeof labSheetExtractionReviewCandidateSchema>;
+
+export const labSheetExtractionReviewSchema = z
+  .object({
+    measuredAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida — usa AAAA-MM-DD."),
+    labName: z.string().max(200).optional(),
+    candidates: z.array(labSheetExtractionReviewCandidateSchema).min(1, "Se requiere al menos una candidata."),
+  })
+  .strict();
+export type LabSheetExtractionReviewInput = z.infer<typeof labSheetExtractionReviewSchema>;
+
+// v2.5 — Capa 2 (curaduría de rangos de referencia). Sin PATCH: para
+// corregir un rango se agrega una fila nueva (mismo principio de
+// no-alteración del resto del proyecto) — la única mutación en
+// runtime de una fila existente es esta aprobación.
+export const labReferenceRangeApproveSchema = z.object({}).strict();
+export type LabReferenceRangeApproveInput = z.infer<typeof labReferenceRangeApproveSchema>;

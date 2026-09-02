@@ -271,6 +271,8 @@ Optimizamos para **velocidad de entrega y bajo costo operativo con un equipo de 
 | Borrar un comentario ajeno *(v2.3, M2B)* | ❌ | ✅ (solo en publicaciones propias) | ❌ | — | ❌ | ✅ |
 | Buscar/listar médicos en el directorio *(v2.3, M3)* | ✅ (público, sin sesión) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Agendar cita por el enlace público, a nombre propio *(v2.3, M5-RN-009+)* | ✅ | — | — | — | ❌ | ❌ |
+| Subir/revisar una hoja de laboratorio para transcripción automática *(v2.5, M10)* | ❌ | ✅ (con vínculo activo) | ❌ | — | ❌ | ❌ |
+| Aprobar un rango de referencia de laboratorio pendiente *(v2.5, M10)* | ❌ | ❌ | ❌ | — | ❌ | ❌ (solo rol `CURATOR` o `SUPERADMIN` — ni `ADMIN` ni `DOCTOR` por sí solos; mismo criterio que la curaduría de catálogos) |
 
 ### 5.3 Reglas de autorización no negociables
 
@@ -587,6 +589,45 @@ lab_results               -- v1.0: sube el médico o el paciente
   uploaded_by_user_id, uploaded_by_role,
   file_key, file_hash_sha256, lab_name, result_date,
   reviewed_by_doctor_id NULLABLE, reviewed_at, doctor_comment
+
+lab_result_analytes        -- Prompt 42A: analitos estructurados, no el PDF
+  lab_order_id FK NULLABLE, patient_id FK,
+  analyte_name, loinc_code NULLABLE, value, unit,
+  reference_min NULLABLE, reference_max NULLABLE, measured_at,
+  entered_by_user_id, reviewed_by_doctor_id NULLABLE, reviewed_at,
+  source ENUM(manual, ocr_reviewed), lab_name NULLABLE       -- v2.5
+
+-- v2.5 — lectura e interpretación de hojas de laboratorio (4 capas)
+lab_sheet_extractions       -- Capa 1: cabecera de una hoja subida
+  patient_id FK, uploaded_by_user_id,
+  file_key, file_hash_sha256,
+  status ENUM(uploading, extracting, review_pending, accepted, failed),
+  lab_name_detected NULLABLE, result_date_detected NULLABLE,
+  reviewed_at NULLABLE, reviewed_by_user_id NULLABLE
+
+lab_sheet_extraction_candidates   -- Capa 1: un analito candidato, antes de revisión
+  extraction_id FK,
+  analyte_name_raw, value_raw, unit_raw NULLABLE,
+  reference_min_printed NULLABLE, reference_max_printed NULLABLE,
+  confidence ENUM(low, medium, high),
+  doctor_confirmed_analyte_name NULLABLE, doctor_confirmed_value NULLABLE,
+  doctor_confirmed_unit NULLABLE, was_edited BOOLEAN, included BOOLEAN
+
+lab_reference_ranges        -- Capa 2: tabla curada, propia del sistema
+  analyte_key, analyte_label, unit,
+  sex ENUM(m, f, any), age_min_years, age_max_years,
+  value_min, value_max, critical_min NULLABLE, critical_max NULLABLE,
+  pending_medical_review BOOLEAN DEFAULT true,
+  curated_by_user_id NULLABLE, source TEXT
+
+note_lab_results             -- Capa 3: sección de laboratorio congelada en la nota firmada
+  note_id FK, source_analyte_id FK,
+  analyte_name, value, unit, reference_min NULLABLE, reference_max NULLABLE,
+  range_source ENUM(sheet, system, none),
+  status ENUM(normal, low, high, critical, unknown),
+  measured_at,                 -- fecha del estudio; sin columna aparte
+  lab_name NULLABLE,
+  source ENUM(manual, ocr_reviewed)
 ```
 
 ### 6.8 Pagos y suscripciones
@@ -1140,7 +1181,7 @@ cancelled_* ──> [terminal]
 
 **Objetivo.** Que el médico emita órdenes formales y reciba resultados dentro del expediente.
 
-**Alcance MVP.** Emisión de orden con estudios, indicación clínica y ayuno; PDF firmado con folio y QR; carga de resultados por el médico o por el paciente; vinculación al expediente; notificación al médico. **Sin portal de laboratorio** (v1.1).
+**Alcance MVP.** Emisión de orden con estudios, indicación clínica y ayuno; PDF firmado con folio y QR; carga de resultados por el médico o por el paciente; vinculación al expediente; notificación al médico; analitos estructurados con marcado de fuera de rango/crítico calculado por el servidor, con lectura automática opcional de la hoja como primera transcripción siempre sujeta a revisión del médico (v2.5). **Sin portal de laboratorio** (v1.1).
 
 **Reglas de negocio**
 
@@ -1149,14 +1190,23 @@ cancelled_* ──> [terminal]
 - **M10-RN-003.** El resultado subido por el paciente se marca `source = patient_uploaded` y **queda pendiente de validación del médico**. Un resultado no revisado no se presenta como validado en el expediente. Esta distinción es clínica y legal.
 - **M10-RN-004.** Al subirse un resultado, el médico solicitante recibe notificación. **No se le atribuye responsabilidad de interpretación fuera de consulta**, y el texto de la notificación debe decirlo — esto protege al médico y es lo que un abogado revisará.
 - **M10-RN-005.** Catálogo de estudios semilla (~150 estudios frecuentes) con LOINC opcional, mantenido por admin.
+- **M10-RN-006.** *(v2.5)* Un analito puede llegar transcrito automáticamente desde una hoja de laboratorio subida (imagen o PDF), pero ningún valor extraído se escribe en `lab_result_analytes` sin que el médico lo revise y confirme campo por campo. La extracción vive en una tabla de espera (`lab_sheet_extractions`/`lab_sheet_extraction_candidates`) hasta ese momento — nunca directamente en el expediente estructurado.
+- **M10-RN-007.** *(v2.5)* Toda candidata extraída con confianza baja exige una confirmación explícita adicional del médico — no basta con dejarla sin tocar — antes de poder aceptarse.
+- **M10-RN-008.** *(v2.5)* El marcado de "fuera de rango" y "valor crítico" de un analito lo decide siempre el servidor de forma determinista, nunca el modelo que haya asistido en la lectura de la hoja ni el Segundo Lector. Prioridad: (1) el rango impreso en la propia hoja, si se extrajo con confianza suficiente; (2) `lab_reference_ranges`, tabla propia del sistema, por analito, con variación por sexo y edad. Esta regla **revierte conscientemente** la nota de "Casos límite" de la versión original de este módulo, que dejaba las reglas por analito fuera del MVP (v1.2) — el fundador lo pidió explícitamente el 2 de septiembre de 2026, con esa nota ya sobre la mesa.
+- **M10-RN-009.** *(v2.5)* Cada fila de `lab_reference_ranges` nace marcada `pending_medical_review = true` y cita su fuente; deja de estarlo solo cuando un usuario con rol `CURATOR` (o `SUPERADMIN`) la aprueba explícitamente. Mientras está pendiente **se sigue usando** para marcar fuera de rango — pendiente de revisión no es lo mismo que inválido — pero queda visible como tal en la bandeja de curaduría. Ningún rango de este sistema tiene precedente en una versión anterior de esta especificación; se documenta aquí por primera vez, con este mecanismo de aprobación como condición.
+- **M10-RN-010.** *(v2.5)* Un resultado que el médico selecciona para la nota de esta consulta se congela al firmar — mismo momento y mismo patrón que los signos vitales (`vital_sign_sets`) — en `note_lab_results`, con su estado ya calculado. Nunca como texto libre.
+- **M10-RN-011.** *(v2.5)* Si algún resultado incluido en una nota proviene de una lectura automática ya revisada (`source = ocr_reviewed`), la nota conserva esa procedencia y muestra el aviso de validación correspondiente.
 
-**Casos límite.** Resultado ilegible o de otro paciente → el médico lo marca como inválido, no se borra. Resultado con valores críticos → fuera de alcance del MVP; requiere reglas por analito y política de escalamiento (v1.2). Estudios de imagen → se aceptan como adjunto PDF/JPG; sin visor DICOM.
+**Casos límite.** Resultado ilegible o de otro paciente → el médico lo marca como inválido, no se borra. Estudios de imagen → se aceptan como adjunto PDF/JPG; sin visor DICOM. Falla la lectura automática de una hoja → el médico puede reintentar sobre el mismo archivo o capturar el analito a mano; el archivo nunca se pierde.
 
 **Criterios de aceptación**
 
 - **M10-CA-001** La orden en PDF contiene folio, datos del médico con cédula, datos del paciente, estudios, indicación e instrucciones de ayuno.
 - **M10-CA-002** Un resultado subido por el paciente aparece etiquetado como no validado hasta que el médico lo revisa.
 - **M10-CA-003** El médico recibe notificación de resultado nuevo en ≤5 minutos.
+- **M10-CA-004** *(v2.5)* Una candidata extraída con confianza baja no puede promoverse al expediente sin una confirmación explícita separada del médico.
+- **M10-CA-005** *(v2.5)* Un valor fuera de rango se marca en rojo en la nota firmada; un valor crítico usa un énfasis visual mayor que uno simplemente fuera de rango, nunca el mismo tratamiento.
+- **M10-CA-006** *(v2.5)* Un usuario que no es `CURATOR` ni `SUPERADMIN` no puede aprobar un rango de referencia pendiente.
 
 ---
 
@@ -1330,6 +1380,14 @@ REST versionada bajo `/api/v1`. Autenticación `Authorization: Bearer <jwt>`. Er
 | POST | `/lab-results` | DOCTOR, PATIENT | M10 |
 | POST | `/lab-results/{id}/review` | DOCTOR | M10 |
 | GET | `/lab-studies/search?q=` | DOCTOR | M10 |
+| GET/POST | `/lab-analytes/patients/{patientId}` | DOCTOR | M10 (Prompt 42A) |
+| POST | `/lab-analytes/patients/{patientId}/{id}/review` | DOCTOR | M10 (Prompt 42A) |
+| POST | `/lab-sheet-extractions/patients/{patientId}` | DOCTOR | M10 (v2.5) |
+| GET | `/lab-sheet-extractions/{id}` | DOCTOR | M10 (v2.5) |
+| POST | `/lab-sheet-extractions/{id}/retry` | DOCTOR | M10 (v2.5) |
+| POST | `/lab-sheet-extractions/{id}/review` | DOCTOR | M10 (v2.5) |
+| GET | `/lab-reference-ranges?pendingOnly=` | CURATOR, SUPERADMIN | M10 (v2.5) |
+| POST | `/lab-reference-ranges/{id}/approve` | CURATOR, SUPERADMIN | M10 (v2.5) |
 | GET/POST | `/subscriptions` | DOCTOR | M6 |
 | POST | `/webhooks/{provider}` | firma verificada | M6 |
 | GET/PATCH | `/notification-preferences` | autenticado | M12 |
@@ -1739,6 +1797,20 @@ Si el resultado es menor a 7 meses, la decisión correcta no es empezar más bar
 ---
 
 ## 17. REGISTRO DE CAMBIOS
+
+### v2.5 — 2 septiembre 2026
+
+Origen: el fundador pidió un módulo de lectura e interpretación de estudios de laboratorio en 4 capas separadas para el Escritorio de Consulta — extracción OCR de la hoja subida (con nivel de confianza por valor y revisión obligatoria del médico antes de guardar nada), marcado determinista de fuera de rango/crítico contra el rango impreso o una tabla propia curada, sección tipada en la nota firmada, e interpretación opcional por el Segundo Lector. Investigación previa a escribir código encontró dos cosas que se le presentaron antes de continuar: (1) la nota de "Casos límite" original de este mismo módulo (v1.0) decía textualmente que "valores críticos" requerían "reglas por analito... fuera de alcance del MVP (v1.2)" — el fundador confirmó reabrir esa exclusión con esa nota ya sobre la mesa; (2) ni el motor OCR ni una tabla de rangos de referencia propia tenían precedente en ningún documento de especificación anterior — se le preguntó directamente qué motor usar (Claude con visión vs. un servicio de OCR dedicado) y, dentro de esa segunda opción, cuál proveedor; en un primer momento eligió AWS Textract. Se construyó y verificó así (degradación honesta confirmada en vivo). El mismo día, el fundador revirtió esa decisión explícitamente: usar la visión de Claude (misma `ANTHROPIC_API_KEY` del Segundo Lector) en vez de una integración de AWS aparte — la Capa 1 completa se reconstruyó sobre ese motor sin tocar el resto de la arquitectura (tablas de espera, regla de oro, confianza por valor, clasificación por contenido — ahora hecha por el propio modelo al leer la imagen — y el plan de captura manual).
+
+| Cambio | Tipo |
+|---|---|
+| M10-RN-006 a M10-RN-011, M10-CA-004 a M10-CA-006 (dentro de M10, §7) | Reglas nuevas — revierten conscientemente la exclusión de "valores críticos" de la v1.0 de este módulo, documentado ahí mismo |
+| `lab_sheet_extractions`, `lab_sheet_extraction_candidates`, `lab_reference_ranges`, `note_lab_results` (§6.7); `lab_result_analytes` gana `source` | Entidades nuevas / extensión de una existente |
+| `POST/GET /lab-sheet-extractions/...`, `GET/POST /lab-reference-ranges/...` (§8.1) | Endpoints nuevos |
+| Rol `CURATOR` (ya existente desde la Fase 0 de catálogos) gana autoridad sobre `lab_reference_ranges` — fila nueva en la matriz de permisos (§5.2) | Extensión de un rol existente, no uno nuevo |
+| Capa 1 — visión de Claude (reutiliza `ANTHROPIC_API_KEY`, sin credencial nueva) | Decisión revertida sobre la marcha: se construyó primero con AWS Textract (`@aws-sdk/client-textract` + `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/`AWS_REGION`), luego el fundador pidió explícitamente reemplazarlo por Claude — ambas dependencias/variables de AWS se retiraron por completo |
+
+**Fuera de esta versión, deliberadamente**: escalamiento activo de valores críticos (notificación push/SMS urgente) — el fundador pidió el marcado visual, no un flujo de alertas fuera de la pantalla, que sería inventar un requisito de negocio no pedido (CLAUDE.md §7).
 
 ### v2.4 — 1 septiembre 2026
 

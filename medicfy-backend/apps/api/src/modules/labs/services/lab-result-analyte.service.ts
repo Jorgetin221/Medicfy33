@@ -1,5 +1,5 @@
 import { HttpStatus, Injectable } from "@nestjs/common";
-import type { LabResultAnalyte } from "@prisma/client";
+import type { LabResultAnalyte, LabResultAnalyteSource } from "@prisma/client";
 import type { LabResultAnalyteCreateInput } from "@medicfy/contracts";
 import { PrismaService } from "../../../prisma/prisma.service";
 import { ApiException } from "../../../common/api-exception";
@@ -12,7 +12,18 @@ import { ApiException } from "../../../common/api-exception";
 export class LabResultAnalyteService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(patientId: string, enteredByUserId: string, input: LabResultAnalyteCreateInput): Promise<LabResultAnalyte> {
+  // options: nuevo en v2.5, server-derivado siempre — nunca viaja en
+  // el input del cliente, igual que enteredByUserId. Omitirlo
+  // preserva el comportamiento exacto de todo llamador anterior a
+  // v2.5 (source=MANUAL, sin labName); LabSheetExtractionService.
+  // submitReview() es el único que pasa OCR_REVIEWED + labName, al
+  // promover una candidata ya confirmada por el médico.
+  async create(
+    patientId: string,
+    enteredByUserId: string,
+    input: LabResultAnalyteCreateInput,
+    options?: { source?: LabResultAnalyteSource; labName?: string }
+  ): Promise<LabResultAnalyte> {
     return this.prisma.labResultAnalyte.create({
       data: {
         patientId,
@@ -25,6 +36,8 @@ export class LabResultAnalyteService {
         referenceMax: input.referenceMax ?? null,
         measuredAt: new Date(input.measuredAt),
         enteredByUserId,
+        source: options?.source ?? "MANUAL",
+        labName: options?.labName ?? null,
       },
     });
   }
