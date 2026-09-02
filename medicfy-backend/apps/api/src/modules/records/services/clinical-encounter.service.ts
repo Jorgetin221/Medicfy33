@@ -12,9 +12,12 @@ import { buildSignedNoteHashInput, sha256Hex } from "../../../common/content-has
 import { omitUndefined } from "../../../common/omit-undefined";
 import { LMS_FORMULA, lmsPercentile, withBodySurfaceArea, withComputedVitals } from "../../../common/vitals-calculations.util";
 import { evaluateVitalRanges } from "../../../common/vital-ranges.util";
+import type { RedFlagVitalsInput } from "../../../common/red-flag-detector.util";
 import { AppointmentStateMachineService } from "../../scheduling/services/appointment-state-machine.service";
 import { SpecialtyScaleService } from "./specialty-scale.service";
 import { SignatureVerificationService } from "../../identity/services/signature-verification.service";
+import { PatientClinicalService } from "./patient-clinical.service";
+import { RedFlagService } from "./red-flag.service";
 
 const ABANDONED_AFTER_HOURS = 72;
 
@@ -37,8 +40,48 @@ export class ClinicalEncounterService {
     private readonly prisma: PrismaService,
     private readonly appointments: AppointmentStateMachineService,
     private readonly scales: SpecialtyScaleService,
-    private readonly signatureVerification: SignatureVerificationService
+    private readonly signatureVerification: SignatureVerificationService,
+    private readonly patientClinical: PatientClinicalService,
+    private readonly redFlags: RedFlagService
   ) {}
+
+  // Fase 8 · Prompt 52 — corre en cada autoguardado y al firmar,
+  // nunca bloquea nada (a diferencia del gate de criticalVitalsConfirmed
+  // de más abajo, que sí puede detener la firma). presentingSymptomTermIds
+  // llega como ids de catálogo — se resuelven a su key aquí; un id que
+  // no exista o no sea del dominio correcto se ignora en silencio, sin
+  // romper el autoguardado.
+  private async evaluateRedFlags(
+    encounterId: string,
+    patientId: string,
+    draftContent: Record<string, unknown>
+  ) {
+    const patient = await this.prisma.patient.findUniqueOrThrow({
+      where: { id: patientId },
+      select: { birthDate: true, sexAtBirth: true },
+    });
+    const ageYears = (Date.now() - patient.birthDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
+    const pregnancy = await this.patientClinical.getActivePregnancy(patientId);
+    const vitals = (draftContent.vitals as RedFlagVitalsInput | undefined) ?? {};
+    const symptomTermIds = (draftContent.presentingSymptomTermIds as string[] | undefined) ?? [];
+    const presentingSymptomKeys = await this.resolveRedFlagSymptomKeys(symptomTermIds);
+    return this.redFlags.evaluateAndPersist(
+      encounterId,
+      { ageYears, isPregnant: pregnancy !== null, vitals, presentingSymptomKeys },
+      patient.sexAtBirth
+    );
+  }
+
+  // BANDERA_ROJA_SINTOMA: un id que no exista o no sea de este dominio
+  // se ignora en silencio — nunca rompe el autoguardado ni la firma.
+  private async resolveRedFlagSymptomKeys(termIds: string[]): Promise<string[]> {
+    if (termIds.length === 0) return [];
+    const terms = await this.prisma.clinicalCatalogTerm.findMany({
+      where: { id: { in: termIds }, domain: "BANDERA_ROJA_SINTOMA" },
+      select: { key: true },
+    });
+    return terms.map((t) => t.key);
+  }
 
   // Resuelve la especialidad del médico dueño del encuentro y computa
   // specialtyData contra sus SpecialtyFieldSchema activos (ESCALAS).
@@ -124,10 +167,12 @@ export class ClinicalEncounterService {
       ...(resolvedSpecialtyData ? { specialtyData: resolvedSpecialtyData.data } : {}),
     };
     const draftContent = { ...(encounter.draftContent as Record<string, unknown>), ...nextPatch };
-    return this.prisma.clinicalEncounter.update({
+    const updated = await this.prisma.clinicalEncounter.update({
       where: { id: encounterId },
       data: { draftContent: draftContent as unknown as Prisma.InputJsonValue },
     });
+    const activeRedFlags = await this.evaluateRedFlags(encounterId, encounter.patientId, draftContent);
+    return { ...updated, activeRedFlags };
   }
 
   // M8-RN-001/M8-RN-002: al firmar se congela — se materializa la
@@ -177,6 +222,7 @@ export class ClinicalEncounterService {
       physicalExam,
       prognosis,
       vitals: rawVitals,
+      presentingSymptomTermIds,
       specialtyData: rawSpecialtyData,
       criticalVitalsConfirmed,
       patientInstructions,
@@ -281,7 +327,7 @@ export class ClinicalEncounterService {
     );
     const signedAt = new Date();
 
-    return this.prisma.$transaction(async (tx) => {
+    const signResult = await this.prisma.$transaction(async (tx) => {
       const note = await tx.clinicalNote.create({
         data: {
           encounterId,
@@ -310,6 +356,8 @@ export class ClinicalEncounterService {
             respiratoryRateBpm: vitals.respiratoryRate ?? null,
             temperatureC: vitals.tempC ?? null,
             spo2Percent: vitals.spo2 ?? null,
+            glucoseCapMgDl: vitals.glucoseCapMgDl ?? null,
+            capillaryRefillSeconds: vitals.capillaryRefillSeconds ?? null,
             weightKg: vitals.weightKg ?? null,
             heightCm: vitals.heightCm ?? null,
             headCircumferenceCm: vitals.headCircumferenceCm ?? null,
@@ -381,6 +429,14 @@ export class ClinicalEncounterService {
       });
       return { encounter: updated, note };
     });
+    const pregnancy = await this.patientClinical.getActivePregnancy(encounter.patientId);
+    const presentingSymptomKeys = await this.resolveRedFlagSymptomKeys(presentingSymptomTermIds ?? []);
+    const activeRedFlags = await this.redFlags.evaluateAndPersist(
+      encounterId,
+      { ageYears, isPregnant: pregnancy !== null, vitals, presentingSymptomKeys },
+      patientForVitals.sexAtBirth
+    );
+    return { ...signResult, activeRedFlags };
   }
 
   // M5-RN-006/schema.prisma: "cuando M8 exista, la ruta real [a

@@ -21,6 +21,7 @@ import { getRequestMeta } from "../identity/request-meta";
 import { ClinicalEncounterService } from "./services/clinical-encounter.service";
 import { IndicacionesPdfService } from "./services/indicaciones-pdf.service";
 import { ClinicalNoteCancellationService } from "./services/clinical-note-cancellation.service";
+import { RedFlagService } from "./services/red-flag.service";
 
 // M8-RN-002/DOC-06: crear/listar encuentros de un paciente, autoguardar
 // el borrador y firmar. Todas las rutas pasan por CareRelationshipGuard
@@ -34,7 +35,8 @@ export class EncountersController {
     private readonly encounters: ClinicalEncounterService,
     private readonly auditService: AuditService,
     private readonly indicacionesPdf: IndicacionesPdfService,
-    private readonly noteCancellation: ClinicalNoteCancellationService
+    private readonly noteCancellation: ClinicalNoteCancellationService,
+    private readonly redFlags: RedFlagService
   ) {}
 
   @Post("records/patients/:patientId/encounters")
@@ -61,6 +63,13 @@ export class EncountersController {
   async getById(@Param("encounterId") encounterId: string, @Req() req: ClinicalRequest) {
     await this.audit(req, req.clinicalPatientId as string, "records.encounter.read", encounterId);
     return this.encounters.getById(encounterId);
+  }
+
+  @Get("records/encounters/:encounterId/red-flags")
+  @ApiOperation({ summary: "Fase 8 · Prompt 52: banderas rojas activas — Zona 1, siempre visibles" })
+  async listRedFlags(@Param("encounterId") encounterId: string, @Req() req: ClinicalRequest) {
+    await this.audit(req, req.clinicalPatientId as string, "records.encounter.red_flags.list", encounterId);
+    return this.redFlags.listForEncounter(encounterId);
   }
 
   @Patch("records/encounters/:encounterId/note")

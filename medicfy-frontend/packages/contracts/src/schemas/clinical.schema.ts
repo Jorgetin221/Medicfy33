@@ -13,6 +13,10 @@ export const vitalsSchema = z
     respiratoryRate: z.number().min(5).max(60).optional(),
     tempC: z.number().min(30).max(43).optional(),
     spo2: z.number().min(50).max(100).optional(),
+    // Fase 8 · Prompt 52 (banderas rojas): sin captura previa en el
+    // sistema — las agrega el documento clínico del médico responsable.
+    glucoseCapMgDl: z.number().min(20).max(800).optional(),
+    capillaryRefillSeconds: z.number().min(0).max(15).optional(),
     weightKg: z.number().min(0.5).max(400).optional(),
     heightCm: z.number().min(20).max(250).optional(),
     // Prompt 26: perímetros cefálico y abdominal, con unidad explícita.
@@ -47,6 +51,13 @@ export const clinicalNoteDraftUpdateSchema = z
     chiefComplaint: z.string().max(500).optional(),
     currentIllness: z.string().optional(),
     vitals: vitalsSchema.optional(),
+    // Fase 8 · Prompt 52 (banderas rojas): ids de ClinicalCatalogTerm
+    // del dominio BANDERA_ROJA_SINTOMA que el médico marca como
+    // presentes — estructurado y referenciado a catálogo (R3 de
+    // medicfy-58-prompts.md), nunca detectado sobre chiefComplaint/
+    // currentIllness en texto libre, para que el filtro sea confiable
+    // y auditable.
+    presentingSymptomTermIds: z.array(z.string().uuid()).optional(),
     // Motor de escalas (SpecialtyFieldSchema/EncounterSpecialtyData,
     // sección ESCALAS): fieldKey -> valor numérico crudo, tal como el
     // médico lo captura. El cómputo/interpretación nunca viaja desde
@@ -107,6 +118,7 @@ export const clinicalNoteSignSchema = z
     chiefComplaint: z.string().min(3, "El motivo de consulta debe tener al menos 3 caracteres.").max(500),
     currentIllness: z.string().min(1, "El padecimiento actual es obligatorio."),
     vitals: vitalsSchema,
+    presentingSymptomTermIds: z.array(z.string().uuid()).optional(),
     specialtyData: z.record(z.string(), z.number()).optional(),
     physicalExam: z.string().optional(),
     assessment: z.string().min(1, "El análisis es obligatorio."),

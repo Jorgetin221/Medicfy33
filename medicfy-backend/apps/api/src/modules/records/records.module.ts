@@ -16,6 +16,7 @@ import { ClinicalAttachmentService } from "./services/clinical-attachment.servic
 import { DocumentAccessService } from "./services/document-access.service";
 import { ClinicalNoteCancellationService } from "./services/clinical-note-cancellation.service";
 import { NoteIntegrityService } from "./services/note-integrity.service";
+import { RedFlagService } from "./services/red-flag.service";
 import { PatientClinicalController } from "./patient-clinical.controller";
 import { EncountersController } from "./encounters.controller";
 import { Icd10Controller } from "./icd10.controller";
@@ -53,9 +54,14 @@ import { DocumentViewController } from "./document-view.controller";
     DocumentAccessService,
     ClinicalNoteCancellationService,
     NoteIntegrityService,
+    RedFlagService,
     CareRelationshipGuard,
     { provide: FILE_STORAGE_PORT, useClass: LocalDiskFileStorageAdapter },
   ],
-  exports: [ClinicalEncounterService],
+  // PatientClinicalService: Fase 8 · Prompt 50 (assistant/context-
+  // assembler.service.ts) reutiliza listAllergies/listMedications/
+  // activeDiagnoses/listHistoryItems/getActivePregnancy/notesTimeline
+  // en vez de duplicar sus consultas.
+  exports: [ClinicalEncounterService, PatientClinicalService],
 })
 export class RecordsModule {}

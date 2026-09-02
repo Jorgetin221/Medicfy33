@@ -38,6 +38,10 @@ export const CATALOG_DOMAINS = [
   // Fase 6 · Prompt 44B: motivo administrativo de cancelación de una
   // nota firmada — nunca clínico (no es diagnóstico ni tratamiento).
   "MOTIVO_CANCELACION_NOTA",
+  // Fase 8 · Prompt 52: síntomas/motivos que el filtro de banderas
+  // rojas reconoce por Vía B — banderas-rojas-medicfy.md, documento
+  // del médico responsable.
+  "BANDERA_ROJA_SINTOMA",
 ] as const;
 export const catalogDomainSchema = z.enum(CATALOG_DOMAINS);
 export type CatalogDomain = z.infer<typeof catalogDomainSchema>;

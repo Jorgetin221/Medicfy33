@@ -9,6 +9,7 @@ import { HistoriaReadonly } from "@/components/clinical/historia-readonly";
 import { NotasTimeline } from "@/components/clinical/notas-timeline";
 import { DocumentosTab } from "@/components/clinical/documentos-tab";
 import { LabAnalytesPanel } from "@/components/clinical/lab-analytes-panel";
+import { AsistenteTab } from "@/components/clinical/asistente-tab";
 
 // Prompt 14 — Zona 3, esqueleto: pestañas Hoja frontal / Historia /
 // Notas / Estudios / Resultados, VACÍAS por ahora (el contenido llega
@@ -23,7 +24,15 @@ import { LabAnalytesPanel } from "@/components/clinical/lab-analytes-panel";
 // - Recuerda por médico cuál pestaña quedó abierta (localStorage con
 //   el id del médico — preferencia de UI, no dato clínico).
 
-const TABS = ["Hoja frontal", "Historia", "Notas", "Estudios", "Resultados"] as const;
+// Fase 8 · Prompt 53: quinta pestaña, "Asistente" (El Segundo Lector).
+// v1 — disparo manual únicamente (los 4 botones de pase viven dentro
+// de AsistenteTab): el disparo automático por sección estable
+// (Prompt 51) y el punto de "lectura nueva"/interrupción por bandera
+// roja inmediata (Prompt 53) requieren que algo dispare un pase SIN
+// que el médico haya abierto esta pestaña primero — no aplica todavía
+// porque hoy el único disparador ES el botón de adentro. Se agregan
+// cuando exista ese disparo en segundo plano, no se están olvidando.
+const TABS = ["Hoja frontal", "Historia", "Notas", "Estudios", "Resultados", "Asistente"] as const;
 export type Zona3Tab = (typeof TABS)[number];
 
 function storageKey(doctorKey: string): string {
@@ -35,12 +44,16 @@ export function ConsultaZona3({
   patientId,
   accessToken,
   birthDate,
+  encounterId,
 }: {
   doctorKey: string;
   // Fase 3 (prompt 30): Resultados grafica las series estructuradas.
   patientId?: string;
   accessToken?: string | null;
   birthDate?: string;
+  // Fase 8 · Prompt 53: la pestaña Asistente dispara/lee pases contra
+  // este encuentro.
+  encounterId?: string;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<Zona3Tab>("Hoja frontal");
@@ -116,6 +129,8 @@ export function ConsultaZona3({
                     <LabAnalytesPanel patientId={patientId} accessToken={accessToken} />
                   </div>
                 </div>
+              ) : tab === "Asistente" && encounterId && accessToken ? (
+                <AsistenteTab encounterId={encounterId} accessToken={accessToken} />
               ) : (
                 <p className="text-sm text-gray-500">Sin datos suficientes para mostrar esta pestaña.</p>
               )}
