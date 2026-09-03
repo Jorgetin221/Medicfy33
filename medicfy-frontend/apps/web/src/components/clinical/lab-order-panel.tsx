@@ -6,6 +6,7 @@ import { apiFetch, apiFetchBlob, ApiError } from "@/lib/api-client";
 import { Panel } from "@/components/ui/panel";
 import { Button } from "@/components/ui/button";
 import { FieldWrapper, TextInput } from "@/components/ui/field";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Aviso } from "@/components/ui/alert";
 
 // Prompt 37 (F4): el estudio viene del catálogo en DOS niveles (el
@@ -321,7 +322,7 @@ export function LabOrderPanel({
           {signatureRoute === "ELECTRONIC" && (
             <div className="grid grid-cols-2 gap-3">
               <FieldWrapper label="Confirma tu contraseña" htmlFor="lab-password">
-                <TextInput id="lab-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+                <PasswordInput id="lab-password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
               </FieldWrapper>
               <FieldWrapper label="Código de verificación (6 dígitos)" htmlFor="lab-totp">
                 <TextInput

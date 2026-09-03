@@ -367,11 +367,11 @@ function AvailabilitySection({ doctor }: { doctor: PublicDoctor }) {
   const [booked, setBooked] = useState<AvailableSlot | null>(null);
 
   useEffect(() => {
-    if (!doctor.isBookable) return;
+    if (!doctor.isBookable || !isPatientSession) return;
     apiFetch<PublicService[]>(`/doctors/${doctor.slug}/public/services`)
       .then(setServices)
       .catch((err: unknown) => setServicesError(err));
-  }, [doctor.slug, doctor.isBookable]);
+  }, [doctor.slug, doctor.isBookable, isPatientSession]);
 
   const loadSlots = useCallback(async () => {
     if (!serviceId) return;
@@ -435,14 +435,19 @@ function AvailabilitySection({ doctor }: { doctor: PublicDoctor }) {
     );
   }
 
+  if (!isPatientSession) {
+    return (
+      <Card>
+        <h2 className="font-heading text-xl text-brand-900">Disponibilidad</h2>
+        <p className="text-sm text-gray-500">Inicia sesión como paciente para agendar.</p>
+      </Card>
+    );
+  }
+
   return (
     <Card>
       <h2 className="font-heading text-xl text-brand-900">Disponibilidad</h2>
-      <p className="text-sm text-gray-500">
-        {isPatientSession
-          ? "Elige un servicio y un horario para agendar."
-          : "Inicia sesión como paciente para agendar, o contacta directamente al consultorio (abajo)."}
-      </p>
+      <p className="text-sm text-gray-500">Elige un servicio y un horario para agendar.</p>
 
       <div className="mt-4">
         {services === null && !servicesError ? <LoadingState /> : null}

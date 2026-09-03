@@ -84,7 +84,7 @@ export const doctorLegalFieldsUpdateSchema = z
     legalLastName: z.string().min(1).max(120).optional(),
     professionalLicense: z
       .string()
-      .refine(isValidCedulaFormat, "No encontramos esta cédula en el registro de la SEP. Verifica el número.")
+      .refine(isValidCedulaFormat, "La cédula profesional debe tener 7 u 8 dígitos numéricos.")
       .optional(),
     specialtyLicense: z.string().min(1).max(60).optional(),
     specialtyLicenseExpiresAt: specialtyLicenseExpiresAtSchema.optional(),

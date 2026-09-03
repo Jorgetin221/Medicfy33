@@ -61,13 +61,6 @@ const TRUST_ITEMS = [
 export default function ParaMedicosPage() {
   return (
     <>
-      <a
-        href="#contenido"
-        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-brand-900 focus:px-4 focus:py-2 focus:text-white"
-      >
-        Saltar al contenido principal
-      </a>
-
       <header className="sticky top-0 z-40 border-b border-gray-300 bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
           <Link href="/" className="font-brand text-xl font-bold text-brand-900">
@@ -87,7 +80,7 @@ export default function ParaMedicosPage() {
         </div>
       </header>
 
-      <main id="contenido">
+      <main>
         {/* Hero */}
         <section className="mx-auto grid max-w-6xl gap-12 px-6 py-16 md:grid-cols-2 md:items-center md:py-24">
           <div className="flex flex-col gap-6 motion-safe:animate-[fade-in-up_0.6s_ease-out_both]">
@@ -103,7 +96,7 @@ export default function ParaMedicosPage() {
             </p>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
               <Link href="/registro-medico">
-                <Button className="w-full sm:w-auto">Crear cuenta gratis</Button>
+                <Button className="w-full sm:w-auto">Crea una cuenta gratis</Button>
               </Link>
               <Link href="/login" className="sm:hidden">
                 <Button variant="secondary" className="w-full">
@@ -115,20 +108,15 @@ export default function ParaMedicosPage() {
           </div>
 
           <div
-            className="relative mx-auto mb-8 w-full max-w-sm motion-safe:animate-[fade-in-up_0.7s_ease-out_0.12s_both]"
+            className="mx-auto mb-8 w-full max-w-sm motion-safe:animate-[fade-in-up_0.7s_ease-out_0.12s_both]"
             aria-hidden="true"
           >
-            <Card className="relative z-10 flex flex-col gap-3">
+            <Card className="flex flex-col gap-3">
               <p className="text-sm font-medium text-gray-500">Agenda de hoy</p>
               <AgendaMockRow time="09:00" label="Consulta de seguimiento" status="Confirmada" statusClass="border-success-600 text-success-600" />
               <AgendaMockRow time="10:30" label="Primera vez" status="En curso" statusClass="border-brand-700 text-brand-700" />
               <AgendaMockRow time="12:00" label="Consulta de seguimiento" status="Agendada" statusClass="border-gray-500 text-gray-700" />
             </Card>
-            <div className="absolute -bottom-5 -right-5 z-0 hidden rounded-lg border border-gray-300 bg-white p-4 shadow-card sm:block">
-              <p className="flex items-center gap-2 text-sm font-medium text-success-600">
-                <IconPrescription className="h-5 w-5" /> Receta lista
-              </p>
-            </div>
           </div>
         </section>
 
@@ -195,7 +183,7 @@ export default function ParaMedicosPage() {
             <h2 className="font-heading text-2xl text-white md:text-3xl">Empieza a documentar tu consulta de hoy</h2>
             <p className="text-lg text-brand-100">Crea tu cuenta en unos minutos y verifica tu cédula profesional.</p>
             <Link href="/registro-medico">
-              <Button variant="secondary">Crear cuenta gratis</Button>
+              <Button variant="secondary">Crea una cuenta gratis</Button>
             </Link>
           </div>
         </section>

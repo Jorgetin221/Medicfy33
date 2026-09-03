@@ -13,6 +13,7 @@ import { apiFetch, ApiError } from "@/lib/api-client";
 import { useEncounterAutosave } from "@/lib/use-encounter-autosave";
 import { loadDraftLocally, clearDraftLocally } from "@/lib/offline-draft-store";
 import { FieldWrapper, Textarea, TextInput } from "@/components/ui/field";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/ui/panel";
 import { Aviso } from "@/components/ui/alert";
@@ -600,7 +601,7 @@ export function ConsultaForm({
             Una vez firmada, esta consulta no se puede editar — solo corregir con una nota nueva (adenda).
           </p>
           <FieldWrapper label="Contraseña" htmlFor="sign-password" error={form.formState.errors.password?.message}>
-            <TextInput id="sign-password" type="password" autoComplete="current-password" error={!!form.formState.errors.password} {...form.register("password")} />
+            <PasswordInput id="sign-password" autoComplete="current-password" error={!!form.formState.errors.password} {...form.register("password")} />
           </FieldWrapper>
           <FieldWrapper label="Código de verificación (TOTP)" htmlFor="sign-totp-code" error={form.formState.errors.totpCode?.message}>
             <TextInput

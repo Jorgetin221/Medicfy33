@@ -12,6 +12,7 @@ import { tokenPrimaryRole } from "@/lib/jwt-claims";
 import { AuthLayout } from "@/components/auth-layout";
 import { Button } from "@/components/ui/button";
 import { FieldWrapper, TextInput } from "@/components/ui/field";
+import { PasswordInput } from "@/components/ui/password-input";
 import { ErrorState, LoadingState } from "@/components/ui/states";
 
 type LoginResult = { accessToken: string } | { mfaRequired: true; mfaSessionToken: string };
@@ -88,9 +89,8 @@ function LoginForm() {
             <TextInput id="email" type="email" autoComplete="email" error={!!form.formState.errors.email} {...form.register("email")} />
           </FieldWrapper>
           <FieldWrapper label="Contraseña" htmlFor="password" error={form.formState.errors.password?.message}>
-            <TextInput
+            <PasswordInput
               id="password"
-              type="password"
               autoComplete="current-password"
               error={!!form.formState.errors.password}
               {...form.register("password")}

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { SiteHeader } from "@/components/site-header";
 import { DoctorPublicProfile } from "./doctor-public-profile";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
@@ -45,5 +46,10 @@ export async function generateMetadata({ params }: PageParams): Promise<Metadata
 
 export default async function DoctorPublicPage({ params }: PageParams) {
   const { slug } = await params;
-  return <DoctorPublicProfile slug={slug} />;
+  return (
+    <>
+      <SiteHeader />
+      <DoctorPublicProfile slug={slug} />
+    </>
+  );
 }

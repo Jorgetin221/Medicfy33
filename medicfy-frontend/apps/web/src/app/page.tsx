@@ -105,16 +105,9 @@ export default function HomePage() {
       </main>
 
       <footer className="border-t border-gray-300 bg-white px-6 py-10">
-        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 text-center sm:flex-row sm:text-left">
-          <div>
-            <p className="font-brand text-base text-brand-900">Medicfy</p>
-            <p className="text-sm text-gray-500">Encuentra y conoce a tu médico, dentro de la plataforma.</p>
-          </div>
-          <p className="text-sm text-gray-500">
-            <Link href="/para-medicos" className="underline">
-              ¿Eres médico? Regístrate aquí
-            </Link>
-          </p>
+        <div className="mx-auto max-w-6xl text-center sm:text-left">
+          <p className="font-brand text-base text-brand-900">Medicfy</p>
+          <p className="text-sm text-gray-500">Encuentra y conoce a tu médico, dentro de la plataforma.</p>
         </div>
       </footer>
     </div>

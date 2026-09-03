@@ -6,6 +6,7 @@ import { apiFetch, apiFetchBlob, ApiError } from "@/lib/api-client";
 import { Panel } from "@/components/ui/panel";
 import { Button } from "@/components/ui/button";
 import { FieldWrapper, TextInput, Textarea } from "@/components/ui/field";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Aviso } from "@/components/ui/alert";
 import { MedicationPicker, type MedicationCatalogEntry, type PrescriptionDraftItem } from "@/components/clinical/medication-picker";
 
@@ -502,7 +503,7 @@ export function PrescriptionPanel({
           {signatureRoute === "ELECTRONIC" && (
             <div className="grid grid-cols-2 gap-3">
               <FieldWrapper label="Confirma tu contraseña" htmlFor="rx-password">
-                <TextInput id="rx-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+                <PasswordInput id="rx-password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
               </FieldWrapper>
               <FieldWrapper label="Código de verificación (6 dígitos)" htmlFor="rx-totp">
                 <TextInput

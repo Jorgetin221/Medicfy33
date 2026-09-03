@@ -10,6 +10,7 @@ import { apiFetch } from "@/lib/api-client";
 import { AuthLayout } from "@/components/auth-layout";
 import { Button } from "@/components/ui/button";
 import { FieldWrapper, TextInput, SelectInput } from "@/components/ui/field";
+import { PasswordInput } from "@/components/ui/password-input";
 import { ErrorState } from "@/components/ui/states";
 import { Aviso } from "@/components/ui/alert";
 
@@ -79,10 +80,14 @@ export default function RegistroPacientePage() {
             <TextInput id="email" type="email" autoComplete="email" error={!!form.formState.errors.email} {...form.register("email")} />
           </FieldWrapper>
 
-          <FieldWrapper label="Contraseña" htmlFor="password" error={form.formState.errors.password?.message} hint="Mínimo 12 caracteres.">
-            <TextInput
+          <FieldWrapper
+            label="Contraseña"
+            htmlFor="password"
+            error={form.formState.errors.password?.message}
+            hint="Usa al menos 8 caracteres (letras, números o símbolos)."
+          >
+            <PasswordInput
               id="password"
-              type="password"
               autoComplete="new-password"
               error={!!form.formState.errors.password}
               {...form.register("password")}
@@ -91,15 +96,39 @@ export default function RegistroPacientePage() {
 
           <div className="grid grid-cols-2 gap-4">
             <FieldWrapper label="Nombre(s)" htmlFor="firstName" error={form.formState.errors.firstName?.message}>
-              <TextInput id="firstName" error={!!form.formState.errors.firstName} {...form.register("firstName")} />
+              <TextInput
+                id="firstName"
+                autoComplete="given-name"
+                data-1p-ignore
+                data-lpignore="true"
+                data-bwignore
+                error={!!form.formState.errors.firstName}
+                {...form.register("firstName")}
+              />
             </FieldWrapper>
             <FieldWrapper label="Apellido paterno" htmlFor="lastNamePaternal" error={form.formState.errors.lastNamePaternal?.message}>
-              <TextInput id="lastNamePaternal" error={!!form.formState.errors.lastNamePaternal} {...form.register("lastNamePaternal")} />
+              <TextInput
+                id="lastNamePaternal"
+                autoComplete="family-name"
+                data-1p-ignore
+                data-lpignore="true"
+                data-bwignore
+                error={!!form.formState.errors.lastNamePaternal}
+                {...form.register("lastNamePaternal")}
+              />
             </FieldWrapper>
           </div>
 
           <FieldWrapper label="Apellido materno (opcional)" htmlFor="lastNameMaternal" error={form.formState.errors.lastNameMaternal?.message}>
-            <TextInput id="lastNameMaternal" error={!!form.formState.errors.lastNameMaternal} {...form.register("lastNameMaternal")} />
+            <TextInput
+              id="lastNameMaternal"
+              autoComplete="additional-name"
+              data-1p-ignore
+              data-lpignore="true"
+              data-bwignore
+              error={!!form.formState.errors.lastNameMaternal}
+              {...form.register("lastNameMaternal")}
+            />
           </FieldWrapper>
 
           <div className="grid grid-cols-2 gap-4">

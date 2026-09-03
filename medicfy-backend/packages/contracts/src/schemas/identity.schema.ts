@@ -14,13 +14,13 @@ const emailSchema = z
 
 const passwordSchema = z
   .string()
-  .refine(isStrongPassword, "Tu contraseña debe tener al menos 12 caracteres y no ser una contraseña común.");
+  .refine(isStrongPassword, "Usa al menos 8 caracteres (letras, números o símbolos).");
 
 const mxPhoneSchema = z.string().refine(isValidMxPhoneE164, "Ingresa un teléfono a 10 dígitos.");
 
 const cedulaSchema = z
   .string()
-  .refine(isValidCedulaFormat, "No encontramos esta cédula en el registro de la SEP. Verifica el número.");
+  .refine(isValidCedulaFormat, "La cédula profesional debe tener 7 u 8 dígitos numéricos.");
 
 // M1-RN-003: (a) privacyNotice and (b) sensitiveData are required —
 // "Sin la (a) y la (b) no hay cuenta". (c) is optional; its absence

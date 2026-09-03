@@ -11,6 +11,7 @@ import { useSpecialties } from "@/lib/use-specialties";
 import { AuthLayout } from "@/components/auth-layout";
 import { Button } from "@/components/ui/button";
 import { FieldWrapper, TextInput, SelectInput } from "@/components/ui/field";
+import { PasswordInput } from "@/components/ui/password-input";
 import { ErrorState } from "@/components/ui/states";
 import { Aviso } from "@/components/ui/alert";
 
@@ -80,10 +81,14 @@ export default function RegistroMedicoPage() {
             <TextInput id="email" type="email" autoComplete="email" error={!!form.formState.errors.email} {...form.register("email")} />
           </FieldWrapper>
 
-          <FieldWrapper label="Contraseña" htmlFor="password" error={form.formState.errors.password?.message} hint="Mínimo 12 caracteres.">
-            <TextInput
+          <FieldWrapper
+            label="Contraseña"
+            htmlFor="password"
+            error={form.formState.errors.password?.message}
+            hint="Usa al menos 8 caracteres (letras, números o símbolos)."
+          >
+            <PasswordInput
               id="password"
-              type="password"
               autoComplete="new-password"
               error={!!form.formState.errors.password}
               {...form.register("password")}
@@ -92,10 +97,26 @@ export default function RegistroMedicoPage() {
 
           <div className="grid grid-cols-2 gap-4">
             <FieldWrapper label="Nombre(s)" htmlFor="legalFirstName" error={form.formState.errors.legalFirstName?.message}>
-              <TextInput id="legalFirstName" error={!!form.formState.errors.legalFirstName} {...form.register("legalFirstName")} />
+              <TextInput
+                id="legalFirstName"
+                autoComplete="given-name"
+                data-1p-ignore
+                data-lpignore="true"
+                data-bwignore
+                error={!!form.formState.errors.legalFirstName}
+                {...form.register("legalFirstName")}
+              />
             </FieldWrapper>
             <FieldWrapper label="Apellidos" htmlFor="legalLastName" error={form.formState.errors.legalLastName?.message}>
-              <TextInput id="legalLastName" error={!!form.formState.errors.legalLastName} {...form.register("legalLastName")} />
+              <TextInput
+                id="legalLastName"
+                autoComplete="family-name"
+                data-1p-ignore
+                data-lpignore="true"
+                data-bwignore
+                error={!!form.formState.errors.legalLastName}
+                {...form.register("legalLastName")}
+              />
             </FieldWrapper>
           </div>
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
@@ -64,13 +65,67 @@ export function SiteHeader() {
               >
                 Iniciar sesión
               </Link>
-              <Link href="/registro-paciente">
-                <Button className="px-3 sm:px-4">Regístrate</Button>
-              </Link>
+              <RegisterMenu />
             </>
           )}
         </div>
       </div>
     </header>
+  );
+}
+
+// Un botón, dos destinos: paciente sigue en /registro-paciente; médico
+// va a /para-medicos — el mismo enlace que antes vivía como "¿Eres
+// médico? Regístrate aquí" en el footer del home (ahora retirado de
+// ahí, este menú es la única entrada).
+function RegisterMenu() {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <Button className="px-3 sm:px-4" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        Regístrate
+      </Button>
+      {open ? (
+        <div
+          role="menu"
+          className="absolute right-0 top-[calc(100%+8px)] z-50 w-56 rounded-md border border-gray-300 bg-white p-2 shadow-card"
+        >
+          <Link
+            href="/registro-paciente"
+            role="menuitem"
+            onClick={() => setOpen(false)}
+            className="flex min-h-[44px] items-center rounded-md px-3 text-base text-gray-900 hover:bg-gray-100"
+          >
+            Registrarme como paciente
+          </Link>
+          <Link
+            href="/para-medicos"
+            role="menuitem"
+            onClick={() => setOpen(false)}
+            className="flex min-h-[44px] items-center rounded-md px-3 text-base text-gray-900 hover:bg-gray-100"
+          >
+            Registrarme como médico
+          </Link>
+        </div>
+      ) : null}
+    </div>
   );
 }

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import { LoadingState, ErrorState } from "@/components/ui/states";
 import { FieldWrapper, SelectInput, TextInput } from "@/components/ui/field";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Button } from "@/components/ui/button";
 
 const MX_TIME_ZONE = "America/Mexico_City";
@@ -167,7 +168,7 @@ function CancelNoteForm({
         </FieldWrapper>
       ) : null}
       <FieldWrapper label="Contraseña" htmlFor={`cancel-password-${noteId}`}>
-        <TextInput id={`cancel-password-${noteId}`} type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+        <PasswordInput id={`cancel-password-${noteId}`} autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
       </FieldWrapper>
       <FieldWrapper label="Código de verificación (TOTP)" htmlFor={`cancel-totp-${noteId}`}>
         <TextInput
