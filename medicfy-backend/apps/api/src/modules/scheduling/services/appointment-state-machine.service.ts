@@ -9,6 +9,7 @@ import { CareRelationshipService } from "./care-relationship.service";
 import { DEFAULT_CANCELLATION_POLICY, resolveCancellationPolicy, refundPercentFor, type CancellationPolicy } from "../cancellation-policy";
 import { NotificationsService } from "../../notifications/services/notifications.service";
 import { NotificationLinkService } from "../../notifications/services/notification-link.service";
+import { AppointmentReminderSchedulerService } from "../../notifications/services/appointment-reminder-scheduler.service";
 import type { NotificationTemplateCode } from "@prisma/client";
 import {
   renderAppointmentScheduled,
@@ -71,7 +72,8 @@ export class AppointmentStateMachineService {
     private readonly prisma: PrismaService,
     private readonly careRelationshipService: CareRelationshipService,
     private readonly notificationsService: NotificationsService,
-    private readonly notificationLinkService: NotificationLinkService
+    private readonly notificationLinkService: NotificationLinkService,
+    private readonly reminderScheduler: AppointmentReminderSchedulerService
   ) {}
 
   // M12: los 4 disparadores de ciclo de vida de cita con plantilla
@@ -404,6 +406,12 @@ export class AppointmentStateMachineService {
   async confirmPayment(appointmentId: string, actorUserId: string | null): Promise<Appointment> {
     const updated = await this.transition(appointmentId, "SCHEDULED", actorUserId, "Pago confirmado.");
     await this.notifyAppointmentEvent(updated, "APPOINTMENT_SCHEDULED", updated.startsAt);
+    // M12: se programa aquí, no en confirm() — startsAt ya es
+    // definitivo en cuanto el pago se confirma (pending_payment ->
+    // scheduled); confirm() (scheduled -> confirmed) no cambia la
+    // hora, así que reprogramar ahí duplicaría el intento (aunque
+    // scheduleAppointmentReminders es idempotente por jobId).
+    await this.reminderScheduler.scheduleAppointmentReminders(updated);
     return updated;
   }
 
@@ -479,6 +487,7 @@ export class AppointmentStateMachineService {
           );
 
     await this.notifyAppointmentEvent(updated, "APPOINTMENT_CANCELLED", updated.startsAt);
+    await this.reminderScheduler.cancelAppointmentReminders(updated.id);
 
     return { appointment: updated, refundPercent };
   }
@@ -496,6 +505,12 @@ export class AppointmentStateMachineService {
     // cambió" desde la perspectiva del paciente — la fecha que se
     // comunica es la de la cita nueva.
     await this.notifyAppointmentEvent(created, "APPOINTMENT_RESCHEDULED", created.startsAt, appointmentId);
+    // La cita original ya no ocurrirá — se cancelan sus recordatorios
+    // pendientes y se programan los de la nueva (rescheduleTransaction
+    // la crea directo en SCHEDULED, ver comentario ahí, así que sí
+    // necesita sus propios recordatorios igual que confirmPayment()).
+    await this.reminderScheduler.cancelAppointmentReminders(appointmentId);
+    await this.reminderScheduler.scheduleAppointmentReminders(created);
     return created;
   }
 

@@ -26,6 +26,15 @@ export const envSchema = z.object({
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
   ASSISTANT_MODEL_ID: z.string().min(1).optional(),
   ASSISTANT_MODEL_TIMEOUT_MS: z.coerce.number().int().positive().optional(),
+  // M12 (recordatorios de cita 24h/2h, BullMQ). Mismo patrón que
+  // ANTHROPIC_API_KEY arriba: opcional a propósito — el resto de la
+  // aplicación arranca y agenda/cancela/reagenda citas con
+  // normalidad sin esto, solo el encolado de recordatorios se degrada
+  // a "no disponible" (se registra en log, nunca tumba una operación
+  // de agenda). Decisión explícita del usuario, 2026-09-08: construir
+  // el productor/consumidor de verdad aunque no haya Redis real en
+  // este entorno para probarlo end-to-end.
+  REDIS_URL: z.string().min(1).optional(),
   // PENDIENTE(jorge): el tope de gasto por consulta es una decisión
   // de negocio/costos, no algo para inventar — ver el comentario en
   // AssistantPassOrchestratorService. Este default es solo un piso de

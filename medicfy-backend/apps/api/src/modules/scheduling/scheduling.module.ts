@@ -20,11 +20,15 @@ import { PublicBookingController } from "./public-booking.controller";
 // M4 — AGENDA Y DISPONIBILIDAD, M5a — PACIENTES Y CITAS (núcleo),
 // M5-RN-009 a 012 (v2.3) — agendamiento público real del paciente
 // (PublicBookingController) y su listado propio (PatientsController
-// /patients/me/appointments). M12 (notificaciones): agendada,
-// confirmada, cancelada y reagendada ya se envían de verdad desde
-// AppointmentStateMachineService — recordatorios 24h/2h siguen
-// pendientes porque exigen un job programado (Redis+BullMQ) que no
-// existe todavía, no un problema de esta clase.
+// /patients/me/appointments). M12 (notificaciones): los 4 eventos de
+// ciclo de vida (agendada/confirmada/cancelada/reagendada) y los
+// recordatorios 24h/2h (Redis+BullMQ, vía
+// AppointmentReminderSchedulerService inyectado desde
+// NotificationsModule) ya se envían/programan de verdad desde
+// AppointmentStateMachineService. No hay Redis real en ningún entorno
+// donde se construyó esto — el productor/consumidor de BullMQ nunca
+// se corrió contra un Redis de verdad, queda pendiente verificarlo
+// end-to-end el día que haya uno disponible.
 @Module({
   // forwardRef: DoctorsModule ahora importa SchedulingModule también
   // (AppointmentCancellationSuspensionAdapter, M2-RN-005) — ver el

@@ -6,6 +6,7 @@ import { NotificationPreferencesService } from "./services/notification-preferen
 import { NotificationPreferencesController } from "./notification-preferences.controller";
 import { NOTIFICATION_CHANNEL_ADAPTER } from "./services/notification-channel-adapter.port";
 import { ConsoleEmailChannelAdapter } from "./services/console-email-channel.adapter";
+import { AppointmentReminderSchedulerService } from "./services/appointment-reminder-scheduler.service";
 
 // M12 (notificaciones). Construido "de verdad" el 2026-09-08 por
 // decisión explícita del usuario: esquema + plantillas + idempotencia
@@ -20,6 +21,13 @@ import { ConsoleEmailChannelAdapter } from "./services/console-email-channel.ada
 // contraseña vía NOTIFICATION_PORT en identity/services) se dejó sin
 // tocar a propósito: ya funciona, ya tiene pruebas, y no es parte del
 // alcance de "los 12 disparadores transaccionales de M12".
+//
+// AppointmentReminderSchedulerService (recordatorios 24h/2h) se
+// registra aquí y no en SchedulingModule porque encapsula la conexión
+// a Redis+BullMQ (decisión explícita del usuario, 2026-09-08) junto
+// con el resto de la infraestructura de notificaciones; se exporta
+// para que SchedulingModule la inyecte igual que ya inyecta
+// NotificationsService/NotificationLinkService.
 @Module({
   imports: [IdentityModule],
   controllers: [NotificationPreferencesController],
@@ -27,8 +35,9 @@ import { ConsoleEmailChannelAdapter } from "./services/console-email-channel.ada
     NotificationsService,
     NotificationLinkService,
     NotificationPreferencesService,
+    AppointmentReminderSchedulerService,
     { provide: NOTIFICATION_CHANNEL_ADAPTER, useClass: ConsoleEmailChannelAdapter },
   ],
-  exports: [NotificationsService, NotificationLinkService],
+  exports: [NotificationsService, NotificationLinkService, AppointmentReminderSchedulerService],
 })
 export class NotificationsModule {}
