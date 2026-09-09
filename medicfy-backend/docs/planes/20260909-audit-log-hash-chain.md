@@ -95,13 +95,24 @@ bitácora interna de la propia bitácora).
 - `feat(identity): encadenar hashes de audit_log al escribir (M15-RN-002)`
 - `feat(identity): verificador de integridad de la cadena de audit_log (M15-RN-002)`
 - `feat(admin): endpoint de verificación de cadena de audit_log (M15-RN-002)`
-**Pruebas:** unitarias de `AuditService`/`AuditChainVerifierService`
-(mockeando `PrismaService`) + integración negativa del endpoint nuevo.
-Las integraciones que arrancan `AppModule` completo siguen bloqueadas en
-este entorno por el mismo problema de siempre (cliente de Prisma
-desactualizado por el bloqueo de `binaries.prisma.sh`) — no es una
-regresión de este cambio, se confirmó corriendo `m2.integration.spec.ts`
-en aislado con el mismo resultado.
+**Pruebas:** 5 unitarias de `AuditService.log()` + 4 de
+`AuditChainVerifierService` (mockeando `PrismaService`, incluyendo el
+caso de alteración sofisticada: fila tocada Y su propio hash
+recalculado, detectada igual por el eslabón con la fila siguiente) — las
+9 pasan. Integración negativa del endpoint nuevo agregada a
+`m13-admin.integration.spec.ts`; falla en este entorno por el mismo
+bloqueo de siempre (cliente de Prisma desactualizado por
+`binaries.prisma.sh`) — no es una regresión, se confirmó que
+`m2.integration.spec.ts` falla igual en aislado. Suite completa antes/
+después: 108→117 pasando (+9, exactamente las nuevas), 16 skipped sin
+cambio, mismos archivos de integración bloqueados que antes. `tsc
+--noEmit`: 224→228 (+4: las mismas categorías conocidas de cliente de
+Prisma desactualizado — `AuditLog`/`AuditResult`/`InputJsonValue` sin
+exportar, `tx` implícitamente `any` en el nuevo `$transaction` — cero
+errores nuevos en los archivos propios de esta migración).
+Actualizado también `dev-server.mjs` con un mock de
+`/admin/audit/chain-verification` (siempre "OK", no hay Postgres real
+en el servidor de desarrollo).
 **Notas para el equipo:** el diseño de concurrencia (tabla puntero +
 `SELECT ... FOR UPDATE`) es nuevo en el proyecto — no había ningún otro
 lugar con esta forma de contención de escritura concurrente. Se

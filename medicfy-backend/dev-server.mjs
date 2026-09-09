@@ -926,6 +926,15 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
+  // M15-RN-002 (mock): no hay Postgres ni cadena real en el servidor
+  // de desarrollo — siempre "OK" con un contador fijo, suficiente para
+  // que el frontend pruebe el estado normal sin necesitar audit_log
+  // real. AuditChainVerifierService (backend real) sí verifica la
+  // cadena de verdad.
+  if (pathname === '/admin/audit/chain-verification' && method === 'GET') {
+    return sendJson({ status: 'OK', totalChecked: 0, brokenAtSequence: null, reasons: [] });
+  }
+
   if (pathname.match(/^\/admin\/doctors\/[^\/]+$/) && method === 'GET') {
     const doctorId = pathname.split('/')[3];
     const entry = registeredDoctors.find(u => u.doctor.id === doctorId);
