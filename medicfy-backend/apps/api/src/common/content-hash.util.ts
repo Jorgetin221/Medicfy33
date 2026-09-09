@@ -67,6 +67,53 @@ export interface SignedNoteHashInput {
   encounterId: string;
 }
 
+// M15-RN-002: proyección mínima usada para encadenar audit_log —
+// mismo principio que buildSignedNoteHashInput (serialización
+// canónica reconstruible, ver AuditService.log() y
+// AuditChainVerifierService, que llaman EXACTAMENTE a esta función
+// con los mismos valores). occurredAt/sequence se pasan como string
+// (ISO / decimal) porque Date y BigInt no sobreviven JSON.stringify
+// de forma estable entre el momento de escribir y el de verificar.
+export interface AuditLogChainHashInput {
+  id: string;
+  actorUserId: string | null;
+  actorRole: string | null;
+  action: string;
+  resourceType: string;
+  resourceId: string | null;
+  patientId: string | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+  requestId: string | null;
+  justification: string | null;
+  result: string;
+  metadata: unknown;
+  occurredAtIso: string;
+  sequence: string;
+  previousHashSha256: string | null;
+}
+
+export function buildAuditLogChainHashInput(input: AuditLogChainHashInput): unknown {
+  return {
+    id: input.id,
+    actorUserId: input.actorUserId,
+    actorRole: input.actorRole,
+    action: input.action,
+    resourceType: input.resourceType,
+    resourceId: input.resourceId,
+    patientId: input.patientId,
+    ipAddress: input.ipAddress,
+    userAgent: input.userAgent,
+    requestId: input.requestId,
+    justification: input.justification,
+    result: input.result,
+    metadata: input.metadata,
+    occurredAtIso: input.occurredAtIso,
+    sequence: input.sequence,
+    previousHashSha256: input.previousHashSha256,
+  };
+}
+
 export function buildSignedNoteHashInput(input: SignedNoteHashInput): unknown {
   return {
     note: {
