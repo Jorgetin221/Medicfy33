@@ -5,6 +5,7 @@ import { TokenService } from "./services/token.service";
 import { CryptoService } from "./services/crypto.service";
 import { ConsentService } from "./services/consent.service";
 import { AuditService } from "./services/audit.service";
+import { AuditChainVerifierService } from "./services/audit-chain-verifier.service";
 import { VerificationCodeService } from "./services/verification-code.service";
 import { AuthService } from "./services/auth.service";
 import { MfaService } from "./services/mfa.service";
@@ -30,6 +31,7 @@ import { AssistantInvitationsController } from "./assistant-invitations.controll
     CryptoService,
     ConsentService,
     AuditService,
+    AuditChainVerifierService,
     VerificationCodeService,
     AuthService,
     MfaService,
@@ -53,6 +55,7 @@ import { AssistantInvitationsController } from "./assistant-invitations.controll
     SignatureVerificationService,
     ConsentService,
     AuditService,
+    AuditChainVerifierService,
     TokenService,
     JwtAuthGuard,
     DoctorVerifiedGuard,
