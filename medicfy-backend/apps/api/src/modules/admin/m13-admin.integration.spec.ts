@@ -145,4 +145,35 @@ describe("M13 — panel de administración (usuarios y métricas)", () => {
       expect(typeof res.body.verificationQueue.overdue).toBe("number");
     });
   });
+
+  describe("GET /admin/audit/chain-verification (M15-RN-002)", () => {
+    it("rechaza sin token (401) y a un médico autenticado no-admin (403)", async () => {
+      const anon = await request(app.getHttpServer()).get("/admin/audit/chain-verification");
+      expect(anon.status).toBe(401);
+
+      const { accessToken } = await registerDoctor();
+      const nonAdmin = await request(app.getHttpServer())
+        .get("/admin/audit/chain-verification")
+        .set("Authorization", `Bearer ${accessToken}`);
+      expect(nonAdmin.status).toBe(403);
+    });
+
+    it("un admin obtiene el resultado de la verificación sin contenido clínico", async () => {
+      const { accessToken } = await createAdmin();
+      const res = await request(app.getHttpServer())
+        .get("/admin/audit/chain-verification")
+        .set("Authorization", `Bearer ${accessToken}`);
+
+      expect(res.status).toBe(200);
+      expect(["OK", "ROTA"]).toContain(res.body.status);
+      expect(typeof res.body.totalChecked).toBe("number");
+      // R2/M13-CA-001: el resultado nunca trae contenido de las filas
+      // verificadas, solo estado/contador/secuencia.
+      const forbiddenKeys = ["diagnosis", "diagnostico", "medication", "medicamento", "prescription", "receta", "labResult", "clinicalNote"];
+      const serialized = JSON.stringify(res.body).toLowerCase();
+      for (const key of forbiddenKeys) {
+        expect(serialized.includes(key.toLowerCase())).toBe(false);
+      }
+    });
+  });
 });
