@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { apiFetch } from "@/lib/api-client";
+import { apiFetch, expectArray } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
 import { useSpecialties } from "@/lib/use-specialties";
 import type { DoctorVerificationStatus } from "@/lib/use-doctor-profile";
@@ -18,6 +18,19 @@ interface AdminDoctorListItem {
   primarySpecialtyId: string | null;
   verificationStatus: DoctorVerificationStatus;
   createdAt: string;
+  // M13-CA-003: calculado en el servidor (ver doctor-verification.service.ts) —
+  // el frontend solo formatea, no calcula horario (CLAUDE.md §4).
+  businessHoursWaiting: number;
+}
+
+// M13-CA-003: "alerta a las 24 h hábiles" — solo tiene sentido mientras
+// el médico sigue en cola, no después de resuelto.
+const PENDING_STATUSES: DoctorVerificationStatus[] = ["SUBMITTED", "IN_REVIEW"];
+
+function formatAntiguedad(hours: number): string {
+  if (hours < 24) return `${hours} h hábiles en cola`;
+  const days = Math.floor(hours / 24);
+  return `${days} ${days === 1 ? "día hábil" : "días hábiles"} en cola`;
 }
 
 const STATUS_LABELS: Record<DoctorVerificationStatus, string> = {
@@ -75,8 +88,8 @@ function VerificacionList({ accessToken }: { accessToken: string }) {
     setError(null);
     setDoctors(null);
     const query = status ? `?verification_status=${status}` : "";
-    apiFetch<AdminDoctorListItem[]>(`/admin/doctors${query}`, { accessToken })
-      .then(setDoctors)
+    apiFetch<unknown>(`/admin/doctors${query}`, { accessToken })
+      .then((data) => setDoctors(expectArray<AdminDoctorListItem>(data)))
       .catch((err: unknown) => setError(err));
   }, [accessToken, status]);
 
@@ -125,8 +138,13 @@ function VerificacionList({ accessToken }: { accessToken: string }) {
                           {doctor.legalFirstName} {doctor.legalLastName}
                         </p>
                         <p className="text-sm text-gray-500">
-                          Cédula {doctor.professionalLicense} · {specialtyName}
+                          Cédula {doctor.professionalLicense} · {specialtyName} · {formatAntiguedad(doctor.businessHoursWaiting)}
                         </p>
+                        {PENDING_STATUSES.includes(doctor.verificationStatus) && doctor.businessHoursWaiting >= 24 ? (
+                          <span className="mt-1 inline-block rounded-full border border-danger-600 px-2 py-0.5 text-xs font-semibold text-danger-600">
+                            ⏱ Más de 24 h hábiles esperando
+                          </span>
+                        ) : null}
                       </div>
                       <span className="whitespace-nowrap text-sm font-medium text-brand-700">{STATUS_LABELS[doctor.verificationStatus]}</span>
                     </Link>
