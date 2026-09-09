@@ -3,3 +3,9 @@
 
 # Claude Code local settings (machine/user-specific, not shared)
 .claude/
+
+# Archivos de scratch/sincronización con el sandbox de nube (tarballs,
+# extracciones temporales) — nunca son parte del código fuente.
+_to_delete/
+_tmp_*
+.pnpm-store/

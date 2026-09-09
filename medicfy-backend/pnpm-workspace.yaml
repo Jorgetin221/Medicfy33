@@ -9,5 +9,10 @@ allowBuilds:
   '@swc/core': true
   argon2: true
   esbuild: true
+  # ioredis (peer de bullmq) trae msgpackr-extract como addon
+  # nativo opcional para su soporte de msgpack; ioredis tiene fallback
+  # puro-JS, así que no se aprueba su build script (ver comentario en
+  # AppointmentReminderSchedulerService).
+  msgpackr-extract: false
   prisma: true
   sharp: true
