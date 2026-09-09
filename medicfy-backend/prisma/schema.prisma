@@ -75,6 +75,47 @@ enum VerificationChannel {
   @@map("verification_channel")
 }
 
+// M12 (Notificaciones). WHATSAPP existe en el enum porque la
+// especificación lo exige como canal del MVP, pero no hay adaptador
+// que lo implemente todavía — requiere aprobación de Meta Business
+// (2-3 semanas de trámite externo, fuera del alcance de una sesión de
+// código). Ver notification.port.ts.
+enum NotificationChannel {
+  EMAIL
+  WHATSAPP
+
+  @@map("notification_channel")
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+
+  @@map("notification_status")
+}
+
+// Las 12 plantillas mínimas del MVP (§M12), menos "pago fallido": M6
+// (facturación) no existe todavía, así que no hay nada que dispare esa
+// plantilla — se omite en vez de dejar un valor de enum sin ningún
+// emisor real.
+enum NotificationTemplateCode {
+  APPOINTMENT_SCHEDULED
+  APPOINTMENT_CONFIRMED
+  APPOINTMENT_REMINDER_24H
+  APPOINTMENT_REMINDER_2H
+  APPOINTMENT_CANCELLED
+  APPOINTMENT_RESCHEDULED
+  PRESCRIPTION_AVAILABLE
+  LAB_ORDER_AVAILABLE
+  LAB_RESULT_AVAILABLE
+  DOCTOR_VERIFICATION_APPROVED
+  DOCTOR_VERIFICATION_REJECTED
+  PASSWORD_RESET
+
+  @@map("notification_template_code")
+}
+
 enum AssistantInvitationStatus {
   PENDING
   ACCEPTED
@@ -130,6 +171,15 @@ model User {
   curatedTerms      ClinicalCatalogTerm[] @relation("CatalogTermCurator")
   termRequests      CatalogTermRequest[]  @relation("TermRequestRequester")
   curatedLabReferenceRanges LabReferenceRange[] @relation("LabReferenceRangeCurator")
+  notifications             Notification[]
+  notificationAccessTokens  NotificationAccessToken[]
+
+  // M12-RN-003: "no se pueden desactivar por completo, pero sí elegir
+  // canal". WHATSAPP es una opción válida en el dato aunque hoy no
+  // tenga adaptador real (ver NotificationChannel) — para que la
+  // preferencia ya quede modelada y no haya que migrar de nuevo
+  // cuando WhatsApp exista.
+  notificationChannelPreference NotificationChannel @default(EMAIL)
 
   @@map("users")
 }
@@ -843,6 +893,54 @@ model PasswordResetToken {
   user User @relation(fields: [userId], references: [id])
 
   @@map("password_reset_tokens")
+}
+
+// M12-RN-006: idempotencia por (user_id, template_code,
+// related_entity_id) — el índice único de abajo es lo que la hace
+// cumplir, no una comprobación de aplicación que se puede olvidar.
+// M12-RN-001: templateData solo lleva las variables no-clínicas que
+// cada plantilla declara en notification-templates.ts (quién, cuándo,
+// qué acción, un enlace) — nunca diagnóstico, medicamento ni
+// resultado. Sin cola de reintentos (Redis+BullMQ, spec §3): decisión
+// explícita para este MVP — se envía una vez y se marca SENT/FAILED,
+// sin reintento automático.
+model Notification {
+  id                String                   @id @default(uuid())
+  userId            String
+  templateCode      NotificationTemplateCode
+  channel           NotificationChannel      @default(EMAIL)
+  status            NotificationStatus       @default(PENDING)
+  relatedEntityType String?
+  relatedEntityId   String?
+  templateData      Json
+  sentAt            DateTime?                @db.Timestamptz(3)
+  failedAt          DateTime?                @db.Timestamptz(3)
+  failureReason     String?
+  createdAt         DateTime                 @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, templateCode, relatedEntityId])
+  @@map("notifications")
+}
+
+// M12-RN-002/M12-CA-002: "enlaces de acceso directo con token de un
+// solo uso, vigencia 15 minutos". Mismo patrón exacto que
+// PasswordResetToken arriba (hash sha256, consumido una vez) — nunca
+// se guarda el token en claro, igual que auth.service.ts ya hace.
+model NotificationAccessToken {
+  id                String    @id @default(uuid())
+  userId            String
+  tokenHash         String    @unique
+  relatedEntityType String?
+  relatedEntityId   String?
+  expiresAt         DateTime  @db.Timestamptz(3)
+  usedAt            DateTime? @db.Timestamptz(3)
+  createdAt         DateTime  @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("notification_access_tokens")
 }
 
 // M1-scoped subset of spec §6.9. Hash-chaining columns
