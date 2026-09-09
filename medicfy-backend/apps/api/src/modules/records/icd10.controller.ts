@@ -4,6 +4,7 @@ import { icd10SearchQuerySchema } from "@medicfy/contracts";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { JwtAuthGuard } from "../identity/guards/jwt-auth.guard";
 import { PrismaService } from "../../prisma/prisma.service";
+import { SearchThrottle } from "../../common/rate-limit";
 
 const searchQueryPipe = new ZodValidationPipe(icd10SearchQuerySchema);
 const MAX_RESULTS = 20;
@@ -18,6 +19,7 @@ const MAX_RESULTS = 20;
 export class Icd10Controller {
   constructor(private readonly prisma: PrismaService) {}
 
+  @SearchThrottle()
   @Get()
   @ApiQuery({ name: "search", required: false })
   @ApiOperation({ summary: "Busca en el catálogo CIE-10 por código o descripción" })

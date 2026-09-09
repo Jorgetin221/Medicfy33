@@ -18,6 +18,7 @@ import { CuratorGuard } from "./guards/curator.guard";
 import { ClinicalCatalogService, type CatalogActor } from "./services/clinical-catalog.service";
 import { TermRequestService } from "./services/term-request.service";
 import { normalizeTerm } from "./term-normalizer.util";
+import { SearchThrottle } from "../../common/rate-limit";
 
 const domainPipe = new ZodValidationPipe(catalogDomainSchema);
 const searchPipe = new ZodValidationPipe(catalogSearchQuerySchema);
@@ -159,6 +160,7 @@ export class CatalogController {
 
   // ── Lectura ──────────────────────────────────────────────────────
 
+  @SearchThrottle()
   @Get(":domain")
   @ApiQuery({ name: "search", required: false })
   @ApiOperation({ summary: "Términos ACTIVE de un dominio de catálogo, con búsqueda normalizada" })

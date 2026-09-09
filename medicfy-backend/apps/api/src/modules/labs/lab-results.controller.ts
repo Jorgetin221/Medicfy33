@@ -28,6 +28,7 @@ import { FILE_STORAGE_PORT, type FileStoragePort } from "../doctors/services/fil
 import { extensionForMimeType } from "../doctors/services/local-disk-file-storage.adapter";
 import { LabOrderService } from "./services/lab-order.service";
 import { LAB_RESULT_MAX_FILE_BYTES, labResultFileFilter } from "../../common/upload-validation.util";
+import { DownloadThrottle } from "../../common/rate-limit";
 
 // §6.7: "v1.0: sube el médico o el paciente" — este controller cubre
 // la subida como médico (con vínculo activo verificado por el
@@ -52,6 +53,7 @@ export class LabResultsController {
     return this.labOrders.listResultsForPatient(patientId);
   }
 
+  @DownloadThrottle()
   @Get(":resultId/file")
   @ApiOperation({ summary: "Descarga los bytes de un resultado ya subido — no existía ninguna ruta para esto" })
   async file(

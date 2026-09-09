@@ -11,6 +11,7 @@ import { DoctorProfileService } from "../doctors/services/doctor-profile.service
 import { MedicationCatalogService } from "./services/medication-catalog.service";
 import { AuditService } from "../identity/services/audit.service";
 import { getRequestMeta } from "../identity/request-meta";
+import { SearchThrottle } from "../../common/rate-limit";
 
 const searchQueryPipe = new ZodValidationPipe(medicationSearchQuerySchema);
 const selfServiceCreatePipe = new ZodValidationPipe(medicationCatalogSelfServiceCreateSchema);
@@ -33,6 +34,7 @@ export class MedicationsController {
     private readonly auditService: AuditService
   ) {}
 
+  @SearchThrottle()
   @Get()
   @ApiQuery({ name: "search", required: false })
   @ApiOperation({ summary: "Busca en el catálogo de medicamentos por nombre genérico o comercial" })

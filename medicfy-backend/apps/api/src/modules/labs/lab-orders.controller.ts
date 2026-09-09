@@ -13,6 +13,7 @@ import { CareRelationshipGuard, type ClinicalRequest } from "../../common/guards
 import { AuditService } from "../identity/services/audit.service";
 import { getRequestMeta } from "../identity/request-meta";
 import { LabOrderService } from "./services/lab-order.service";
+import { DownloadThrottle } from "../../common/rate-limit";
 
 // M10 — ÓRDENES DE LABORATORIO (parcial en MVP). Mismo patrón de
 // guard/auditoría que prescriptions.
@@ -45,6 +46,7 @@ export class LabOrdersController {
     return labOrder;
   }
 
+  @DownloadThrottle()
   @Get("lab-orders/:labOrderId/pdf")
   @ApiOperation({ summary: "Descarga el PDF de la orden (ambas rutas de firma)" })
   async pdf(@Param("labOrderId") labOrderId: string, @Req() req: ClinicalRequest): Promise<StreamableFile> {

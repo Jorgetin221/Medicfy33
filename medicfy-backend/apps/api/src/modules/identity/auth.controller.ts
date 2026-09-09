@@ -24,12 +24,14 @@ import { ApiException } from "../../common/api-exception";
 import { AuthService } from "./services/auth.service";
 import { getRequestMeta } from "./request-meta";
 import { REFRESH_COOKIE_NAME, clearRefreshCookie, setRefreshCookie } from "./refresh-cookie";
+import { AuthThrottle } from "../../common/rate-limit";
 
 @ApiTags("auth")
 @Controller("auth")
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  @AuthThrottle()
   @Post("register/patient")
   @ApiOperation({ summary: "M1-RN-001/003: registro de paciente con consentimiento explícito de 3 casillas" })
   @ApiBody({
@@ -59,6 +61,7 @@ export class AuthController {
     return this.authService.registerPatient(body, getRequestMeta(req));
   }
 
+  @AuthThrottle()
   @Post("register/doctor")
   @ApiOperation({ summary: "M1-RN-002: registro de médico, queda en verification_status=SUBMITTED" })
   @ApiBody({
@@ -103,6 +106,7 @@ export class AuthController {
     return { verified: true };
   }
 
+  @AuthThrottle()
   @Post("login")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "M1-RN-004/005/006: consentimiento vigente, MFA y bloqueo por fuerza bruta" })
@@ -121,6 +125,7 @@ export class AuthController {
     return { accessToken: result.accessToken };
   }
 
+  @AuthThrottle()
   @Post("mfa/verify")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Completa un login pendiente de MFA con el mfaSessionToken parcial" })
@@ -166,6 +171,7 @@ export class AuthController {
     return { loggedOut: true };
   }
 
+  @AuthThrottle()
   @Post("password/forgot")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Siempre responde igual, exista o no la cuenta" })
@@ -175,6 +181,7 @@ export class AuthController {
     return { requested: true };
   }
 
+  @AuthThrottle()
   @Post("password/reset")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Consume el token de un solo uso y revoca todas las sesiones activas" })

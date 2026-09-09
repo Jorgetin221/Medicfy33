@@ -22,6 +22,7 @@ import { ClinicalEncounterService } from "./services/clinical-encounter.service"
 import { IndicacionesPdfService } from "./services/indicaciones-pdf.service";
 import { ClinicalNoteCancellationService } from "./services/clinical-note-cancellation.service";
 import { RedFlagService } from "./services/red-flag.service";
+import { DownloadThrottle } from "../../common/rate-limit";
 
 // M8-RN-002/DOC-06: crear/listar encuentros de un paciente, autoguardar
 // el borrador y firmar. Todas las rutas pasan por CareRelationshipGuard
@@ -125,6 +126,7 @@ export class EncountersController {
 
   // Prompt 37/38A (Fase 4): PDF independiente de INDICACIONES AL
   // PACIENTE desde la nota firmada — el paciente recibe solo lo suyo.
+  @DownloadThrottle()
   @Get("records/encounters/:encounterId/indicaciones/pdf")
   @ApiOperation({ summary: "Fase 4 / prompt 38A: PDF de indicaciones al paciente desde la nota firmada" })
   async indicacionesPdfDownload(@Param("encounterId") encounterId: string, @Req() req: ClinicalRequest): Promise<StreamableFile> {

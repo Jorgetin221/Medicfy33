@@ -24,6 +24,7 @@ import { JwtAuthGuard } from "../identity/guards/jwt-auth.guard";
 import type { AuthenticatedRequest } from "../identity/guards/jwt-auth.guard";
 import { DoctorProfileService } from "./services/doctor-profile.service";
 import { DoctorPostService, InvalidPostMediaError } from "./services/doctor-post.service";
+import { DownloadThrottle } from "../../common/rate-limit";
 
 // M2B (spec §7, v2.2): panel privado del médico — administra sus
 // propias publicaciones sin importar audiencia/estado (a diferencia
@@ -128,6 +129,7 @@ export class DoctorPostsController {
     }
   }
 
+  @DownloadThrottle()
   @Get(":id/media/:mediaId")
   @ApiOperation({ summary: "M2B: sirve los bytes de un medio propio, sin importar audiencia/estado" })
   async getMedia(@Param("id") id: string, @Param("mediaId") mediaId: string, @Req() req: Request): Promise<StreamableFile> {

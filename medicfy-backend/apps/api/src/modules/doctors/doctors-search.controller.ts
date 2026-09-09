@@ -3,6 +3,7 @@ import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import { doctorPublicSearchQuerySchema, type DoctorPublicSearchQuery } from "@medicfy/contracts";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { DoctorProfileService } from "./services/doctor-profile.service";
+import { SearchThrottle } from "../../common/rate-limit";
 
 // M3 (spec §7, v2.3/v2.4): directorio y búsqueda. Público, sin guard —
 // mismo nivel que /doctors/:slug/public. "doctors/public" es un
@@ -14,6 +15,7 @@ import { DoctorProfileService } from "./services/doctor-profile.service";
 export class DoctorsSearchController {
   constructor(private readonly doctorProfileService: DoctorProfileService) {}
 
+  @SearchThrottle()
   @Get()
   @ApiOperation({ summary: "M3: búsqueda/listado público de médicos — nunca precio, nunca campos inventados" })
   async search(@Query(new ZodValidationPipe(doctorPublicSearchQuerySchema)) query: DoctorPublicSearchQuery) {

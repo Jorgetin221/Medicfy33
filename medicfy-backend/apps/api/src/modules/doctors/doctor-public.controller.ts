@@ -3,6 +3,7 @@ import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import { DoctorProfileService } from "./services/doctor-profile.service";
 import { ServiceOfferingService } from "./services/service-offering.service";
 import { DoctorPostService } from "./services/doctor-post.service";
+import { DownloadThrottle } from "../../common/rate-limit";
 
 // M5-RN-007: "el enlace público del médico (/dr/{slug})" — sin guard,
 // a propósito. toPublicDoctorView/toPublicServiceView (doctor-public-view.ts)
@@ -35,6 +36,7 @@ export class DoctorPublicController {
     return this.postService.listPublicBySlug(slug);
   }
 
+  @DownloadThrottle()
   @Get("posts/:postId/media/:mediaId")
   @ApiOperation({ summary: "M2B: sirve los bytes de un medio, solo si su publicación es PUBLIC y PUBLISHED" })
   async getPublicPostMedia(

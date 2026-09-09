@@ -15,6 +15,7 @@ import { CareRelationshipGuard, type ClinicalRequest } from "../../common/guards
 import { AuditService } from "../identity/services/audit.service";
 import { getRequestMeta } from "../identity/request-meta";
 import { PrescriptionService } from "./services/prescription.service";
+import { DownloadThrottle } from "../../common/rate-limit";
 
 // M9 — RECETA ELECTRÓNICA. Todas las rutas pasan por
 // CareRelationshipGuard (resuelto vía encounterId/prescriptionId).
@@ -80,6 +81,7 @@ export class PrescriptionsController {
   // Corrección v2.1 §1/§17: antes de esta corrección no existía
   // ningún PDF que descargar — la única salida era el JSON de
   // /verificar/:token, que a propósito nunca trae contenido clínico.
+  @DownloadThrottle()
   @Get("prescriptions/:prescriptionId/pdf")
   @ApiOperation({ summary: "Descarga el PDF de la receta (ambas rutas de firma)" })
   async pdf(@Param("prescriptionId") prescriptionId: string, @Req() req: ClinicalRequest): Promise<StreamableFile> {

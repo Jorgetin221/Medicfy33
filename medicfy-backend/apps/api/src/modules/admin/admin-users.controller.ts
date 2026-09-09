@@ -6,6 +6,7 @@ import { AdminGuard } from "../identity/guards/admin.guard";
 import type { AuthenticatedRequest } from "../identity/guards/jwt-auth.guard";
 import { getRequestMeta } from "../identity/request-meta";
 import { AdminUsersService } from "./services/admin-users.service";
+import { SearchThrottle } from "../../common/rate-limit";
 
 // M13: "búsqueda y gestión de usuarios". Alcance de esta primera
 // versión: búsqueda de identidad (médicos + pacientes), sin acciones
@@ -19,6 +20,7 @@ import { AdminUsersService } from "./services/admin-users.service";
 export class AdminUsersController {
   constructor(private readonly usersService: AdminUsersService) {}
 
+  @SearchThrottle()
   @Get()
   @ApiQuery({ name: "q", required: false, description: "Nombre, cédula, Medicfy ID o correo" })
   @ApiOperation({ summary: "M13: búsqueda de médicos y pacientes por identificación — sin contenido clínico (M13-CA-001)" })
