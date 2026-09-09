@@ -2,6 +2,7 @@ import { forwardRef, Module } from "@nestjs/common";
 import { MulterModule } from "@nestjs/platform-express";
 import { memoryStorage } from "multer";
 import { IdentityModule } from "../identity/identity.module";
+import { NotificationsModule } from "../notifications/notifications.module";
 import { SchedulingModule } from "../scheduling/scheduling.module";
 import { DoctorProfileService } from "./services/doctor-profile.service";
 import { DoctorDocumentService } from "./services/doctor-document.service";
@@ -37,7 +38,12 @@ import { DoctorsSearchController } from "./doctors-search.controller";
   // (AppointmentStateMachineService, para AppointmentCancellationSuspensionAdapter)
   // — ciclo legítimo en ambos sentidos, resuelto como Nest documenta
   // para este caso exacto.
-  imports: [IdentityModule, forwardRef(() => SchedulingModule), MulterModule.register({ storage: memoryStorage() })],
+  imports: [
+    IdentityModule,
+    NotificationsModule,
+    forwardRef(() => SchedulingModule),
+    MulterModule.register({ storage: memoryStorage() }),
+  ],
   controllers: [
     DoctorsController,
     DoctorPublicController,

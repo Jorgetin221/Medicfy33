@@ -3,9 +3,26 @@ import type { Doctor, DoctorVerificationStatus } from "@prisma/client";
 import { PrismaService } from "../../../prisma/prisma.service";
 import { ApiException } from "../../../common/api-exception";
 import { omitUndefined } from "../../../common/omit-undefined";
+import { businessHoursSince } from "../../../common/business-hours.util";
 import { AuditService } from "../../identity/services/audit.service";
 import type { RequestMeta } from "../../identity/services/auth.service";
 import { DOCTOR_SUSPENSION_EFFECTS, type DoctorSuspensionEffects } from "./doctor-suspension-effects.port";
+import { NotificationsService } from "../../notifications/services/notifications.service";
+import { NotificationLinkService } from "../../notifications/services/notification-link.service";
+import {
+  renderDoctorVerificationApproved,
+  renderDoctorVerificationRejected,
+} from "../../notifications/services/notification-templates";
+
+function mustGetAppBaseUrl(): string {
+  const url = process.env.APP_BASE_URL;
+  if (!url) {
+    throw new Error("APP_BASE_URL is not set");
+  }
+  return url;
+}
+
+export type DoctorQueueItem = Doctor & { businessHoursWaiting: number };
 
 // Minimal admin surface built ahead of M13 (full admin panel), same
 // pattern M1 used for DoctorVerifiedGuard ahead of M9 — M2-CA-003/004
@@ -15,15 +32,27 @@ export class DoctorVerificationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
-    @Inject(DOCTOR_SUSPENSION_EFFECTS) private readonly suspensionEffects: DoctorSuspensionEffects
+    @Inject(DOCTOR_SUSPENSION_EFFECTS) private readonly suspensionEffects: DoctorSuspensionEffects,
+    // M12 prueba-de-concepto: primer disparador real conectado al
+    // pipeline de notificaciones (elegido por ser el flujo mejor
+    // entendido y de menor riesgo del backend — ver reporte). Los
+    // demás disparadores (citas, recetas, laboratorio) quedan
+    // pendientes de conectar, documentado como tal.
+    private readonly notificationsService: NotificationsService,
+    private readonly notificationLinkService: NotificationLinkService
   ) {}
 
-  async listQueue(status?: DoctorVerificationStatus): Promise<Doctor[]> {
-    return this.prisma.doctor.findMany({
+  async listQueue(status?: DoctorVerificationStatus): Promise<DoctorQueueItem[]> {
+    const doctors = await this.prisma.doctor.findMany({
       where: status ? { verificationStatus: status } : {},
       orderBy: { createdAt: "asc" },
       include: { documents: true },
     });
+    const now = new Date();
+    return doctors.map((doctor) => ({
+      ...doctor,
+      businessHoursWaiting: businessHoursSince(doctor.createdAt, now),
+    }));
   }
 
   async getDetail(doctorId: string): Promise<Doctor & { documents: unknown[] }> {
@@ -87,6 +116,7 @@ export class DoctorVerificationService {
       userAgent: meta.userAgent,
       metadata: { specialtyConfirmed, status, specialtyLicenseExpiresAt },
     });
+    await this.notifyVerificationDecision(doctor, "approved");
     return doctor;
   }
 
@@ -106,7 +136,29 @@ export class DoctorVerificationService {
       userAgent: meta.userAgent,
       metadata: { reason },
     });
+    await this.notifyVerificationDecision(doctor, "rejected");
     return doctor;
+  }
+
+  // M12 (notificaciones): DOCTOR_VERIFICATION_APPROVED/REJECTED. Sin
+  // reintentos (decisión explícita del usuario) — si el envío falla,
+  // NotificationsService lo deja en FAILED y aquí no se hace nada más;
+  // la decisión de verificación en sí ya se guardó y no depende de si
+  // la notificación salió.
+  private async notifyVerificationDecision(doctor: Doctor, decision: "approved" | "rejected"): Promise<void> {
+    const { plainToken } = await this.notificationLinkService.issue(doctor.userId, "doctor_verification", doctor.id);
+    const actionLink = this.notificationLinkService.buildUrl(mustGetAppBaseUrl(), plainToken);
+    const rendered =
+      decision === "approved"
+        ? renderDoctorVerificationApproved({ recipientFirstName: doctor.legalFirstName, actionLink })
+        : renderDoctorVerificationRejected({ recipientFirstName: doctor.legalFirstName, actionLink });
+    await this.notificationsService.send({
+      userId: doctor.userId,
+      templateCode: decision === "approved" ? "DOCTOR_VERIFICATION_APPROVED" : "DOCTOR_VERIFICATION_REJECTED",
+      rendered,
+      relatedEntityType: "doctor_verification",
+      relatedEntityId: doctor.id,
+    });
   }
 
   // M2-RN-005: status transition + audit here; cancelling future
