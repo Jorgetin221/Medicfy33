@@ -199,7 +199,7 @@ function AgendaList({ accessToken }: { accessToken: string }) {
                       </Button>
                     ) : null}
                     {appt.status === "SCHEDULED" || appt.status === "CONFIRMED" ? (
-                      <Button type="button" variant="danger" onClick={() => markNoShow(appt.id)}>
+                      <Button type="button" variant="secondary" onClick={() => markNoShow(appt.id)}>
                         No se presentó
                       </Button>
                     ) : null}
