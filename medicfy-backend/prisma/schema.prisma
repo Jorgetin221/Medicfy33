@@ -971,8 +971,35 @@ model AuditLog {
   metadata      Json?
   occurredAt    DateTime    @default(now()) @db.Timestamptz(3)
 
+  // M15-RN-002: encadenamiento de hashes — nullable porque las filas
+  // creadas antes de esta migración no tienen cadena (no se puede
+  // recalcular su hash retroactivamente sin violar el GRANT de solo
+  // INSERT de R1). AuditService.log() las llena en cada inserción
+  // nueva; AuditChainVerifierService recorre solo las filas con
+  // sequence no nulo. Ver AuditLogChainState para el mecanismo de
+  // serialización bajo escritura concurrente.
+  sequence           BigInt? @unique
+  hashSha256         String?
+  previousHashSha256 String?
+
   @@index([patientId])
   @@map("audit_log")
+}
+
+// M15-RN-002: puntero de una sola fila a la punta de la cadena de
+// audit_log. NO es una tabla clínica ni de auditoría (no guarda
+// contenido de eventos, solo el hash acumulado y un contador) — por
+// eso no hereda el GRANT append-only de R1 (que nombra explícitamente
+// clinical_notes/prescriptions/lab_orders/audit_log, no esta tabla) y
+// sí necesita UPDATE: AuditService.log() la bloquea con
+// `SELECT ... FOR UPDATE` dentro de una transacción para que dos
+// inserciones concurrentes en audit_log no bifurquen la cadena.
+model AuditLogChainState {
+  id             Int     @id @default(1)
+  lastSequence   BigInt  @default(0)
+  lastHashSha256 String?
+
+  @@map("audit_log_chain_state")
 }
 
 // ─── M8 — Expediente clínico electrónico (spec §6.5, NOM-004) ───
