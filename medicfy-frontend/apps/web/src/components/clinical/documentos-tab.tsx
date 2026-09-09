@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { apiFetch, apiFetchBlob, apiUpload } from "@/lib/api-client";
+import { apiFetch, apiFetchBlob, apiUpload, expectArray } from "@/lib/api-client";
 import { blobToDataUrl } from "@/lib/blob-to-data-url";
 import { Card, EmptyState, ErrorState, LoadingState } from "@/components/ui/states";
 import { Button } from "@/components/ui/button";
@@ -58,8 +58,8 @@ export function DocumentosTab({ patientId, accessToken }: { patientId: string; a
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const loadDocuments = useCallback(() => {
-    apiFetch<ClinicalAttachmentRecord[]>(`/records/patients/${patientId}/documents`, { accessToken })
-      .then(setDocuments)
+    apiFetch<unknown>(`/records/patients/${patientId}/documents`, { accessToken })
+      .then((data) => setDocuments(expectArray<ClinicalAttachmentRecord>(data)))
       .catch(setError);
   }, [patientId, accessToken]);
 
@@ -110,7 +110,6 @@ export function DocumentosTab({ patientId, accessToken }: { patientId: string; a
       {preview?.pdfData ? (
         <PdfViewer data={preview.pdfData} />
       ) : preview?.imageUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element -- data: URL, no Next Image loader aplica
         <img src={preview.imageUrl} alt="Documento clínico" className="max-w-full" />
       ) : null}
     </Panel>

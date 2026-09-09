@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { apiFetch } from "@/lib/api-client";
+import { apiFetch, expectArray } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
 import { useSpecialties } from "@/lib/use-specialties";
 import { Card, LoadingState, EmptyState } from "@/components/ui/states";
@@ -238,9 +238,9 @@ function MyDoctorsSection({ accessToken }: { accessToken: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    apiFetch<LinkedDoctor[]>("/patients/me/doctors", { accessToken })
+    apiFetch<unknown>("/patients/me/doctors", { accessToken })
       .then((data) => {
-        if (!cancelled) setDoctors(data);
+        if (!cancelled) setDoctors(expectArray<LinkedDoctor>(data));
       })
       .catch(() => {
         if (!cancelled) setDoctors([]);

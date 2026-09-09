@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiFetch } from "@/lib/api-client";
+import { apiFetch, expectArray } from "@/lib/api-client";
 import { LoadingState, ErrorState } from "@/components/ui/states";
 import { CollapsibleCard } from "@/components/ui/collapsible-card";
 import type { PatientHistoryItem } from "@/lib/use-patient-clinical";
@@ -36,8 +36,8 @@ export function HistoriaReadonly({ patientId, accessToken }: { patientId: string
   const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
-    apiFetch<PatientHistoryItem[]>(`/records/patients/${patientId}/history`, { accessToken })
-      .then(setItems)
+    apiFetch<unknown>(`/records/patients/${patientId}/history`, { accessToken })
+      .then((data) => setItems(expectArray<PatientHistoryItem>(data)))
       .catch(setError);
   }, [patientId, accessToken]);
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { apiFetch } from "./api-client";
+import { apiFetch, expectArray } from "./api-client";
 
 // Formas de solo lectura del lado del cliente — reflejan lo que
 // PatientClinicalService/ClinicalEncounterService ya devuelven
@@ -192,14 +192,18 @@ export function usePatientClinical(patientId: string | null, accessToken: string
 
     Promise.all([
       apiFetch<PatientSummary>(`/patients/${patientId}`, { accessToken }),
-      apiFetch<PatientAllergy[]>(`/records/patients/${patientId}/allergies`, { accessToken }),
-      apiFetch<PatientMedication[]>(`/records/patients/${patientId}/medications`, { accessToken }),
-      apiFetch<PatientHistoryItem[]>(`/records/patients/${patientId}/history`, { accessToken }),
+      apiFetch<unknown>(`/records/patients/${patientId}/allergies`, { accessToken }),
+      apiFetch<unknown>(`/records/patients/${patientId}/medications`, { accessToken }),
+      apiFetch<unknown>(`/records/patients/${patientId}/history`, { accessToken }),
       apiFetch<PatientTimeline>(`/records/patients/${patientId}/timeline`, { accessToken }),
       apiFetch<{ pregnancy: PatientPregnancy | null }>(`/records/patients/${patientId}/pregnancy`, { accessToken }),
-      apiFetch<ActiveDiagnosis[]>(`/records/patients/${patientId}/active-diagnoses`, { accessToken }),
+      apiFetch<unknown>(`/records/patients/${patientId}/active-diagnoses`, { accessToken }),
     ])
-      .then(([patient, allergies, medications, historyItems, timeline, pregnancyRes, activeDiagnoses]) => {
+      .then(([patient, allergiesRaw, medicationsRaw, historyItemsRaw, timeline, pregnancyRes, activeDiagnosesRaw]) => {
+        const allergies = expectArray<PatientAllergy>(allergiesRaw);
+        const medications = expectArray<PatientMedication>(medicationsRaw);
+        const historyItems = expectArray<PatientHistoryItem>(historyItemsRaw);
+        const activeDiagnoses = expectArray<ActiveDiagnosis>(activeDiagnosesRaw);
         if (!cancelled)
           setState({
             patient,

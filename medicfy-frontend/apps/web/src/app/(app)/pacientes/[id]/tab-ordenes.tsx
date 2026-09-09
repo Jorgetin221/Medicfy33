@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { apiFetch, apiFetchBlob, apiUpload } from "@/lib/api-client";
+import { apiFetch, apiFetchBlob, apiUpload, expectArray } from "@/lib/api-client";
 import { blobToDataUrl } from "@/lib/blob-to-data-url";
 import type { TimelineLabOrder, TimelineStandaloneResult } from "@/lib/use-patient-clinical";
 import { Card, EmptyState, ErrorState } from "@/components/ui/states";
@@ -89,8 +89,8 @@ export function TabOrdenes({
   const [preview, setPreview] = useState<{ mimeType: string; pdfData: ArrayBuffer | null; imageUrl: string | null; downloadUrl: string } | null>(null);
 
   const loadResults = useCallback(() => {
-    apiFetch<LabResultRecord[]>(`/lab-results/patients/${patientId}`, { accessToken })
-      .then(setResults)
+    apiFetch<unknown>(`/lab-results/patients/${patientId}`, { accessToken })
+      .then((data) => setResults(expectArray<LabResultRecord>(data)))
       .catch(setError);
   }, [patientId, accessToken]);
 
@@ -320,7 +320,6 @@ export function TabOrdenes({
           {preview.pdfData ? (
             <PdfViewer data={preview.pdfData} />
           ) : preview.imageUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element -- data: URL, no Next Image loader aplica
             <img src={preview.imageUrl} alt="Resultado de laboratorio" className="max-w-full" />
           ) : null}
         </div>

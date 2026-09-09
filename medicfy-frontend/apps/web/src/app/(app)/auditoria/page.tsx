@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { apiFetch } from "@/lib/api-client";
+import { apiFetch, expectArray } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
 import { Card, EmptyState, ErrorState, LoadingState } from "@/components/ui/states";
 
@@ -60,8 +60,8 @@ function AuditoriaContent({ accessToken }: { accessToken: string }) {
   const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
-    apiFetch<AuditLogEntry[]>("/doctors/me/patient-access-log", { accessToken })
-      .then(setEntries)
+    apiFetch<unknown>("/doctors/me/patient-access-log", { accessToken })
+      .then((data) => setEntries(expectArray<AuditLogEntry>(data)))
       .catch(setError);
   }, [accessToken]);
 

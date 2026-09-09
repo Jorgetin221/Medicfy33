@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { apiFetch, ApiError } from "@/lib/api-client";
+import { apiFetch, ApiError, expectArray } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
 import { FieldWrapper, SelectInput } from "@/components/ui/field";
 import { Card, LoadingState, EmptyState, ErrorState } from "@/components/ui/states";
@@ -93,12 +93,12 @@ function NuevaCitaForm() {
     try {
       const [doctor, patientList, serviceList] = await Promise.all([
         apiFetch<{ id: string }>("/doctors/me", { accessToken }),
-        apiFetch<PatientOption[]>("/patients", { accessToken }),
-        apiFetch<ServiceOption[]>("/doctors/me/services", { accessToken }),
+        apiFetch<unknown>("/patients", { accessToken }),
+        apiFetch<unknown>("/doctors/me/services", { accessToken }),
       ]);
       setDoctorId(doctor.id);
-      setPatients(patientList);
-      setServices(serviceList);
+      setPatients(expectArray<PatientOption>(patientList));
+      setServices(expectArray<ServiceOption>(serviceList));
     } catch (error) {
       setLoadError(error);
     }
@@ -113,7 +113,7 @@ function NuevaCitaForm() {
     setSlotsError(null);
     setSlots(null);
     try {
-      setSlots(await apiFetch<Slot[]>(`/doctors/${doctorId}/availability?service_id=${serviceId}`));
+      setSlots(expectArray<Slot>(await apiFetch<unknown>(`/doctors/${doctorId}/availability?service_id=${serviceId}`)));
     } catch (error) {
       setSlotsError(error);
     }
@@ -267,7 +267,15 @@ function NuevaCitaForm() {
             {slots === null && !slotsError ? <LoadingState /> : null}
             {slotsError ? <ErrorState error={slotsError} onRetry={loadSlots} /> : null}
             {slots && slots.length === 0 ? (
-              <EmptyState title="Sin espacios disponibles" description="Prueba con otro servicio o configura más horario." />
+              <EmptyState
+                title="Sin espacios disponibles"
+                description="Prueba con otro servicio o configura más horario."
+                action={
+                  <Link href="/disponibilidad" className="text-sm font-medium text-brand-700 underline">
+                    Ir a Disponibilidad
+                  </Link>
+                }
+              />
             ) : null}
             {groupedSlots.length > 0 ? (
               <div className="flex flex-col gap-4">

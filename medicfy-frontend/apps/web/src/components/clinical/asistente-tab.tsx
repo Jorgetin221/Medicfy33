@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { ASSISTANT_PASSES, type AssistantPass, type AssistantReading } from "@medicfy/contracts";
-import { apiFetch } from "@/lib/api-client";
+import { apiFetch, expectArray } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Aviso } from "@/components/ui/alert";
 
@@ -56,7 +56,7 @@ export function AsistenteTab({ encounterId, accessToken }: { encounterId: string
 
   const load = useCallback(async () => {
     try {
-      const list = await apiFetch<StoredReading[]>(`/records/encounters/${encounterId}/assistant/passes`, { accessToken });
+      const list = expectArray<StoredReading>(await apiFetch<unknown>(`/records/encounters/${encounterId}/assistant/passes`, { accessToken }));
       setReadings(list);
     } catch {
       setReadings([]);

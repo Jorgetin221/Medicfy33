@@ -15,7 +15,7 @@ import {
   type PracticeLocationInput,
   type DoctorServiceInput,
 } from "@medicfy/contracts";
-import { apiFetch } from "@/lib/api-client";
+import { apiFetch, expectArray } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { FieldWrapper, TextInput, SelectInput } from "@/components/ui/field";
@@ -101,7 +101,7 @@ function DisponibilidadContent({ accessToken }: { accessToken: string }) {
   const loadLocations = useCallback(async () => {
     setLocationsError(null);
     try {
-      setLocations(await apiFetch<PracticeLocation[]>("/doctors/me/locations", { accessToken }));
+      setLocations(expectArray<PracticeLocation>(await apiFetch<unknown>("/doctors/me/locations", { accessToken })));
     } catch (error) {
       setLocationsError(error);
     }
@@ -239,7 +239,7 @@ function ServicesSection({ accessToken, locations }: { accessToken: string; loca
   const load = useCallback(async () => {
     setListError(null);
     try {
-      setServices(await apiFetch<DoctorService[]>("/doctors/me/services", { accessToken }));
+      setServices(expectArray<DoctorService>(await apiFetch<unknown>("/doctors/me/services", { accessToken })));
     } catch (error) {
       setListError(error);
     }
@@ -367,7 +367,7 @@ function RulesSection({ accessToken }: { accessToken: string }) {
   const load = useCallback(async () => {
     setListError(null);
     try {
-      setRules(await apiFetch<AvailabilityRule[]>("/doctors/me/availability-rules", { accessToken }));
+      setRules(expectArray<AvailabilityRule>(await apiFetch<unknown>("/doctors/me/availability-rules", { accessToken })));
     } catch (error) {
       setListError(error);
     }
@@ -518,7 +518,7 @@ function ExceptionsSection({ accessToken }: { accessToken: string }) {
   const load = useCallback(async () => {
     setListError(null);
     try {
-      setExceptions(await apiFetch<AvailabilityException[]>("/doctors/me/availability-exceptions", { accessToken }));
+      setExceptions(expectArray<AvailabilityException>(await apiFetch<unknown>("/doctors/me/availability-exceptions", { accessToken })));
     } catch (error) {
       setListError(error);
     }

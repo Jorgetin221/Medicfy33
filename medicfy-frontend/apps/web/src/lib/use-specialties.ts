@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiFetch } from "./api-client";
+import { apiFetch, expectArray } from "./api-client";
 
 export interface SpecialtyOption {
   id: string;
@@ -21,8 +21,9 @@ export function useSpecialties(): State {
 
   useEffect(() => {
     let cancelled = false;
-    apiFetch<SpecialtyOption[]>("/specialties")
-      .then((specialties) => {
+    apiFetch<unknown>("/specialties")
+      .then((data) => {
+        const specialties = expectArray<SpecialtyOption>(data);
         if (!cancelled) setState({ specialties, isLoading: false, error: null });
       })
       .catch((error: unknown) => {

@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { apiFetch, ApiError } from "@/lib/api-client";
+import Link from "next/link";
+import { apiFetch, ApiError, expectArray } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
 import { Card, LoadingState, EmptyState, ErrorState } from "@/components/ui/states";
 import { IconPulse, IconLogout } from "@/components/ui/nav-icons";
@@ -149,9 +150,9 @@ function AppointmentsSection({ accessToken }: { accessToken: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    apiFetch<OwnAppointment[]>("/patients/me/appointments", { accessToken })
+    apiFetch<unknown>("/patients/me/appointments", { accessToken })
       .then((data) => {
-        if (!cancelled) setAppointments(data);
+        if (!cancelled) setAppointments(expectArray<OwnAppointment>(data));
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(err);
@@ -168,7 +169,15 @@ function AppointmentsSection({ accessToken }: { accessToken: string }) {
         {appointments === null && !error ? <LoadingState /> : null}
         {error ? <ErrorState error={error} /> : null}
         {appointments && appointments.length === 0 ? (
-          <EmptyState title="Sin citas todavía" description="Agenda desde el perfil público de tu médico." />
+          <EmptyState
+            title="Sin citas todavía"
+            description="Agenda desde el perfil público de tu médico."
+            action={
+              <Link href="/doctores" className="text-sm font-medium text-brand-700 underline">
+                Buscar un médico
+              </Link>
+            }
+          />
         ) : null}
         {appointments && appointments.length > 0 ? (
           <ul className="flex flex-col gap-3">

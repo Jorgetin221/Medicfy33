@@ -12,7 +12,7 @@ import {
   type DoctorPostCreateInput,
   type PostCategory,
 } from "@medicfy/contracts";
-import { apiFetch, apiFetchBlob, apiUpload } from "@/lib/api-client";
+import { apiFetch, apiFetchBlob, apiUpload, expectArray } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
 import { useDoctorProfile } from "@/lib/use-doctor-profile";
 import { Button } from "@/components/ui/button";
@@ -99,8 +99,8 @@ function PublicacionesContent({ accessToken }: { accessToken: string }) {
 
   const load = useCallback(() => {
     setError(null);
-    apiFetch<DoctorPost[]>("/doctors/me/posts", { accessToken })
-      .then(setPosts)
+    apiFetch<unknown>("/doctors/me/posts", { accessToken })
+      .then((data) => setPosts(expectArray<DoctorPost>(data)))
       .catch((err: unknown) => setError(err));
   }, [accessToken]);
 

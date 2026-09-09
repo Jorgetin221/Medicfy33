@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { EDUCATIONAL_POST_CATEGORIES, type PostCategory } from "@medicfy/contracts";
-import { apiFetch, ApiError } from "@/lib/api-client";
+import { apiFetch, ApiError, expectArray } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
 import { tokenPrimaryRole } from "@/lib/jwt-claims";
 import { Card, LoadingState, EmptyState, ErrorState } from "@/components/ui/states";
@@ -270,9 +270,9 @@ function PostsSection({ slug, doctor }: { slug: string; doctor: PublicDoctor }) 
 
   useEffect(() => {
     let cancelled = false;
-    apiFetch<PublicPost[]>(`/doctors/${slug}/public/posts`)
+    apiFetch<unknown>(`/doctors/${slug}/public/posts`)
       .then((data) => {
-        if (!cancelled) setPosts(data);
+        if (!cancelled) setPosts(expectArray<PublicPost>(data));
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(err);
@@ -368,8 +368,8 @@ function AvailabilitySection({ doctor }: { doctor: PublicDoctor }) {
 
   useEffect(() => {
     if (!doctor.isBookable || !isPatientSession) return;
-    apiFetch<PublicService[]>(`/doctors/${doctor.slug}/public/services`)
-      .then(setServices)
+    apiFetch<unknown>(`/doctors/${doctor.slug}/public/services`)
+      .then((data) => setServices(expectArray<PublicService>(data)))
       .catch((err: unknown) => setServicesError(err));
   }, [doctor.slug, doctor.isBookable, isPatientSession]);
 
@@ -378,7 +378,7 @@ function AvailabilitySection({ doctor }: { doctor: PublicDoctor }) {
     setSlotsError(null);
     setSlots(null);
     try {
-      setSlots(await apiFetch<AvailableSlot[]>(`/doctors/${doctor.id}/availability?service_id=${serviceId}`));
+      setSlots(expectArray<AvailableSlot>(await apiFetch<unknown>(`/doctors/${doctor.id}/availability?service_id=${serviceId}`)));
     } catch (err) {
       setSlotsError(err);
     }

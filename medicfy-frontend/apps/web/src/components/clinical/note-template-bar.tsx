@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { NoteTemplateCreateInput } from "@medicfy/contracts";
-import { apiFetch, ApiError } from "@/lib/api-client";
+import { apiFetch, ApiError, expectArray } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { TextInput, FieldWrapper } from "@/components/ui/field";
 
@@ -33,8 +33,8 @@ export function NoteTemplateBar({
   const [error, setError] = useState<unknown>(null);
 
   function load() {
-    apiFetch<NoteTemplate[]>("/note-templates", { accessToken })
-      .then(setTemplates)
+    apiFetch<unknown>("/note-templates", { accessToken })
+      .then((data) => setTemplates(expectArray<NoteTemplate>(data)))
       .catch(() => {});
   }
 

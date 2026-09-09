@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { apiFetch } from "@/lib/api-client";
+import { apiFetch, expectArray } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
 import { Card, LoadingState, EmptyState, ErrorState } from "@/components/ui/states";
 import { TextInput } from "@/components/ui/field";
@@ -53,8 +53,8 @@ function PacientesContent({ accessToken }: { accessToken: string }) {
 
   const load = useCallback(() => {
     setError(null);
-    apiFetch<PatientListItem[]>("/patients", { accessToken })
-      .then(setPatients)
+    apiFetch<unknown>("/patients", { accessToken })
+      .then((data) => setPatients(expectArray<PatientListItem>(data)))
       .catch((err: unknown) => setError(err));
   }, [accessToken]);
 

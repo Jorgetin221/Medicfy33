@@ -3,6 +3,21 @@
 // touched directly by frontend code.
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
 
+// Pantallas de lista (Auditoría, Publicaciones...) tipan la respuesta
+// como T[] por generics de TypeScript, que no validan nada en runtime.
+// Si el servidor (o un mock, o un proxy intermedio) responde con una
+// forma distinta a un arreglo, sin este guard la pantalla no cae en
+// ninguna de sus 4 ramas de estado (ni null, ni error, ni .length) y
+// se queda en blanco sin avisar — el peor resultado posible en una
+// pantalla de auditoría. Úsalo en el .then() de cualquier fetch que
+// se vaya a tratar como lista.
+export function expectArray<T>(value: unknown): T[] {
+  if (!Array.isArray(value)) {
+    throw new ApiError("UNEXPECTED_SHAPE", "La respuesta del servidor no tuvo el formato esperado.", 200, value);
+  }
+  return value as T[];
+}
+
 export class ApiError extends Error {
   code: string;
   status: number;

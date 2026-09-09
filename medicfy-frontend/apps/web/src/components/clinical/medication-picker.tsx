@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiFetch, ApiError } from "@/lib/api-client";
+import { apiFetch, ApiError, expectArray } from "@/lib/api-client";
 import { TextInput, FieldWrapper, SelectInput } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { Aviso } from "@/components/ui/alert";
@@ -107,9 +107,9 @@ export function MedicationPicker({
     let cancelled = false;
     setIsSearching(true);
     const timeout = setTimeout(() => {
-      apiFetch<MedicationCatalogEntry[]>(`/medications?search=${encodeURIComponent(query)}`, { accessToken })
+      apiFetch<unknown>(`/medications?search=${encodeURIComponent(query)}`, { accessToken })
         .then((data) => {
-          if (!cancelled) setResults(data);
+          if (!cancelled) setResults(expectArray<MedicationCatalogEntry>(data));
         })
         .catch(() => {
           if (!cancelled) setResults([]);

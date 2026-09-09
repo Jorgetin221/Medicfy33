@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { apiFetch } from "@/lib/api-client";
+import { apiFetch, expectArray } from "@/lib/api-client";
 import { Card, EmptyState, ErrorState, LoadingState } from "@/components/ui/states";
 import { Button } from "@/components/ui/button";
 import { FieldWrapper, TextInput } from "@/components/ui/field";
@@ -158,8 +158,8 @@ export function LabAnalytesPanel({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const load = useCallback(() => {
-    apiFetch<LabAnalyteRecord[]>(`/lab-analytes/patients/${patientId}`, { accessToken })
-      .then(setAnalytes)
+    apiFetch<unknown>(`/lab-analytes/patients/${patientId}`, { accessToken })
+      .then((data) => setAnalytes(expectArray<LabAnalyteRecord>(data)))
       .catch(setError);
   }, [patientId, accessToken]);
 

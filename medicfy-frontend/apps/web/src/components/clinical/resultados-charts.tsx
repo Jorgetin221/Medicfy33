@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { apiFetch } from "@/lib/api-client";
+import { apiFetch, expectArray } from "@/lib/api-client";
 import { Card, ErrorState, LoadingState } from "@/components/ui/states";
 
 // Prompt 30 — gráficas de evolución (pestaña Resultados de la Zona 3).
@@ -189,7 +189,7 @@ export function ResultadosCharts({
   const [error, setError] = useState<unknown>(null);
 
   const load = useCallback(() => {
-    apiFetch<VitalsRow[]>(`/records/patients/${patientId}/vitals-history`, { accessToken }).then(setRows).catch(setError);
+    apiFetch<unknown>(`/records/patients/${patientId}/vitals-history`, { accessToken }).then((data) => setRows(expectArray<VitalsRow>(data))).catch(setError);
     if (ageYears < 20) {
       apiFetch<GrowthCurve>(`/records/patients/${patientId}/growth-curves?measure=WEIGHT_FOR_AGE`, { accessToken })
         .then(setGrowth)

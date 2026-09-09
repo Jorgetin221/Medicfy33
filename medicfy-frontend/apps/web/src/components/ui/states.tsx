@@ -16,11 +16,26 @@ export function LoadingState({ label = "Cargando…" }: { label?: string }) {
   );
 }
 
-export function EmptyState({ title, description }: { title: string; description?: string }) {
+export function EmptyState({
+  title,
+  description,
+  action,
+}: {
+  title: string;
+  description?: string;
+  // CLAUDE.md / M.7: "Estado vacío con salida. Nunca 'No hay datos'.
+  // Siempre qué significa + una acción." Cuando esa acción vive en la
+  // misma pantalla (un botón "Agregar" justo arriba, un selector de
+  // filtro), `description` sola ya cumple la regla y `action` se omite.
+  // Cuando la salida requiere navegar a otra pantalla, `action` la trae
+  // aquí mismo en vez de dejar al usuario a adivinar la ruta.
+  action?: ReactNode;
+}) {
   return (
-    <div className="flex min-h-[120px] flex-col items-center justify-center gap-1 rounded-md border border-dashed border-gray-300 p-8 text-center">
+    <div className="flex min-h-[120px] flex-col items-center justify-center gap-2 rounded-md border border-dashed border-gray-300 p-8 text-center">
       <p className="text-base font-medium text-gray-700">{title}</p>
       {description && <p className="text-sm text-gray-500">{description}</p>}
+      {action && <div className="mt-1">{action}</div>}
     </div>
   );
 }

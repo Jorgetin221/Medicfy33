@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiFetch } from "./api-client";
+import { apiFetch, expectArray } from "./api-client";
 
 export interface SpecialtyFieldSchemaOption {
   id: string;
@@ -31,8 +31,9 @@ export function useSpecialtyScales(accessToken: string | null, section: "ESCALAS
   useEffect(() => {
     if (!accessToken) return undefined;
     let cancelled = false;
-    apiFetch<SpecialtyFieldSchemaOption[]>(`/specialty-field-schemas?section=${section}`, { accessToken })
-      .then((fields) => {
+    apiFetch<unknown>(`/specialty-field-schemas?section=${section}`, { accessToken })
+      .then((data) => {
+        const fields = expectArray<SpecialtyFieldSchemaOption>(data);
         if (!cancelled) setState({ fields, isLoading: false, error: null });
       })
       .catch((error: unknown) => {

@@ -15,7 +15,7 @@ import {
   containsContactInfo,
   type PracticeLocationInput,
 } from "@medicfy/contracts";
-import { apiFetch, apiUpload, apiFetchBlob } from "@/lib/api-client";
+import { apiFetch, apiUpload, apiFetchBlob, expectArray } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
 import { useDoctorProfile, type DoctorProfile, type DoctorVerificationStatus } from "@/lib/use-doctor-profile";
 import { useSpecialties } from "@/lib/use-specialties";
@@ -78,7 +78,7 @@ function PerfilContent({ accessToken }: { accessToken: string }) {
   const loadLocations = useCallback(async () => {
     setLocationsError(null);
     try {
-      setLocations(await apiFetch<PracticeLocation[]>("/doctors/me/locations", { accessToken }));
+      setLocations(expectArray<PracticeLocation>(await apiFetch<unknown>("/doctors/me/locations", { accessToken })));
     } catch (err) {
       setLocationsError(err);
     }
@@ -193,8 +193,8 @@ function VerificationSection({ doctor, accessToken }: { doctor: DoctorProfile; a
   const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
-    apiFetch<DoctorDocument[]>("/doctors/me/documents", { accessToken })
-      .then(setDocuments)
+    apiFetch<unknown>("/doctors/me/documents", { accessToken })
+      .then((data) => setDocuments(expectArray<DoctorDocument>(data)))
       .catch((err: unknown) => setError(err));
   }, [accessToken]);
 

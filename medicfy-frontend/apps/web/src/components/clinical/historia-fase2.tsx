@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { apiFetch } from "@/lib/api-client";
+import { apiFetch, expectArray } from "@/lib/api-client";
 import type { PatientHistoryItem } from "@/lib/use-patient-clinical";
 import { Card, ErrorState } from "@/components/ui/states";
 import { Button } from "@/components/ui/button";
@@ -342,12 +342,12 @@ export function ToxicomaniasBlock({
 
   const load = useCallback(() => {
     Promise.all([
-      apiFetch<CatalogTermLite[]>("/catalogs/SUSTANCIA_PSICOACTIVA", { accessToken }),
-      apiFetch<SubstanceUseRecord[]>(`/records/patients/${patientId}/substance-uses`, { accessToken }),
+      apiFetch<unknown>("/catalogs/SUSTANCIA_PSICOACTIVA", { accessToken }),
+      apiFetch<unknown>(`/records/patients/${patientId}/substance-uses`, { accessToken }),
     ])
       .then(([catalog, existing]) => {
-        setSubstances(catalog);
-        setUses(existing);
+        setSubstances(expectArray<CatalogTermLite>(catalog));
+        setUses(expectArray<SubstanceUseRecord>(existing));
       })
       .catch(setError);
   }, [patientId, accessToken]);
@@ -583,12 +583,12 @@ export function PlantillasAntecedentes({
 
   const load = useCallback(() => {
     Promise.all([
-      apiFetch<TemplateRecord[]>("/records/antecedentes-templates", { accessToken }),
-      apiFetch<PendingInherited[]>(`/records/patients/${patientId}/history-pending-inherited`, { accessToken }),
+      apiFetch<unknown>("/records/antecedentes-templates", { accessToken }),
+      apiFetch<unknown>(`/records/patients/${patientId}/history-pending-inherited`, { accessToken }),
     ])
       .then(([tpls, pend]) => {
-        setTemplates(tpls);
-        setPending(pend);
+        setTemplates(expectArray<TemplateRecord>(tpls));
+        setPending(expectArray<PendingInherited>(pend));
       })
       .catch(setError);
   }, [patientId, accessToken]);

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { apiFetch } from "@/lib/api-client";
+import { apiFetch, expectArray } from "@/lib/api-client";
 import { tokenSubject } from "@/lib/jwt-claims";
 import { usePatientClinical } from "@/lib/use-patient-clinical";
 import { LoadingState, ErrorState, Card } from "@/components/ui/states";
@@ -42,7 +42,7 @@ export function PacienteConsultaScreen({ patientId, accessToken }: { patientId: 
     setPhase("loading");
     setError(null);
     try {
-      const encounters = await apiFetch<EncounterListItem[]>(`/records/patients/${patientId}/encounters`, { accessToken });
+      const encounters = expectArray<EncounterListItem>(await apiFetch<unknown>(`/records/patients/${patientId}/encounters`, { accessToken }));
       const existingDraft = encounters.find((e) => e.status === "DRAFT" && !e.appointmentId);
 
       let encounterId: string;

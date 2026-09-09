@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { LabOrderCreateInput } from "@medicfy/contracts";
-import { apiFetch, apiFetchBlob, ApiError } from "@/lib/api-client";
+import { apiFetch, apiFetchBlob, ApiError, expectArray } from "@/lib/api-client";
 import { Panel } from "@/components/ui/panel";
 import { Button } from "@/components/ui/button";
 import { FieldWrapper, TextInput } from "@/components/ui/field";
@@ -76,9 +76,9 @@ export function LabOrderPanel({
 
   useEffect(() => {
     if (!open) return;
-    apiFetch<CatalogTerm[]>("/catalogs/TIPO_ESTUDIO", { accessToken }).then(setTipos).catch(() => setTipos([]));
-    apiFetch<CatalogTerm[]>("/catalogs/ESTUDIO_LABORATORIO", { accessToken }).then(setEstudios).catch(() => setEstudios([]));
-    apiFetch<CatalogTerm[]>("/catalogs/MOTIVO_ESTUDIO", { accessToken }).then(setMotivos).catch(() => setMotivos([]));
+    apiFetch<unknown>("/catalogs/TIPO_ESTUDIO", { accessToken }).then((data) => setTipos(expectArray<CatalogTerm>(data))).catch(() => setTipos([]));
+    apiFetch<unknown>("/catalogs/ESTUDIO_LABORATORIO", { accessToken }).then((data) => setEstudios(expectArray<CatalogTerm>(data))).catch(() => setEstudios([]));
+    apiFetch<unknown>("/catalogs/MOTIVO_ESTUDIO", { accessToken }).then((data) => setMotivos(expectArray<CatalogTerm>(data))).catch(() => setMotivos([]));
   }, [open, accessToken]);
 
   function resetAll() {

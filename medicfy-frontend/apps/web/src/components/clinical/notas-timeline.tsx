@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { apiFetch, ApiError } from "@/lib/api-client";
+import { apiFetch, ApiError, expectArray } from "@/lib/api-client";
 import { LoadingState, ErrorState } from "@/components/ui/states";
 import { FieldWrapper, SelectInput, TextInput } from "@/components/ui/field";
 import { PasswordInput } from "@/components/ui/password-input";
@@ -118,8 +118,9 @@ function CancelNoteForm({
   const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
-    apiFetch<{ id: string; key: string; preferredTerm: string }[]>("/catalogs/MOTIVO_CANCELACION_NOTA", { accessToken })
-      .then((options) => {
+    apiFetch<unknown>("/catalogs/MOTIVO_CANCELACION_NOTA", { accessToken })
+      .then((data) => {
+        const options = expectArray<{ id: string; key: string; preferredTerm: string }>(data);
         setReasonOptions(options);
         if (options[0]) setReasonTermId(options[0].id);
       })
@@ -217,8 +218,8 @@ export function NotasTimeline({ patientId, accessToken }: { patientId: string; a
     if (to) params.set("to", to);
     if (q.trim()) params.set("q", q.trim());
     const qs = params.toString();
-    apiFetch<NoteThread[]>(`/records/patients/${patientId}/notes-timeline${qs ? `?${qs}` : ""}`, { accessToken })
-      .then(setThreads)
+    apiFetch<unknown>(`/records/patients/${patientId}/notes-timeline${qs ? `?${qs}` : ""}`, { accessToken })
+      .then((data) => setThreads(expectArray<NoteThread>(data)))
       .catch(setError);
   }, [patientId, accessToken, type, from, to, q]);
 

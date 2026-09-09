@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { apiFetch } from "@/lib/api-client";
+import { apiFetch, expectArray } from "@/lib/api-client";
 import type { TimelineEncounter } from "@/lib/use-patient-clinical";
 import { Card, EmptyState, ErrorState, LoadingState } from "@/components/ui/states";
 import { Button } from "@/components/ui/button";
@@ -279,15 +279,15 @@ export function TabProtocolos({ patientId, accessToken, encounters }: { patientI
   const [closingInstanceId, setClosingInstanceId] = useState<string | null>(null);
 
   const load = useCallback(() => {
-    apiFetch<PatientProtocolInstanceRecord[]>(`/records/patients/${patientId}/protocol-instances`, { accessToken })
-      .then(setInstances)
+    apiFetch<unknown>(`/records/patients/${patientId}/protocol-instances`, { accessToken })
+      .then((data) => setInstances(expectArray<PatientProtocolInstanceRecord>(data)))
       .catch(setError);
   }, [patientId, accessToken]);
 
   useEffect(load, [load]);
   useEffect(() => {
-    apiFetch<TreatmentProtocolRecord[]>("/protocols", { accessToken })
-      .then(setProtocols)
+    apiFetch<unknown>("/protocols", { accessToken })
+      .then((data) => setProtocols(expectArray<TreatmentProtocolRecord>(data)))
       .catch(() => setProtocols([]));
   }, [accessToken]);
 
