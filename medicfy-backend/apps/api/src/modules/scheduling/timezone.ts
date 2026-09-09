@@ -55,6 +55,23 @@ export function todayInTimeZone(timeZone: string = PRACTICE_TIME_ZONE, at: Date 
   return `${get("year")}-${get("month")}-${get("day")}`;
 }
 
+// M12: texto legible de fecha/hora de cita para notificaciones
+// (correo/WhatsApp) — misma regla de M4-RN-001/007, ningún cálculo ni
+// formato de horario en el navegador. "martes 9 de septiembre, 10:00
+// a. m." en America/Mexico_City, sin importar en qué zona corra el
+// proceso del servidor.
+export function formatAppointmentDateLabel(at: Date, timeZone: string = PRACTICE_TIME_ZONE): string {
+  return new Intl.DateTimeFormat("es-MX", {
+    timeZone,
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(at);
+}
+
 // Suma `days` a una fecha calendario (YYYY-MM-DD). Aritmética de
 // calendario pura (sin resolver zona horaria alguna) — usada para
 // completar el rango por defecto de GET /doctors/{id}/availability

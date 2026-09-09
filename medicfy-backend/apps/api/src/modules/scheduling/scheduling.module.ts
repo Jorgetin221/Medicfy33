@@ -1,6 +1,7 @@
 import { forwardRef, Module } from "@nestjs/common";
 import { IdentityModule } from "../identity/identity.module";
 import { DoctorsModule } from "../doctors/doctors.module";
+import { NotificationsModule } from "../notifications/notifications.module";
 import { SchedulingAuthService } from "./services/scheduling-auth.service";
 import { AvailabilityRuleService } from "./services/availability-rule.service";
 import { AvailabilityExceptionService } from "./services/availability-exception.service";
@@ -19,13 +20,16 @@ import { PublicBookingController } from "./public-booking.controller";
 // M4 — AGENDA Y DISPONIBILIDAD, M5a — PACIENTES Y CITAS (núcleo),
 // M5-RN-009 a 012 (v2.3) — agendamiento público real del paciente
 // (PublicBookingController) y su listado propio (PatientsController
-// /patients/me/appointments). Notificaciones (M12) siguen sin
-// construir.
+// /patients/me/appointments). M12 (notificaciones): agendada,
+// confirmada, cancelada y reagendada ya se envían de verdad desde
+// AppointmentStateMachineService — recordatorios 24h/2h siguen
+// pendientes porque exigen un job programado (Redis+BullMQ) que no
+// existe todavía, no un problema de esta clase.
 @Module({
   // forwardRef: DoctorsModule ahora importa SchedulingModule también
   // (AppointmentCancellationSuspensionAdapter, M2-RN-005) — ver el
   // comentario simétrico en doctors.module.ts.
-  imports: [IdentityModule, forwardRef(() => DoctorsModule)],
+  imports: [IdentityModule, NotificationsModule, forwardRef(() => DoctorsModule)],
   controllers: [
     AvailabilityController,
     AvailabilityRulesController,

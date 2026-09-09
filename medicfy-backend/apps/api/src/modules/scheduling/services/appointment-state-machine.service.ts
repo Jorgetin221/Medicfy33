@@ -1,12 +1,29 @@
-import { HttpStatus, Injectable } from "@nestjs/common";
-import type { Appointment, AppointmentCreatedVia, AppointmentStatus, Prisma } from "@prisma/client";
+import { HttpStatus, Injectable, Logger } from "@nestjs/common";
+import type { Appointment, AppointmentCreatedVia, AppointmentStatus, Doctor, Prisma } from "@prisma/client";
 import type { AppointmentCreateInput, PublicAppointmentCreateInput } from "@medicfy/contracts";
 import { PrismaService } from "../../../prisma/prisma.service";
 import { ApiException } from "../../../common/api-exception";
 import { modalityForServiceType } from "../service-modality";
-import { todayInTimeZone, zonedDateAndMinutesToUtc } from "../timezone";
+import { todayInTimeZone, zonedDateAndMinutesToUtc, formatAppointmentDateLabel } from "../timezone";
 import { CareRelationshipService } from "./care-relationship.service";
 import { DEFAULT_CANCELLATION_POLICY, resolveCancellationPolicy, refundPercentFor, type CancellationPolicy } from "../cancellation-policy";
+import { NotificationsService } from "../../notifications/services/notifications.service";
+import { NotificationLinkService } from "../../notifications/services/notification-link.service";
+import type { NotificationTemplateCode } from "@prisma/client";
+import {
+  renderAppointmentScheduled,
+  renderAppointmentConfirmed,
+  renderAppointmentCancelled,
+  renderAppointmentRescheduled,
+} from "../../notifications/services/notification-templates";
+
+function mustGetAppBaseUrl(): string {
+  const url = process.env.APP_BASE_URL;
+  if (!url) {
+    throw new Error("APP_BASE_URL is not set");
+  }
+  return url;
+}
 
 const PAYMENT_WINDOW_MINUTES = 30;
 const NO_SHOW_GRACE_MINUTES = 60;
@@ -48,10 +65,92 @@ function isExclusionViolation(error: unknown): boolean {
 
 @Injectable()
 export class AppointmentStateMachineService {
+  private readonly logger = new Logger(AppointmentStateMachineService.name);
+
   constructor(
     private readonly prisma: PrismaService,
-    private readonly careRelationshipService: CareRelationshipService
+    private readonly careRelationshipService: CareRelationshipService,
+    private readonly notificationsService: NotificationsService,
+    private readonly notificationLinkService: NotificationLinkService
   ) {}
+
+  // M12: los 4 disparadores de ciclo de vida de cita con plantilla
+  // (agendada/confirmada/cancelada/reagendada). El paciente puede no
+  // tener cuenta de usuario todavía (Patient.userId es opcional — un
+  // médico puede dar de alta un paciente sin invitarlo) — en ese caso
+  // no hay a quién notificar y se omite en silencio, no es un error.
+  // Sin reintentos (decisión explícita del usuario): si el envío
+  // falla, NotificationsService ya lo deja en FAILED y aquí no se
+  // hace nada más — la transición de estado de la cita, que es lo que
+  // legalmente/operativamente importa, ya se guardó de todos modos.
+  private async notifyAppointmentEvent(
+    appointment: Appointment,
+    templateCode: Extract<
+      NotificationTemplateCode,
+      "APPOINTMENT_SCHEDULED" | "APPOINTMENT_CONFIRMED" | "APPOINTMENT_CANCELLED" | "APPOINTMENT_RESCHEDULED"
+    >,
+    dateForLabel: Date,
+    // M12-RN-006 (reagenda): la fila de idempotencia se referencia
+    // contra la reserva ORIGINAL, no la nueva cita creada por
+    // reschedule() — desde la perspectiva del paciente es "esa cita
+    // cambió", no una cita distinta. Todo lo demás (paciente, médico,
+    // fecha a mostrar) sí viene de `appointment` tal cual se pase.
+    relatedEntityIdOverride?: string
+  ): Promise<void> {
+    const [patient, doctor] = await Promise.all([
+      this.prisma.patient.findUnique({ where: { id: appointment.patientId } }),
+      this.prisma.doctor.findUnique({ where: { id: appointment.doctorId } }),
+    ]);
+    if (!patient?.userId || !doctor) {
+      return;
+    }
+
+    // Todo lo de aquí para abajo —incluyendo emitir el enlace de un
+    // solo uso, que también toca la base de datos— va dentro del
+    // try/catch. Antes, issue()/buildUrl() quedaban FUERA: un fallo
+    // ahí (por ejemplo APP_BASE_URL sin configurar) se propagaba y
+    // podía tumbar confirmPayment/confirm/cancel/reschedule, que es
+    // exactamente lo que este comentario decía que no debía pasar.
+    // Corregido antes de que llegara a producción.
+    try {
+      const doctorDisplayName = this.doctorDisplayName(doctor);
+      const appointmentDateLabel = formatAppointmentDateLabel(dateForLabel);
+      const { plainToken } = await this.notificationLinkService.issue(patient.userId, "appointment", appointment.id);
+      const actionLink = this.notificationLinkService.buildUrl(mustGetAppBaseUrl(), plainToken);
+
+      const rendered =
+        templateCode === "APPOINTMENT_SCHEDULED"
+          ? renderAppointmentScheduled({ recipientFirstName: patient.firstName, doctorDisplayName, appointmentDateLabel, actionLink })
+          : templateCode === "APPOINTMENT_CONFIRMED"
+            ? renderAppointmentConfirmed({ recipientFirstName: patient.firstName, doctorDisplayName, appointmentDateLabel, actionLink })
+            : templateCode === "APPOINTMENT_CANCELLED"
+              ? renderAppointmentCancelled({ recipientFirstName: patient.firstName, doctorDisplayName, appointmentDateLabel, actionLink })
+              : renderAppointmentRescheduled({
+                  recipientFirstName: patient.firstName,
+                  doctorDisplayName,
+                  newAppointmentDateLabel: appointmentDateLabel,
+                  actionLink,
+                });
+
+      await this.notificationsService.send({
+        userId: patient.userId,
+        templateCode,
+        rendered,
+        relatedEntityType: "appointment",
+        relatedEntityId: relatedEntityIdOverride ?? appointment.id,
+      });
+    } catch (error) {
+      // No debe tumbar la transición de la cita ya confirmada — el
+      // fallo de notificación queda registrado en la fila de
+      // Notification (o, si ni siquiera se pudo crear esa fila, aquí)
+      // pero nunca revierte ni bloquea la operación de agenda.
+      this.logger.warn(`No se pudo enviar notificación ${templateCode} para la cita ${appointment.id}: ${(error as Error).message}`);
+    }
+  }
+
+  private doctorDisplayName(doctor: Doctor): string {
+    return doctor.displayName ?? `Dr(a). ${doctor.legalFirstName} ${doctor.legalLastName}`;
+  }
 
   // M4-CA-001: la única fuente de verdad de "este espacio ya está
   // tomado" es la restricción EXCLUDE de la base de datos, no un
@@ -303,11 +402,15 @@ export class AppointmentStateMachineService {
   // POST /webhooks/{provider} (M6, §8.1) exista, en vez de un método
   // privado inalcanzable desde fuera del servicio.
   async confirmPayment(appointmentId: string, actorUserId: string | null): Promise<Appointment> {
-    return this.transition(appointmentId, "SCHEDULED", actorUserId, "Pago confirmado.");
+    const updated = await this.transition(appointmentId, "SCHEDULED", actorUserId, "Pago confirmado.");
+    await this.notifyAppointmentEvent(updated, "APPOINTMENT_SCHEDULED", updated.startsAt);
+    return updated;
   }
 
   async confirm(appointmentId: string, actorUserId: string): Promise<Appointment> {
-    return this.transition(appointmentId, "CONFIRMED", actorUserId);
+    const updated = await this.transition(appointmentId, "CONFIRMED", actorUserId);
+    await this.notifyAppointmentEvent(updated, "APPOINTMENT_CONFIRMED", updated.startsAt);
+    return updated;
   }
 
   async start(appointmentId: string, actorUserId: string): Promise<Appointment> {
@@ -375,6 +478,8 @@ export class AppointmentStateMachineService {
             before.startsAt
           );
 
+    await this.notifyAppointmentEvent(updated, "APPOINTMENT_CANCELLED", updated.startsAt);
+
     return { appointment: updated, refundPercent };
   }
 
@@ -385,6 +490,21 @@ export class AppointmentStateMachineService {
   // que empieza fuera de pending_payment, y es deliberada, no un
   // atajo alrededor de la máquina de estados.
   async reschedule(appointmentId: string, actorUserId: string, cancelledAsRole: CancellingRole, newStartsAt: string): Promise<Appointment> {
+    const created = await this.rescheduleTransaction(appointmentId, actorUserId, cancelledAsRole, newStartsAt);
+    // M12: APPOINTMENT_RESCHEDULED se referencia contra la cita
+    // ORIGINAL (relatedEntityId) porque es "esa reserva la que
+    // cambió" desde la perspectiva del paciente — la fecha que se
+    // comunica es la de la cita nueva.
+    await this.notifyAppointmentEvent(created, "APPOINTMENT_RESCHEDULED", created.startsAt, appointmentId);
+    return created;
+  }
+
+  private async rescheduleTransaction(
+    appointmentId: string,
+    actorUserId: string,
+    cancelledAsRole: CancellingRole,
+    newStartsAt: string
+  ): Promise<Appointment> {
     const current = await this.findById(appointmentId);
     if (!VALID_TRANSITIONS[current.status].includes("CANCELLED_BY_PATIENT") && !VALID_TRANSITIONS[current.status].includes("CANCELLED_BY_DOCTOR")) {
       throw new ApiException("APPOINTMENT_TRANSITION_INVALID", "Esta cita no se puede reagendar en su estado actual.", HttpStatus.CONFLICT);
