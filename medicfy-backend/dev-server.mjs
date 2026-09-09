@@ -51,7 +51,83 @@ const adminUser = {
 // Médicos que se registran vía POST /auth/register/doctor durante esta
 // sesión del mock — se pierden al reiniciar el proceso, igual que el
 // resto del estado en memoria de este archivo.
-let registeredDoctors = [];
+let registeredDoctors = [
+  // Demo para /admin/verificacion: uno reciente y uno con más de 24h
+  // hábiles esperando, para poder ver la alerta de M13-CA-003 en el
+  // mock sin tener que registrar un médico nuevo a mano.
+  {
+    id: "demo-doc-1",
+    email: "nueva.doctora@medicfy.dev",
+    primaryRole: "DOCTOR",
+    status: "ACTIVE",
+    emailVerifiedAt: null,
+    doctor: {
+      id: "doc-demo-1",
+      userId: "demo-doc-1",
+      slug: "demo-doctora",
+      legalFirstName: "Valeria",
+      legalLastName: "Campos Ruiz",
+      professionalLicense: "9988776",
+      specialtyLicense: null,
+      specialtyLicenseExpiresAt: null,
+      primarySpecialtyId: null,
+      displayName: "Dra. Valeria Campos Ruiz",
+      photoUrl: null,
+      biography: null,
+      yearsExperience: null,
+      languages: [],
+      university: null,
+      professionalPhone: null,
+      professionalEmail: null,
+      letterheadPhrase: null,
+      logoUrl: null,
+      signatureImageUrl: null,
+      verificationStatus: "SUBMITTED",
+      verificationNotes: null,
+      acceptsTeleconsultation: false,
+      acceptsNewPatients: false,
+      minBookingNoticeMinutes: 120,
+      maxBookingWindowDays: 90,
+      createdAt: new Date(Date.now() - 30 * 60 * 1000).toISOString()
+    }
+  },
+  {
+    id: "demo-doc-2",
+    email: "rezagado@medicfy.dev",
+    primaryRole: "DOCTOR",
+    status: "ACTIVE",
+    emailVerifiedAt: null,
+    doctor: {
+      id: "doc-demo-2",
+      userId: "demo-doc-2",
+      slug: "demo-rezagado",
+      legalFirstName: "Ricardo",
+      legalLastName: "Salcido Peña",
+      professionalLicense: "1122334",
+      specialtyLicense: null,
+      specialtyLicenseExpiresAt: null,
+      primarySpecialtyId: null,
+      displayName: "Dr. Ricardo Salcido Peña",
+      photoUrl: null,
+      biography: null,
+      yearsExperience: null,
+      languages: [],
+      university: null,
+      professionalPhone: null,
+      professionalEmail: null,
+      letterheadPhrase: null,
+      logoUrl: null,
+      signatureImageUrl: null,
+      verificationStatus: "SUBMITTED",
+      verificationNotes: null,
+      acceptsTeleconsultation: false,
+      acceptsNewPatients: false,
+      minBookingNoticeMinutes: 120,
+      maxBookingWindowDays: 90,
+      createdAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString()
+    }
+  }
+];
 
 function allUsers() {
   return [doctorUser, adminUser, ...registeredDoctors];
@@ -159,8 +235,8 @@ let appointments = [
     id: "apt-1",
     patientId: "pat-1",
     doctorId: "doc-1",
-    startsAt: `${todayYMD}T09:00:00.000Z`,
-    endsAt: `${todayYMD}T09:30:00.000Z`,
+    startsAt: `${todayYMD}T15:00:00.000Z`,
+    endsAt: `${todayYMD}T15:30:00.000Z`,
     status: "CONFIRMED",
     completedWithoutNoteReason: null,
     patient: {
@@ -179,8 +255,8 @@ let appointments = [
     id: "apt-2",
     patientId: "pat-2",
     doctorId: "doc-1",
-    startsAt: `${todayYMD}T10:30:00.000Z`,
-    endsAt: `${todayYMD}T11:15:00.000Z`,
+    startsAt: `${todayYMD}T16:30:00.000Z`,
+    endsAt: `${todayYMD}T17:15:00.000Z`,
     status: "SCHEDULED",
     completedWithoutNoteReason: null,
     patient: {
@@ -199,8 +275,8 @@ let appointments = [
     id: "apt-3",
     patientId: "pat-3",
     doctorId: "doc-1",
-    startsAt: `${todayYMD}T12:00:00.000Z`,
-    endsAt: `${todayYMD}T12:20:00.000Z`,
+    startsAt: `${todayYMD}T18:00:00.000Z`,
+    endsAt: `${todayYMD}T18:20:00.000Z`,
     status: "CONFIRMED",
     completedWithoutNoteReason: null,
     patient: {
@@ -378,6 +454,23 @@ const server = http.createServer(async (req, res) => {
     return sendJson({ pending: [], accepted: [] });
   }
 
+  // M12 (notificaciones): único endpoint real de la especificación,
+  // GET/PATCH /notification-preferences. M12-RN-003: no hay booleano
+  // de "activado", solo elección de canal — el recordatorio
+  // transaccional no se puede apagar del todo.
+  if (pathname === '/notification-preferences' && method === 'GET') {
+    const user = getCurrentUser(req);
+    return sendJson({ channel: user.notificationChannelPreference || 'EMAIL' });
+  }
+
+  if (pathname === '/notification-preferences' && method === 'PATCH') {
+    const user = getCurrentUser(req);
+    if (body && (body.channel === 'EMAIL' || body.channel === 'WHATSAPP')) {
+      user.notificationChannelPreference = body.channel;
+    }
+    return sendJson({ channel: user.notificationChannelPreference || 'EMAIL' });
+  }
+
   // Consultorios/servicios/horario "de siempre" solo le pertenecen al
   // doctor semilla (Jorge) — un médico recién registrado todavía no
   // configuró nada de esto, así que ve listas vacías reales en vez de
@@ -409,17 +502,25 @@ const server = http.createServer(async (req, res) => {
     return sendJson(
       isSeedDoctor
         ? [
-            { id: "rule-1", doctorId: "doc-1", dayOfWeek: 1, startMinute: 540, endMinute: 1140 },
-            { id: "rule-2", doctorId: "doc-1", dayOfWeek: 2, startMinute: 540, endMinute: 1140 },
-            { id: "rule-3", doctorId: "doc-1", dayOfWeek: 3, startMinute: 540, endMinute: 1140 },
-            { id: "rule-4", doctorId: "doc-1", dayOfWeek: 4, startMinute: 540, endMinute: 1140 },
-            { id: "rule-5", doctorId: "doc-1", dayOfWeek: 5, startMinute: 540, endMinute: 1140 }
+            { id: "rule-1", doctorId: "doc-1", dayOfWeek: 1, startMinute: 540, endMinute: 1140, modality: "IN_PERSON", slotDurationMinutes: 30, isActive: true },
+            { id: "rule-2", doctorId: "doc-1", dayOfWeek: 2, startMinute: 540, endMinute: 1140, modality: "IN_PERSON", slotDurationMinutes: 30, isActive: true },
+            { id: "rule-3", doctorId: "doc-1", dayOfWeek: 3, startMinute: 540, endMinute: 1140, modality: "IN_PERSON", slotDurationMinutes: 30, isActive: true },
+            { id: "rule-4", doctorId: "doc-1", dayOfWeek: 4, startMinute: 540, endMinute: 1140, modality: "IN_PERSON", slotDurationMinutes: 30, isActive: true },
+            { id: "rule-5", doctorId: "doc-1", dayOfWeek: 5, startMinute: 540, endMinute: 1140, modality: "IN_PERSON", slotDurationMinutes: 30, isActive: true }
           ]
         : []
     );
   }
 
   if (pathname === '/doctors/me/availability-exceptions' && method === 'GET') {
+    return sendJson([]);
+  }
+
+  if (pathname === '/doctors/me/patient-access-log' && method === 'GET') {
+    return sendJson([]);
+  }
+
+  if (pathname === '/doctors/me/posts' && method === 'GET') {
     return sendJson([]);
   }
 
@@ -712,6 +813,24 @@ const server = http.createServer(async (req, res) => {
   // el doctor semilla (Jorge) ya nace VERIFIED y no aparece aquí.
   if (pathname === '/admin/doctors' && method === 'GET') {
     const filterStatus = parsedUrl.query.verification_status || '';
+    // Mock de businessHoursWaiting (M13-CA-003): mismo criterio que
+    // doctor-verification.service.ts (horas de reloj menos fin de
+    // semana completo), duplicado aquí porque el mock no comparte
+    // código con el backend real.
+    const isMxWeekend = (d) => {
+      const w = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Mexico_City', weekday: 'short' }).format(d);
+      return w === 'Sat' || w === 'Sun';
+    };
+    const businessHoursSince = (startIso) => {
+      let hours = 0;
+      const cursor = new Date(startIso);
+      const now = new Date();
+      while (cursor.getTime() < now.getTime()) {
+        if (!isMxWeekend(cursor)) hours += 1;
+        cursor.setTime(cursor.getTime() + 60 * 60 * 1000);
+      }
+      return hours;
+    };
     const list = registeredDoctors.map(u => ({
       id: u.doctor.id,
       legalFirstName: u.doctor.legalFirstName,
@@ -719,9 +838,92 @@ const server = http.createServer(async (req, res) => {
       professionalLicense: u.doctor.professionalLicense,
       primarySpecialtyId: u.doctor.primarySpecialtyId,
       verificationStatus: u.doctor.verificationStatus,
-      createdAt: u.doctor.createdAt
+      createdAt: u.doctor.createdAt,
+      businessHoursWaiting: businessHoursSince(u.doctor.createdAt)
     }));
     return sendJson(filterStatus ? list.filter(d => d.verificationStatus === filterStatus) : list);
+  }
+
+  // M13: búsqueda de usuarios (mock) — mismos campos que
+  // admin-users.service.ts, sobre los médicos/pacientes semilla de
+  // este servidor de desarrollo.
+  if (pathname === '/admin/users' && method === 'GET') {
+    const q = String(parsedUrl.query.q || '').trim().toLowerCase();
+    if (!q) return sendJson({ doctors: [], patients: [] });
+    const allDoctors = [doctorUser, ...registeredDoctors].map(u => u.doctor);
+    const doctors = allDoctors
+      .filter(d =>
+        d.legalFirstName.toLowerCase().includes(q) ||
+        d.legalLastName.toLowerCase().includes(q) ||
+        d.professionalLicense.toLowerCase().includes(q)
+      )
+      .map(d => ({
+        id: d.id,
+        legalFirstName: d.legalFirstName,
+        legalLastName: d.legalLastName,
+        professionalLicense: d.professionalLicense,
+        verificationStatus: d.verificationStatus,
+        subscriptionStatus: null,
+        createdAt: d.createdAt || new Date().toISOString()
+      }));
+    const matchedPatients = patients.filter(p =>
+      p.firstName.toLowerCase().includes(q) ||
+      p.lastNamePaternal.toLowerCase().includes(q) ||
+      (p.lastNameMaternal || '').toLowerCase().includes(q) ||
+      p.medicfyId.toLowerCase().includes(q) ||
+      p.email.toLowerCase().includes(q)
+    ).map(p => ({
+      id: p.id,
+      medicfyId: p.medicfyId,
+      firstName: p.firstName,
+      lastNamePaternal: p.lastNamePaternal,
+      lastNameMaternal: p.lastNameMaternal,
+      appointmentCount: appointments.filter(a => a.patientId === p.id).length,
+      linkedDoctorCount: new Set(appointments.filter(a => a.patientId === p.id).map(a => a.doctorId)).size,
+      createdAt: new Date().toISOString()
+    }));
+    return sendJson({ doctors, patients: matchedPatients });
+  }
+
+  // M13-RN-005 (mock): mismas métricas que admin-metrics.service.ts,
+  // calculadas sobre los datos semilla — MRR/churn quedan null porque
+  // M6 (facturación) tampoco existe en el mock.
+  if (pathname === '/admin/metrics' && method === 'GET') {
+    const allDoctors = [doctorUser, ...registeredDoctors].map(u => u.doctor);
+    const doctorsByVerificationStatus = {};
+    for (const d of allDoctors) doctorsByVerificationStatus[d.verificationStatus] = (doctorsByVerificationStatus[d.verificationStatus] || 0) + 1;
+    const appointmentsByStatus = {};
+    for (const a of appointments) appointmentsByStatus[a.status] = (appointmentsByStatus[a.status] || 0) + 1;
+    const completed = appointmentsByStatus.COMPLETED || 0;
+    const noShow = appointmentsByStatus.NO_SHOW || 0;
+    const resolved = completed + noShow;
+    const isMxWeekend2 = (d) => {
+      const w = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Mexico_City', weekday: 'short' }).format(d);
+      return w === 'Sat' || w === 'Sun';
+    };
+    const businessHoursSince2 = (startIso) => {
+      let hours = 0;
+      const cursor = new Date(startIso);
+      const now = new Date();
+      while (cursor.getTime() < now.getTime()) {
+        if (!isMxWeekend2(cursor)) hours += 1;
+        cursor.setTime(cursor.getTime() + 60 * 60 * 1000);
+      }
+      return hours;
+    };
+    const pendingDoctors = registeredDoctors.map(u => u.doctor).filter(d => d.verificationStatus === 'SUBMITTED' || d.verificationStatus === 'IN_REVIEW');
+    const overdue = pendingDoctors.filter(d => businessHoursSince2(d.createdAt) >= 24).length;
+    return sendJson({
+      doctorsByVerificationStatus,
+      activeDoctors30d: 1,
+      appointmentsByStatus,
+      noShowRate: resolved > 0 ? noShow / resolved : null,
+      signedNotesCount: 0,
+      prescriptionsIssuedCount: 0,
+      verificationQueue: { pending: pendingDoctors.length, overdue },
+      mrr: null,
+      churn: null
+    });
   }
 
   if (pathname.match(/^\/admin\/doctors\/[^\/]+$/) && method === 'GET') {
