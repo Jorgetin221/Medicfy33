@@ -3,6 +3,7 @@ import { IdentityModule } from "../identity/identity.module";
 import { DoctorsModule } from "../doctors/doctors.module";
 import { SchedulingModule } from "../scheduling/scheduling.module";
 import { LabsModule } from "../labs/labs.module";
+import { NotificationsModule } from "../notifications/notifications.module";
 import { CareRelationshipGuard } from "../../common/guards/care-relationship.guard";
 import { PrescriptionService } from "./services/prescription.service";
 import { PrescriptionPdfService } from "./services/prescription-pdf.service";
@@ -21,7 +22,7 @@ import { LocalDiskFileStorageAdapter } from "../doctors/services/local-disk-file
 // instancia) — mismo patrón ya establecido en LabsModule, más simple
 // que exportarlo desde DoctorsModule.
 @Module({
-  imports: [IdentityModule, DoctorsModule, SchedulingModule, LabsModule],
+  imports: [IdentityModule, DoctorsModule, SchedulingModule, LabsModule, NotificationsModule],
   controllers: [PrescriptionsController, VerificationController, MedicationsController],
   providers: [
     PrescriptionService,

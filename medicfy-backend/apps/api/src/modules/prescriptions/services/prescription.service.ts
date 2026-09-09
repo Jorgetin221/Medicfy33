@@ -14,6 +14,17 @@ import { FILE_STORAGE_PORT, type FileStoragePort } from "../../doctors/services/
 import { PrescriptionPdfService } from "./prescription-pdf.service";
 import { derivePrescriptionStatus } from "../prescription-status.util";
 import { crossCheckAllergies } from "../allergy-cross-check.util";
+import { NotificationsService } from "../../notifications/services/notifications.service";
+import { NotificationLinkService } from "../../notifications/services/notification-link.service";
+import { renderPrescriptionAvailable } from "../../notifications/services/notification-templates";
+
+function mustGetAppBaseUrl(): string {
+  const url = process.env.APP_BASE_URL;
+  if (!url) {
+    throw new Error("APP_BASE_URL is not set");
+  }
+  return url;
+}
 
 // M9 — RECETA ELECTRÓNICA (Grupos III-VI). R5/M9-RN-012: Grupos I/II
 // bloqueados, bloqueo duro. M9-RN-006: nunca UPDATE, "cancelar" y
@@ -25,7 +36,9 @@ export class PrescriptionService {
     private readonly signatureVerification: SignatureVerificationService,
     private readonly pdfService: PrescriptionPdfService,
     @Inject(FILE_STORAGE_PORT) private readonly fileStorage: FileStoragePort,
-    private readonly audit: AuditService
+    private readonly audit: AuditService,
+    private readonly notificationsService: NotificationsService,
+    private readonly notificationLinkService: NotificationLinkService
   ) {}
 
   // Corrección v2.1 de especificacion-plataforma-clinica-con-ia.md
@@ -325,6 +338,32 @@ export class PrescriptionService {
       result: "SUCCESS",
       metadata: { folio, documentType: "RECETA" },
     });
+
+    // M12/R2: la notificación solo dice "tienes una receta nueva" —
+    // nunca medicamento, dosis ni diagnóstico (ver
+    // notification-templates.spec.ts, que lo verifica). Sin
+    // reintentos: un fallo de envío no debe impedir devolver la
+    // receta ya emitida y firmada al médico.
+    if (patient.userId) {
+      try {
+        const { plainToken } = await this.notificationLinkService.issue(patient.userId, "prescription", prescription.id);
+        const actionLink = this.notificationLinkService.buildUrl(mustGetAppBaseUrl(), plainToken);
+        await this.notificationsService.send({
+          userId: patient.userId,
+          templateCode: "PRESCRIPTION_AVAILABLE",
+          rendered: renderPrescriptionAvailable({
+            recipientFirstName: patient.firstName,
+            doctorDisplayName: doctor.displayName ?? `Dr(a). ${doctor.legalFirstName} ${doctor.legalLastName}`,
+            actionLink,
+          }),
+          relatedEntityType: "prescription",
+          relatedEntityId: prescription.id,
+        });
+      } catch {
+        // Registrado dentro de NotificationsService (Notification.status
+        // = FAILED); aquí no hay nada más que hacer.
+      }
+    }
 
     return {
       interactionWarnings,
