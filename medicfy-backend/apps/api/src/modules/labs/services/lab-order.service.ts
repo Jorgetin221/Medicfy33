@@ -11,6 +11,17 @@ import { SignatureVerificationService } from "../../identity/services/signature-
 import { FILE_STORAGE_PORT, type FileStoragePort } from "../../doctors/services/file-storage.port";
 import { LabOrderPdfService } from "./lab-order-pdf.service";
 import { assertEncounterEditableForDocuments } from "../../../common/encounter-editable.util";
+import { NotificationsService } from "../../notifications/services/notifications.service";
+import { NotificationLinkService } from "../../notifications/services/notification-link.service";
+import { renderLabOrderAvailable, renderLabResultAvailable } from "../../notifications/services/notification-templates";
+
+function mustGetAppBaseUrl(): string {
+  const url = process.env.APP_BASE_URL;
+  if (!url) {
+    throw new Error("APP_BASE_URL is not set");
+  }
+  return url;
+}
 
 // M10 — ÓRDENES DE LABORATORIO (parcial en MVP, spec §2.2): PDF
 // firmado, sin portal de laboratorio. R1: lab_orders es append-only
@@ -22,7 +33,9 @@ export class LabOrderService {
     private readonly prisma: PrismaService,
     private readonly signatureVerification: SignatureVerificationService,
     private readonly pdfService: LabOrderPdfService,
-    @Inject(FILE_STORAGE_PORT) private readonly fileStorage: FileStoragePort
+    @Inject(FILE_STORAGE_PORT) private readonly fileStorage: FileStoragePort,
+    private readonly notificationsService: NotificationsService,
+    private readonly notificationLinkService: NotificationLinkService
   ) {}
 
   // A diferencia de recetas (M9-RN-009), ninguna regla M10 exige
@@ -129,7 +142,7 @@ export class LabOrderService {
     const pdfFileKey = `lab-orders/${folio}/orden.pdf`;
     await this.fileStorage.store({ fileKey: pdfFileKey, buffer: pdfBuffer, contentType: "application/pdf" });
 
-    return this.prisma.labOrder.create({
+    const labOrder = await this.prisma.labOrder.create({
       data: {
         encounterId,
         patientId,
@@ -150,6 +163,32 @@ export class LabOrderService {
       },
       include: { items: true },
     });
+
+    // M12/R2: solo "tienes una orden nueva" — nunca el estudio ni el
+    // motivo clínico (verificado por notification-templates.spec.ts).
+    // Sin reintentos: un fallo de envío no impide devolver la orden ya
+    // emitida al médico.
+    if (patient.userId) {
+      try {
+        const { plainToken } = await this.notificationLinkService.issue(patient.userId, "lab_order", labOrder.id);
+        const actionLink = this.notificationLinkService.buildUrl(mustGetAppBaseUrl(), plainToken);
+        await this.notificationsService.send({
+          userId: patient.userId,
+          templateCode: "LAB_ORDER_AVAILABLE",
+          rendered: renderLabOrderAvailable({
+            recipientFirstName: patient.firstName,
+            doctorDisplayName: doctor.displayName ?? `Dr(a). ${doctor.legalFirstName} ${doctor.legalLastName}`,
+            actionLink,
+          }),
+          relatedEntityType: "lab_order",
+          relatedEntityId: labOrder.id,
+        });
+      } catch {
+        // Registrado dentro de NotificationsService (Notification.status = FAILED).
+      }
+    }
+
+    return labOrder;
   }
 
   async getPdf(labOrderId: string): Promise<{ buffer: Buffer; contentType: string }> {
@@ -181,7 +220,7 @@ export class LabOrderService {
     fileHashSha256: string,
     meta: LabResultUploadMetadataInput
   ) {
-    return this.prisma.labResult.create({
+    const result = await this.prisma.labResult.create({
       data: {
         patientId,
         uploadedByUserId,
@@ -195,6 +234,42 @@ export class LabOrderService {
         }),
       },
     });
+
+    // M12: LAB_RESULT_AVAILABLE solo cuando lo sube el MÉDICO — si lo
+    // sube el propio paciente (autoservicio, §6.7), notificarle "tienes
+    // un resultado nuevo" de algo que él mismo acaba de subir no tiene
+    // sentido. R2: el mensaje nunca dice el nombre del estudio ni el
+    // valor (renderLabResultAvailable no los recibe siquiera).
+    if (uploadedByRole === "DOCTOR") {
+      await this.notifyResultAvailable(patientId, uploadedByUserId, result.id);
+    }
+
+    return result;
+  }
+
+  private async notifyResultAvailable(patientId: string, doctorUserId: string, resultId: string): Promise<void> {
+    const [patient, doctor] = await Promise.all([
+      this.prisma.patient.findUnique({ where: { id: patientId } }),
+      this.prisma.doctor.findUnique({ where: { userId: doctorUserId } }),
+    ]);
+    if (!patient?.userId || !doctor) return;
+    try {
+      const { plainToken } = await this.notificationLinkService.issue(patient.userId, "lab_result", resultId);
+      const actionLink = this.notificationLinkService.buildUrl(mustGetAppBaseUrl(), plainToken);
+      await this.notificationsService.send({
+        userId: patient.userId,
+        templateCode: "LAB_RESULT_AVAILABLE",
+        rendered: renderLabResultAvailable({
+          recipientFirstName: patient.firstName,
+          doctorDisplayName: doctor.displayName ?? `Dr(a). ${doctor.legalFirstName} ${doctor.legalLastName}`,
+          actionLink,
+        }),
+        relatedEntityType: "lab_result",
+        relatedEntityId: resultId,
+      });
+    } catch {
+      // Registrado dentro de NotificationsService (Notification.status = FAILED).
+    }
   }
 
   // §6.7: existía subir y revisar, pero ninguna ruta para volver a

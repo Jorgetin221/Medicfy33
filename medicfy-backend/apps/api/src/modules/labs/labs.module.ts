@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { IdentityModule } from "../identity/identity.module";
 import { DoctorsModule } from "../doctors/doctors.module";
 import { SchedulingModule } from "../scheduling/scheduling.module";
+import { NotificationsModule } from "../notifications/notifications.module";
 import { CareRelationshipGuard } from "../../common/guards/care-relationship.guard";
 import { FILE_STORAGE_PORT } from "../doctors/services/file-storage.port";
 import { LocalDiskFileStorageAdapter } from "../doctors/services/local-disk-file-storage.adapter";
@@ -23,7 +24,7 @@ import { LabReferenceRangesController } from "./lab-reference-ranges.controller"
 // que DoctorsModule usa (stateless, sin problema en tener más de una
 // instancia) — más simple que exportarlo desde DoctorsModule.
 @Module({
-  imports: [IdentityModule, DoctorsModule, SchedulingModule],
+  imports: [IdentityModule, DoctorsModule, SchedulingModule, NotificationsModule],
   controllers: [
     LabOrdersController,
     LabResultsController,
