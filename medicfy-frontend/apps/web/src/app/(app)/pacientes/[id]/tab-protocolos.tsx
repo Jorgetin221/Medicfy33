@@ -186,6 +186,9 @@ function CloseInstanceForm({
         <TextInput id="closure-notes" value={closureNotes} onChange={(e) => setClosureNotes(e.target.value)} />
       </FieldWrapper>
       <div className="flex gap-3">
+        {/* `danger` (relleno rojo) justificado: este botón solo existe dentro del
+            formulario de cierre que el usuario ya abrió, con motivo elegido — es el
+            paso de confirmación, no una acción en reposo. Ver ui/button.tsx. */}
         <Button type="submit" variant="danger" isLoading={isSubmitting}>
           Cerrar instancia
         </Button>

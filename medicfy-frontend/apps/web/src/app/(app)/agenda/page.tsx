@@ -194,7 +194,7 @@ function AgendaList({ accessToken }: { accessToken: string }) {
                       </Button>
                     ) : null}
                     {appt.status === "SCHEDULED" || appt.status === "CONFIRMED" ? (
-                      <Button type="button" variant="danger" onClick={() => cancelAppointment(appt.id)}>
+                      <Button type="button" variant="destructive" onClick={() => cancelAppointment(appt.id)}>
                         Cancelar
                       </Button>
                     ) : null}

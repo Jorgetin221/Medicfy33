@@ -425,7 +425,7 @@ export function TabOrdenes({
                     <span className="text-sm text-gray-500">{LAB_RESULT_FORMAT_HINT}</span>
                     <Button
                       type="button"
-                      variant="danger"
+                      variant="destructive"
                       isLoading={cancellingId === o.id}
                       onClick={() => void cancelOrder(o.id)}
                       className="min-h-11 px-3 text-sm"

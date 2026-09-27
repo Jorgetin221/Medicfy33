@@ -262,7 +262,7 @@ export function MedicationPicker({
                   <Button type="button" variant="secondary" onClick={() => editItem(index)} className="min-h-11 px-3 text-sm">
                     Editar
                   </Button>
-                  <Button type="button" variant="danger" onClick={() => removeItem(index)} className="min-h-11 px-3 text-sm">
+                  <Button type="button" variant="destructive" onClick={() => removeItem(index)} className="min-h-11 px-3 text-sm">
                     Quitar
                   </Button>
                 </div>

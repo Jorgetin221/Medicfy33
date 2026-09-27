@@ -348,7 +348,7 @@ function MfaSection({ accessToken }: { accessToken: string }) {
         {me && me.mfaEnabled && !enrollment ? (
           <div className="flex flex-col gap-3">
             <Aviso variant="exito" title="Verificación en dos pasos activada" />
-            <Button type="button" variant="danger" isLoading={isDisabling} onClick={() => void disableMfa()} className="w-fit">
+            <Button type="button" variant="destructive" isLoading={isDisabling} onClick={() => void disableMfa()} className="w-fit">
               Desactivar
             </Button>
           </div>

@@ -424,7 +424,7 @@ function PostCard({
             />
           </label>
         ) : null}
-        <Button type="button" variant="danger" isLoading={isBusy} onClick={() => void remove()} className="ml-auto">
+        <Button type="button" variant="destructive" isLoading={isBusy} onClick={() => void remove()} className="ml-auto">
           Eliminar
         </Button>
       </div>

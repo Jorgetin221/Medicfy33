@@ -209,7 +209,7 @@ export function LabOrderPanel({
                     <span className="block text-base text-gray-900">{item.studyLabel}</span>
                     <span className="block text-sm text-gray-500">Motivo: {item.motiveLabel}</span>
                   </span>
-                  <Button type="button" variant="danger" onClick={() => removeStudy(index)} className="min-h-11 px-3 text-sm">
+                  <Button type="button" variant="destructive" onClick={() => removeStudy(index)} className="min-h-11 px-3 text-sm">
                     Quitar
                   </Button>
                 </li>

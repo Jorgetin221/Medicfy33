@@ -184,6 +184,9 @@ function CancelNoteForm({
       </FieldWrapper>
       {error ? <ErrorState error={error} /> : null}
       <div className="flex gap-3">
+        {/* `danger` (relleno rojo) justificado: es el punto de no retorno de una
+            cancelación de nota firmada, tras contraseña y TOTP — la intención ya
+            está expresada dos veces. Ver ui/button.tsx. */}
         <Button type="submit" variant="danger" isLoading={isSubmitting}>
           Confirmar cancelación
         </Button>

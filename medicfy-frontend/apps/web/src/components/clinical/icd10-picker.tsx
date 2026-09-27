@@ -234,7 +234,7 @@ export function Icd10Picker({
                 <button type="button" onClick={() => toggleCertainty(index)} className="min-h-11 text-sm font-medium text-brand-700 underline">
                   {d.certainty === "CONFIRMED" ? "Marcar sospechado" : "Marcar confirmado"}
                 </button>
-                <Button type="button" variant="danger" onClick={() => removeDiagnosis(index)} className="min-h-11 px-3 text-sm">
+                <Button type="button" variant="destructive" onClick={() => removeDiagnosis(index)} className="min-h-11 px-3 text-sm">
                   Quitar
                 </Button>
               </div>

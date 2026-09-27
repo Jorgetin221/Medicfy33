@@ -164,7 +164,7 @@ export function TabRecetas({
                   {p.status !== "CANCELLED" && (
                     <Button
                       type="button"
-                      variant="danger"
+                      variant="destructive"
                       isLoading={cancellingId === p.id}
                       onClick={() => void cancelPrescription(p.id)}
                       className="min-h-11 px-3 text-sm"

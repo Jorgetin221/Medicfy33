@@ -254,6 +254,9 @@ function VerificacionDetail({ accessToken, doctorId }: { accessToken: string; do
             <FieldWrapper label="Motivo del rechazo" htmlFor="reject-reason">
               <Textarea id="reject-reason" rows={3} value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} />
             </FieldWrapper>
+            {/* `danger` (relleno rojo) justificado: revocación administrativa, y
+                está deshabilitado hasta que el admin escribe el motivo — la
+                intención ya está expresada. Ver ui/button.tsx. */}
             <Button
               type="button"
               variant="danger"
@@ -271,6 +274,9 @@ function VerificacionDetail({ accessToken, doctorId }: { accessToken: string; do
               Cancela sus citas futuras pagadas, notifica a los pacientes afectados con su derecho a reembolso, y no borra su perfil ni sus
               expedientes.
             </p>
+            {/* `danger` (relleno rojo) justificado: suspender cancela citas pagadas y
+                notifica a pacientes — revocación administrativa irreversible, y el
+                párrafo de arriba enumera la consecuencia. Ver ui/button.tsx. */}
             <Button type="button" variant="danger" isLoading={isSuspending} onClick={() => void onSuspend()}>
               Suspender
             </Button>
