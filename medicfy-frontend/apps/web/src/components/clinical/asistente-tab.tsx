@@ -90,7 +90,8 @@ export function AsistenteTab({ encounterId, accessToken }: { encounterId: string
     }
   }
 
-  const latest = readings && readings.length > 0 ? readings[readings.length - 1] : undefined;
+  // El backend entrega las lecturas en orden createdAt DESC (la más nueva primero).
+  const latest = readings && readings.length > 0 ? readings[0] : undefined;
   const reading = latest?.reading;
 
   return (

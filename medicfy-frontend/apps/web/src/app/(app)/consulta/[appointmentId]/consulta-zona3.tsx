@@ -160,8 +160,20 @@ export function ConsultaZona3({
 
   return (
     <>
-      {/* Escritorio (≥1024px): panel fijo a la derecha. */}
-      <aside className="hidden w-96 shrink-0 lg:block" aria-label="Zona 3 — consulta del expediente">
+      {/* Escritorio (≥1024px): panel fijo a la derecha.
+
+          Ancho por tramos: entre 1024 y 1535 px el rail de navegación ya se
+          lleva 224 px, y con Zona 3 en 384 la nota clínica quedaba en 338 —
+          más angosta que este panel de referencia. A partir de 1536 sobra
+          espacio y recupera los 384.
+
+          `sticky` con scroll propio, igual que Zona 1: la nota mide varios
+          miles de píxeles y sin esto el expediente se iba con el scroll
+          justo cuando sirve para contrastar lo que se está escribiendo. */}
+      <aside
+        className="sticky top-4 hidden h-[calc(100vh-2rem)] shrink-0 overflow-y-auto lg:block lg:w-80 2xl:w-96"
+        aria-label="Zona 3 — consulta del expediente"
+      >
         {panel}
       </aside>
 
