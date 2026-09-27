@@ -96,29 +96,29 @@ entorno, sin que su propio código cambie una línea.
 
 ## Pasos de implementación
 
-1. [ ] Agregar la variante `destructive` a `ui/button.tsx` y documentar la gramática de las
+1. [x] Agregar la variante `destructive` a `ui/button.tsx` y documentar la gramática de las
        cuatro variantes en el propio archivo (commit: `feat(ui): agregar variante destructive al boton`)
-2. [ ] Migrar los 12 usos de `variant="danger"` a `destructive`, conservando `danger` solo en
+2. [x] Migrar los 12 usos de `variant="danger"` a `destructive`, conservando `danger` solo en
        los pasos de confirmación y en las revocaciones de admin
        (commit: `refactor(ui): reservar el rojo solido a confirmaciones y alertas`)
-3. [ ] Corregir la jerarquía de acciones de `/agenda`: `Iniciar` / `Continuar consulta` pasan a
+3. [x] Corregir la jerarquía de acciones de `/agenda`: `Iniciar` / `Continuar consulta` pasan a
        `primary` (commit: `fix(agenda): elevar Iniciar consulta a accion primaria`)
-4. [ ] Navegación responsive: rail oculto bajo `md`, encabezado con menú y panel lateral
+4. [x] Navegación responsive: rail oculto bajo `md`, encabezado con menú y panel lateral
        (commit: `fix(ui): navegacion utilizable en telefono`)
 
 ## Criterios de aceptación
 
-- [ ] CA-1: ningún botón de relleno rojo aparece en una pantalla en reposo. Verificable:
+- [x] CA-1: ningún botón de relleno rojo aparece en una pantalla en reposo. Verificable:
       `grep -rn 'variant="danger"' src` devuelve solo llamadas dentro de un bloque de
       confirmación o de administración, y cada una lleva comentario que lo justifica.
-- [ ] CA-2: en `/agenda`, el elemento de mayor peso visual de cada tarjeta de cita es
+- [x] CA-2: en `/agenda`, el elemento de mayor peso visual de cada tarjeta de cita es
       `Iniciar`, no `Cancelar`. Verificable por captura.
-- [ ] CA-3: a 390 px de ancho, `/agenda` no produce desbordamiento horizontal y ningún
+- [x] CA-3: a 390 px de ancho, `/agenda` no produce desbordamiento horizontal y ningún
       nombre de paciente se parte en más de dos renglones. Verificable por captura.
-- [ ] CA-4: el menú móvil se abre y cierra con teclado (`Escape`), expone `aria-expanded`
+- [x] CA-4: el menú móvil se abre y cierra con teclado (`Escape`), expone `aria-expanded`
       y conserva área táctil de 44×44 px (§5).
-- [ ] CA-5: `AllergySummary` y los usos de `critical-*` quedan byte a byte iguales.
-- [ ] CA-6: `pnpm lint` y `pnpm typecheck` en verde.
+- [x] CA-5: `AllergySummary` y los usos de `critical-*` quedan byte a byte iguales.
+- [x] CA-6: `pnpm lint` y `pnpm typecheck` en verde.
 
 ## Plan de pruebas
 
@@ -157,3 +157,53 @@ Se dejan escritas para no perderlas; ninguna se implementa aquí.
 - **F8 · Datos del mock en inglés.** La severidad de alergia llega como `CRITICAL` y se
   pinta tal cual en la alerta. `AllergySummary` hace lo correcto (severity es texto libre del
   médico); el dato ficticio de `dev-server.mjs` es el que está en inglés.
+
+---
+
+## Resultado final
+
+**Estado:** Completado
+
+**Commits incluidos:**
+- `docs(planes): plan de implementación para pase-diseno-ux-fase1`
+- `feat(ui): agregar variante destructive al boton`
+- `refactor(ui): reservar el rojo solido a confirmaciones y alertas`
+- `fix(agenda): elevar Iniciar consulta a accion primaria`
+- `fix(ui): navegacion utilizable en telefono`
+- `fix(ui): los velos de los modales eran invisibles` *(boyscout)*
+
+**Pruebas:** 0 backend (sin cambios) / 5 frontend en verde / 6 E2E: 1 en verde,
+5 en rojo **preexistentes** — ver nota abajo. `tsc --noEmit` y `eslint` limpios.
+
+**Verificación visual** (app corriendo, mock server + `next dev`):
+- CA-1 ✓ — 4 usos de relleno rojo, todos en confirmación o revocación admin, cada
+  uno con comentario que lo justifica.
+- CA-2 ✓ — `Iniciar` es el elemento de mayor peso de cada tarjeta de cita.
+- CA-3 ✓ — 390 px: `scrollWidth` 390 = `clientWidth` 390, sin desbordamiento.
+- CA-4 ✓ — `aria-expanded="false"` en reposo, área táctil 44×44, abre con clic,
+  cierra con `Escape`.
+- CA-5 ✓ — `allergy-summary.tsx` y `timeline.tsx` sin un solo byte de cambio.
+- CA-6 ✓ — lint y typecheck en verde.
+
+## Notas para el equipo
+
+**Las 5 E2E en rojo son preexistentes, no regresión de este pase.** Todas fallan
+en `getByTestId('pregnancy-banner')` — un banner que depende de una paciente
+embarazada sembrada por `e2e/global-setup.ts`, que el mock `dev-server.mjs` no
+sirve. Verificado empíricamente: se revirtió `apps/web` al commit anterior al
+pase (`a4d510b`), se reinició el servidor y se corrió la misma spec — mismos dos
+fallos, mismo error exacto. Las suites E2E necesitan la API real o un mock que
+sirva el embarazo; **queda como deuda abierta, anterior a este trabajo.**
+
+**Hallazgo de sistema que conviene no perder:** en este tema, `bg-<token>/<alfa>`
+compila a transparente en silencio para cualquier token definido como
+`var(--x)` con un hex. Cualquier código nuevo que escriba `bg-brand-700/20`
+tendrá el mismo problema sin avisar. La solución de fondo —tokens en canales
+("16 22 35") más `rgb(var(--x) / <alpha-value>)` en `tailwind.config.ts`— toca
+todos los usos de `var(--*)` en CSS y no se hizo aquí; los tres valores con
+alfa que el diseño necesita hoy quedan como tokens propios. Si alguien añade un
+cuarto, que lo añada ahí y no con un modificador de opacidad.
+
+**La deuda mayor sigue en pie:** F2 (densidad de listas) y F3 (`DOC-06`
+desaprovecha el ancho, formulario de 2 531 px en una columna de 300 px) son los
+dos que más afectan el trabajo diario del médico. Este pase no los toca.
