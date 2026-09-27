@@ -131,7 +131,10 @@ export function PacienteConsultaScreen({ patientId, accessToken }: { patientId: 
   }
 
   return (
-    <main className="mx-auto flex max-w-6xl flex-col gap-6 p-6 lg:flex-row">
+    // Mismo reparto de ancho que la consulta por cita — ver el comentario en
+    // consulta-screen.tsx: las dos laterales quedan fijas y la nota absorbe
+    // todo el crecimiento.
+    <main className="mx-auto flex max-w-[2200px] flex-col gap-6 p-6 lg:flex-row">
       <ConsultaSidebar
         patientId={patientId}
         patient={patient}

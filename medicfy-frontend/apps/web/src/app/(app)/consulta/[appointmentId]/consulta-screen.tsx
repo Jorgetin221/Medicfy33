@@ -212,7 +212,15 @@ export function ConsultaScreen({ appointmentId, accessToken }: { appointmentId: 
   }
 
   return (
-    <main className="mx-auto flex max-w-6xl flex-col gap-6 p-6 lg:flex-row">
+    // El ancho sobrante pertenece a la nota. Zona 1 (w-72) y Zona 3 (w-96)
+    // muestran contenido de tamaño conocido y no ganan nada con más espacio;
+    // la nota es el único contenido productivo de la pantalla. Antes el tope
+    // era `max-w-6xl` (1152 px) —un ancho de columna de lectura, pensado para
+    // artículos— y con las dos laterales fijas la aritmética dejaba la nota en
+    // 384 px: más angosta que el panel de consulta de al lado, e idéntica en
+    // un monitor de 1440 y en uno de 1920. El tope holgado evita el extremo
+    // opuesto: a 2200 px de main la nota queda en ~1400, todavía legible.
+    <main className="mx-auto flex max-w-[2200px] flex-col gap-6 p-6 lg:flex-row">
       <ConsultaSidebar
         patientId={appointment.patientId}
         patient={appointment.patient}
