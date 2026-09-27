@@ -60,6 +60,25 @@ por una nota de 4 000 px el expediente se va con el scroll, justo cuando el méd
 necesita para contrastar lo que escribe. La asimetría entre las dos laterales no parece
 deliberada — Zona 1 tiene el tratamiento correcto y Zona 3 se quedó sin él.
 
+### Corrección al plan (durante la implementación)
+
+Quitar el tope arregló 1440 y 1920, pero **a 1280 no cambió nada**: ahí el límite no era
+`max-w-6xl` sino el rail de navegación, que se lleva 224 px del viewport. El `<main>` sigue
+midiendo 1056 px y la nota se quedaba en 338, todavía más angosta que Zona 3 (384). CA-2
+fallaba en el viewport que §6 declara de referencia.
+
+Se añade un tramo de ancho a Zona 3: **320 px entre 1024 y 1535, 384 px a partir de 1536**.
+Donde el espacio es escaso, el panel de referencia cede; donde sobra, lo recupera.
+
+Se descartó la alternativa de plegar el rail automáticamente en `DOC-06`. Es mejor idea de
+producto —durante una consulta el médico no navega, escribe— pero `collapsed` es una
+preferencia del usuario persistida en `localStorage`, y plegarla desde la pantalla exige
+coordinar estado entre `AppNav` y la página sin pisar lo que el médico eligió. Es un cambio
+mayor que este plan, y queda anotado para decidirse aparte.
+
+También se descartó angostar Zona 1: su contenido es justo lo que §6 exige ver sin scroll a
+1280×800, y hacerla más estrecha lo vuelve más alto.
+
 **Lo que este pase NO toca:** la altura de 4 000 px. Reestructurar el formulario en secciones
 plegables afecta el requisito de §6 de completar una consulta de seguimiento sin tocar el
 ratón —un acordeón añade pasos de teclado— y merece decidirse con criterio clínico, no de
@@ -69,8 +88,8 @@ paso. Se mide el efecto que el ancho tiene sobre la altura y se reporta; nada m�
 
 1. [ ] `<main>` de `DOC-06` deja de topar en `max-w-6xl`; el ancho sobrante va a la columna
        central (commit: `fix(consulta): dar el ancho sobrante a la nota clinica`)
-2. [ ] Zona 3 pasa a `sticky` con scroll propio, en paridad con Zona 1
-       (commit: `fix(consulta): fijar el panel del expediente al hacer scroll`)
+2. [ ] Zona 3: tramo de ancho 320/384 y `sticky` con scroll propio, en paridad con Zona 1
+       (commit: `fix(consulta): ajustar y fijar el panel del expediente`)
 
 ## Criterios de aceptación
 
@@ -78,7 +97,8 @@ paso. Se mide el efecto que el ancho tiene sobre la altura y se reporta; nada m�
 - [ ] CA-2: en los tres viewports la nota es **más ancha que Zona 3**, nunca al revés.
 - [ ] CA-3: a 1280×800 se conserva §6 — alergias, antecedentes y últimas consultas visibles
       sin scroll ni clic. Verificable con el spec `doc06-tableta.spec.ts`.
-- [ ] CA-4: Zona 1 y Zona 3 conservan su ancho (288 y 384) y su orden en los tres viewports.
+- [ ] CA-4: Zona 1 conserva 288 px y el orden de las tres zonas no cambia. Zona 3 mide 320
+      entre 1024 y 1535, y 384 a partir de 1536 (ver corrección al plan).
 - [ ] CA-5: al hacer scroll 2 000 px en la nota, el panel de Zona 3 sigue visible.
 - [ ] CA-6: sin desbordamiento horizontal en 1280, 1440 y 1920.
 - [ ] CA-7: `tsc --noEmit` y `eslint` limpios.
