@@ -58,7 +58,7 @@ export function Panel({
         type="button"
         aria-label="Cerrar panel"
         onClick={onClose}
-        className="absolute inset-0 bg-gray-900/40"
+        className="absolute inset-0 bg-overlay"
       />
       <aside
         role="dialog"

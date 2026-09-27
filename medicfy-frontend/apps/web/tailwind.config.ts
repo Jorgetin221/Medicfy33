@@ -24,6 +24,10 @@ export default {
           "icon-active-bg": "var(--rail-icon-active-bg)",
           "icon-active": "var(--rail-icon-active)",
         },
+        // Ver globals.css: con alfa horneada, porque `bg-<token>/<opacidad>`
+        // compila a transparente sobre los tokens de este tema.
+        overlay: "var(--overlay)",
+        glow: { strong: "var(--brand-glow-strong)", soft: "var(--brand-glow-soft)" },
         danger: { 600: "var(--danger-600)", 50: "var(--danger-050)" },
         warn: { 600: "var(--warn-600)", 50: "var(--warn-050)" },
         success: { 600: "var(--success-600)", 50: "var(--success-050)" },

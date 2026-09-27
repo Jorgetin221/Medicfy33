@@ -42,11 +42,11 @@ export function AuthLayout({
       <div className="relative hidden flex-col justify-center gap-10 overflow-hidden bg-brand-900 px-12 py-16 text-white lg:flex lg:px-16">
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-brand-700/40 blur-3xl"
+          className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-glow-strong blur-3xl"
         />
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute -bottom-32 -left-16 h-80 w-80 rounded-full bg-brand-500/20 blur-3xl"
+          className="pointer-events-none absolute -bottom-32 -left-16 h-80 w-80 rounded-full bg-glow-soft blur-3xl"
         />
         <div className="relative flex flex-col gap-4">
           <h2 className="font-heading text-3xl leading-tight">{panelTitle}</h2>

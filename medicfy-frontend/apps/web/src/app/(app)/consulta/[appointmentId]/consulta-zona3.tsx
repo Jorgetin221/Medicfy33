@@ -183,7 +183,7 @@ export function ConsultaZona3({
               type="button"
               aria-label="Cerrar panel"
               onClick={() => setIsOpen(false)}
-              className="absolute inset-0 bg-gray-900/40"
+              className="absolute inset-0 bg-overlay"
             />
             <div className="absolute inset-y-0 right-0 flex w-80 max-w-[85vw] flex-col bg-white p-4 shadow-card">
               <Button type="button" variant="secondary" onClick={() => setIsOpen(false)} className="mb-3 min-h-11 self-end">

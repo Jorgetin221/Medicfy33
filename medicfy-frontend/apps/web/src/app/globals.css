@@ -27,6 +27,18 @@
   --rail-icon-active-bg: var(--brand-700);
   --rail-icon-active: #ffffff;
 
+  /* Colores con alfa — no se pueden expresar como `bg-<token>/<opacidad>`.
+     Tailwind solo deriva alfa de un color cuando puede inyectarla en el
+     valor, y estos tokens guardan un hex completo (`#101623`), no canales
+     separados ("16 22 35"). `bg-gray-900/40` no falla ruidosamente: compila
+     a `rgba(0, 0, 0, 0)` y el elemento queda transparente. Así estuvieron
+     los velos de TODOS los modales de la app y los destellos del login.
+     Si algún día los tokens pasan a canales, estos tres se derivan y
+     desaparecen. */
+  --overlay: rgba(16, 22, 35, 0.45); /* velo de modales y cajones — gray-900 */
+  --brand-glow-strong: rgba(15, 118, 110, 0.4); /* brand-700 */
+  --brand-glow-soft: rgba(20, 184, 166, 0.2); /* brand-500 */
+
   --danger-600: #b3261e;
   --danger-050: #fdecea;
   --warn-600: #8a5a00;
