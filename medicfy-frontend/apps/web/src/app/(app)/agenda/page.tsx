@@ -188,8 +188,12 @@ function AgendaList({ accessToken }: { accessToken: string }) {
                         Confirmar
                       </Button>
                     ) : null}
+                    {/* Iniciar es la acción que esta pantalla existe para provocar:
+                        va en primario. Antes era `secondary` mientras Cancelar era
+                        rojo sólido — el botón que el médico pulsa decenas de veces
+                        al día pesaba menos que el que casi nunca debe pulsar. */}
                     {appt.status === "SCHEDULED" || appt.status === "CONFIRMED" ? (
-                      <Button type="button" variant="secondary" onClick={() => startAppointment(appt.id)}>
+                      <Button type="button" onClick={() => startAppointment(appt.id)}>
                         Iniciar
                       </Button>
                     ) : null}
