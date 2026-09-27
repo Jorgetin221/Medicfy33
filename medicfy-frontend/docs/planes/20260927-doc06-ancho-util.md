@@ -86,22 +86,22 @@ paso. Se mide el efecto que el ancho tiene sobre la altura y se reporta; nada m�
 
 ## Pasos de implementación
 
-1. [ ] `<main>` de `DOC-06` deja de topar en `max-w-6xl`; el ancho sobrante va a la columna
+1. [x] `<main>` de `DOC-06` deja de topar en `max-w-6xl`; el ancho sobrante va a la columna
        central (commit: `fix(consulta): dar el ancho sobrante a la nota clinica`)
-2. [ ] Zona 3: tramo de ancho 320/384 y `sticky` con scroll propio, en paridad con Zona 1
+2. [x] Zona 3: tramo de ancho 320/384 y `sticky` con scroll propio, en paridad con Zona 1
        (commit: `fix(consulta): ajustar y fijar el panel del expediente`)
 
 ## Criterios de aceptación
 
-- [ ] CA-1: a 1920×1080 la nota mide **más de 800 px** (hoy 384).
-- [ ] CA-2: en los tres viewports la nota es **más ancha que Zona 3**, nunca al revés.
-- [ ] CA-3: a 1280×800 se conserva §6 — alergias, antecedentes y últimas consultas visibles
+- [x] CA-1: a 1920×1080 la nota mide **más de 800 px** (hoy 384).
+- [x] CA-2: en los tres viewports la nota es **más ancha que Zona 3**, nunca al revés.
+- [x] CA-3: a 1280×800 se conserva §6 — alergias, antecedentes y últimas consultas visibles
       sin scroll ni clic. Verificable con el spec `doc06-tableta.spec.ts`.
-- [ ] CA-4: Zona 1 conserva 288 px y el orden de las tres zonas no cambia. Zona 3 mide 320
+- [x] CA-4: Zona 1 conserva 288 px y el orden de las tres zonas no cambia. Zona 3 mide 320
       entre 1024 y 1535, y 384 a partir de 1536 (ver corrección al plan).
-- [ ] CA-5: al hacer scroll 2 000 px en la nota, el panel de Zona 3 sigue visible.
-- [ ] CA-6: sin desbordamiento horizontal en 1280, 1440 y 1920.
-- [ ] CA-7: `tsc --noEmit` y `eslint` limpios.
+- [x] CA-5: al hacer scroll 2 000 px en la nota, el panel de Zona 3 sigue visible.
+- [x] CA-6: sin desbordamiento horizontal en 1280, 1440 y 1920.
+- [x] CA-7: `tsc --noEmit` y `eslint` limpios.
 
 ## Plan de pruebas
 
@@ -113,3 +113,67 @@ paso. Se mide el efecto que el ancho tiene sobre la altura y se reporta; nada m�
   medición directa en el navegador, documentada abajo, y no por el spec.
 - Verificación visual: medición programática de anchos y altura en 1280/1440/1920 antes y
   después, más captura de cada uno.
+
+---
+
+## Resultado final
+
+**Estado:** Completado
+
+**Commits incluidos:**
+- `docs(planes): plan de implementación para doc06-ancho-util`
+- `docs(planes): corregir plan doc06-ancho-util tras medir a 1280`
+- `fix(consulta): dar el ancho sobrante a la nota clinica`
+- `fix(consulta): ajustar y fijar el panel del expediente`
+- `fix(ui): overflow-x-hidden rompia todos los sticky de la app` *(boyscout)*
+
+**Pruebas:** 0 backend (sin cambios) / 5 frontend en verde. `tsc --noEmit` y `eslint`
+limpios. E2E sin correr: la suite no puede sembrar (ver Plan de pruebas).
+
+### Medición antes / después
+
+| Viewport | Nota antes | Nota después | Zona 3 | Alto antes | Alto después |
+|---|---|---|---|---|---|
+| 1280×800 | 338 | **352** | 320 | 4 479 | 4 131 |
+| 1440×900 | 384 | **512** | 320 | 4 110 | 3 823 |
+| 1920×1080 | 384 | **928** | 384 | 4 110 | 3 422 |
+
+- CA-1 ✓ — 928 px a 1920 (exigía > 800).
+- CA-2 ✓ — la nota supera a Zona 3 en los tres viewports (antes era menor o igual).
+- CA-3 ✓ — a 1280×800 Zona 1 entra completa sin scroll, con alergias, antecedentes y
+  últimas consultas. Medido en el navegador, no por el spec.
+- CA-4 ✓ — Zona 1 en 288 px y orden de zonas sin cambios; Zona 3 en el tramo acordado.
+- CA-5 ✓ — tras bajar 2 000 px, ambas laterales quedan en `top: 16`.
+- CA-6 ✓ — 0 px de desbordamiento en 1280/1440/1920, y 390 px en móvil sigue en 0.
+- CA-7 ✓.
+
+La altura bajó **688 px a 1920** sin tocar la estructura del formulario: con más ancho las
+rejillas internas dejan de apilarse. No era un objetivo del plan, es un efecto medido.
+
+## Notas para el equipo
+
+**Hallazgo mayor que el del plan: `position: sticky` no funcionaba en ninguna pantalla de la
+app.** El contenedor de `(app)/layout.tsx` llevaba `overflow-x-hidden`, y `overflow-x: hidden`
+obliga al navegador a calcular `overflow-y: auto` — eso convierte al div en contenedor de
+scroll, y cualquier `sticky` dentro se ancla a él en vez de al viewport, así que nunca se
+activa. Zona 1 declaraba `lg:sticky lg:top-4` desde que se escribió, con comentario
+explicando por qué lo necesitaba, y **nunca se fijó**. `overflow-x-clip` recorta igual sin
+crear contenedor de scroll.
+
+Es el mismo patrón que `bg-<token>/<alfa>` (plan del 26 sep): CSS que se lee correcto,
+compila sin error y no hace nada. Conviene desconfiar de cualquier propiedad de layout que
+no se haya verificado en el navegador — `getComputedStyle` y una medición valen más que la
+lectura del código.
+
+**Lo que sigue pendiente en `DOC-06`:**
+- La altura: 3 422 px a 1920 sigue siendo un formulario largo en una sola columna. Con el
+  ancho recuperado, ahora sí hay espacio para dos columnas en las secciones de captura
+  (vitales, antecedentes), que es la vía que no requiere plegar nada ni añadir pasos de
+  teclado. Merece su propio plan.
+- Plegar el rail de navegación durante la consulta: recuperaría 160 px en tabletas de
+  1280, donde el espacio es más escaso. Requiere coordinar estado con `AppNav` sin pisar la
+  preferencia del médico.
+- El cronómetro de la nota («Tiempo transcurrido … rebasado») llegó a mostrar 1037:40 en
+  pruebas, porque cuenta desde que se abrió el encuentro aunque nadie esté trabajando. Como
+  métrica de negocio (§6, M8-RN-013) tiene sentido; como texto permanente sobre la nota,
+  informa mal y presiona. Decisión de producto.
