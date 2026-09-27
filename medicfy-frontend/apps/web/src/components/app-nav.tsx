@@ -17,6 +17,8 @@ import {
   IconMegaphone,
   IconChevronNav,
   IconLogout,
+  IconMenu,
+  IconClose,
 } from "@/components/ui/nav-icons";
 
 const NAV_LINKS = [
@@ -54,6 +56,10 @@ export function AppNav() {
   const router = useRouter();
   const { accessToken, isLoading, logout } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
+  // Solo aplica bajo `md`. Deliberadamente NO se persiste: un panel que
+  // tapa el contenido debe abrirse siempre cerrado, a diferencia de
+  // `collapsed`, que es una preferencia de ancho del rail de escritorio.
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
     try {
@@ -63,6 +69,21 @@ export function AppNav() {
       // dato clínico, no es fatal perderla.
     }
   }, []);
+
+  // Navegar cierra el panel: en móvil tapa el contenido al que se acaba
+  // de llegar.
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setMobileOpen(false);
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [mobileOpen]);
 
   function toggleCollapsed() {
     setCollapsed((prev) => {
@@ -91,8 +112,11 @@ export function AppNav() {
     return pathname === href || pathname.startsWith(`${href}/`);
   }
 
+  // `collapsed` es preferencia del rail de escritorio: dentro del panel
+  // móvil, que ya ocupa 256 px, esconder las etiquetas no ahorra nada y deja
+  // una columna de íconos sin nombre. De ahí que se acote con `md:`.
   function itemClassName(active: boolean) {
-    return `flex min-h-11 items-center gap-3 rounded-md px-3 ${collapsed ? "justify-center px-0" : ""} ${
+    return `flex min-h-11 items-center gap-3 rounded-md px-3 ${collapsed ? "md:justify-center md:px-0" : ""} ${
       active ? "bg-rail-icon-active-bg text-rail-icon-active" : "text-rail-icon hover:bg-white/10"
     }`;
   }
@@ -101,24 +125,67 @@ export function AppNav() {
     return (
       <>
         <Icon className="h-6 w-6 shrink-0" />
-        {!collapsed ? <span className="truncate text-sm">{label}</span> : null}
+        <span className={`truncate text-sm ${collapsed ? "md:hidden" : ""}`}>{label}</span>
       </>
     );
   }
 
+  // El rail vive en el flujo del documento en escritorio y se convierte en
+  // panel lateral sobre el contenido bajo `md`. Antes era `w-56` fijo sin un
+  // solo breakpoint: a 390 px dejaba 166 px de contenido y partía los nombres
+  // de los pacientes letra a letra.
+  const navClassName = [
+    mobileOpen ? "fixed inset-y-0 left-0 z-50 flex w-64" : "hidden",
+    "md:sticky md:top-0 md:z-auto md:flex md:h-screen md:shrink-0",
+    collapsed ? "md:w-16 md:items-center" : "md:w-56",
+    "h-screen flex-col gap-2 overflow-y-auto bg-rail-bg px-2 py-4",
+  ].join(" ");
+
   return (
-    <nav
-      aria-label="Navegación principal"
-      className={`sticky top-0 flex h-screen shrink-0 flex-col gap-2 overflow-y-auto bg-rail-bg px-2 py-4 ${collapsed ? "w-16 items-center" : "w-56"}`}
-    >
-      <Link
-        href="/agenda"
-        aria-label="Medicfy — ir a Agenda"
-        className={`mb-2 flex min-h-11 items-center gap-2 rounded-md bg-rail-icon-active-bg px-3 text-rail-icon-active ${collapsed ? "w-11 justify-center px-0" : ""}`}
-      >
-        <IconPulse className="h-6 w-6 shrink-0" />
-        {!collapsed ? <span className="font-heading text-base">Medicfy</span> : null}
-      </Link>
+    <>
+      {/* Encabezado móvil: sustituye al rail bajo `md`. `h-14` compensado con
+          el `pt-14 md:pt-0` del contenido en (app)/layout.tsx. */}
+      <header className="fixed inset-x-0 top-0 z-40 flex h-14 items-center gap-1 bg-rail-bg px-2 md:hidden">
+        <button
+          type="button"
+          onClick={() => setMobileOpen(true)}
+          aria-label="Abrir navegación"
+          aria-expanded={mobileOpen}
+          aria-controls="nav-principal"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-rail-icon hover:bg-white/10"
+        >
+          <IconMenu className="h-6 w-6" />
+        </button>
+        <Link href="/agenda" aria-label="Medicfy — ir a Agenda" className="flex min-h-11 items-center gap-2 rounded-md px-2 text-rail-icon-active">
+          <IconPulse className="h-6 w-6 shrink-0" />
+          <span className="font-heading text-base">Medicfy</span>
+        </Link>
+      </header>
+
+      {mobileOpen ? (
+        <div className="fixed inset-0 z-40 bg-overlay md:hidden" onClick={() => setMobileOpen(false)} aria-hidden="true" />
+      ) : null}
+
+      <nav id="nav-principal" aria-label="Navegación principal" className={navClassName}>
+        <div className="mb-2 flex items-center gap-1">
+          <Link
+            href="/agenda"
+            aria-label="Medicfy — ir a Agenda"
+            className={`flex min-h-11 flex-1 items-center gap-2 rounded-md bg-rail-icon-active-bg px-3 text-rail-icon-active ${collapsed ? "md:w-11 md:flex-none md:justify-center md:px-0" : ""}`}
+          >
+            <IconPulse className="h-6 w-6 shrink-0" />
+            {!collapsed ? <span className="font-heading text-base">Medicfy</span> : <span className="font-heading text-base md:hidden">Medicfy</span>}
+          </Link>
+          {/* Cerrar alcanzable sin depender del velo (táctil y teclado). */}
+          <button
+            type="button"
+            onClick={() => setMobileOpen(false)}
+            aria-label="Cerrar navegación"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-rail-icon hover:bg-white/10 md:hidden"
+          >
+            <IconClose className="h-6 w-6" />
+          </button>
+        </div>
 
       <ul className="flex flex-1 flex-col gap-1">
         {NAV_LINKS.map(({ href, label, Icon }) => {
@@ -163,7 +230,8 @@ export function AppNav() {
             <NavLabel Icon={IconLogout} label="Cerrar sesión" />
           </button>
         </li>
-        <li>
+        {/* Plegar el rail no tiene sentido en el panel móvil: ahí se cierra. */}
+        <li className="hidden md:block">
           <button
             type="button"
             onClick={toggleCollapsed}
@@ -176,6 +244,7 @@ export function AppNav() {
           </button>
         </li>
       </ul>
-    </nav>
+      </nav>
+    </>
   );
 }
