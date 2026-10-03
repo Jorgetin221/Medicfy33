@@ -4,6 +4,19 @@ import type { AuditLog, AuditResult, Prisma } from "@prisma/client";
 import { PrismaService } from "../../../prisma/prisma.service";
 import { buildAuditLogChainHashInput, sha256Hex } from "../../../common/content-hash.util";
 
+// M15-RN-002 agregó `sequence BigInt?` a audit_log. Express serializa
+// las respuestas con JSON.stringify, que lanza TypeError ante un BigInt
+// ("Do not know how to serialize a BigInt") y convierte la respuesta en
+// un 500. Las filas se exponen tal cual en los endpoints de bitácora,
+// así que `sequence` se proyecta a string —la representación JSON
+// habitual de un entero de 64 bits— en vez de omitirse, para no perder
+// el dato que ancla cada fila a la cadena de integridad.
+export type SerializableAuditLog = Omit<AuditLog, "sequence"> & { sequence: string | null };
+
+function toSerializableAuditLog(row: AuditLog): SerializableAuditLog {
+  return { ...row, sequence: row.sequence === null ? null : row.sequence.toString() };
+}
+
 export interface AuditEntry {
   actorUserId?: string;
   actorRole?: string;
@@ -106,29 +119,31 @@ export class AuditService {
   // qué expediente, cuándo y desde dónde. Incluye las lecturas del
   // propio médico tratante." — audit_log ya se llena en cada lectura
   // clínica de toda la app (R3); esto es lo que faltaba: leerlo.
-  async listForPatient(patientId: string, limit = 200): Promise<AuditLog[]> {
-    return this.prisma.auditLog.findMany({
+  async listForPatient(patientId: string, limit = 200): Promise<SerializableAuditLog[]> {
+    const rows = await this.prisma.auditLog.findMany({
       where: { patientId },
       orderBy: { occurredAt: "desc" },
       take: limit,
     });
+    return rows.map(toSerializableAuditLog);
   }
 
   // "Panel de auditoría para el médico titular: quién ha visto a sus
   // pacientes" — agrega sobre TODOS los pacientes con care_relationship
   // activo con este médico, sin acotar a un paciente de la ruta (a
   // diferencia de listForPatient).
-  async listForDoctorPatients(doctorId: string, limit = 200): Promise<AuditLog[]> {
+  async listForDoctorPatients(doctorId: string, limit = 200): Promise<SerializableAuditLog[]> {
     const relationships = await this.prisma.careRelationship.findMany({
       where: { doctorId, status: "ACTIVE" },
       select: { patientId: true },
     });
     const patientIds = relationships.map((r) => r.patientId);
     if (patientIds.length === 0) return [];
-    return this.prisma.auditLog.findMany({
+    const rows = await this.prisma.auditLog.findMany({
       where: { patientId: { in: patientIds } },
       orderBy: { occurredAt: "desc" },
       take: limit,
     });
+    return rows.map(toSerializableAuditLog);
   }
 }

@@ -225,6 +225,14 @@ describe("Integridad de la cadena de firmas y bitácora de acceso", () => {
       .set("Authorization", `Bearer ${doctor.accessToken}`);
     expect(panel.status).toBe(200);
     expect(panel.body.some((e: { patientId: string | null }) => e.patientId === patientId)).toBe(true);
+    // M15-RN-002 agregó `sequence BigInt?` a audit_log, y JSON.stringify
+    // no sabe serializar un BigInt: sin proyectarlo a string este
+    // endpoint responde 500 en vez de la bitácora. Toda fila escrita
+    // después del encadenamiento trae sequence, así que basta con que
+    // haya alguna para que el bug se dispare.
+    const conSequence = panel.body.filter((e: { sequence: unknown }) => e.sequence !== null);
+    expect(conSequence.length).toBeGreaterThan(0);
+    expect(conSequence.every((e: { sequence: unknown }) => typeof e.sequence === "string")).toBe(true);
   });
 
   it("un médico sin ningún paciente con vínculo activo recibe una bitácora vacía, no la de todos los pacientes de la app", async () => {
