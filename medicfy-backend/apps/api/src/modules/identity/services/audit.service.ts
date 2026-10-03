@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Injectable } from "@nestjs/common";
-import type { AuditLog, AuditResult, Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+import type { AuditLog, AuditResult } from "@prisma/client";
 import { PrismaService } from "../../../prisma/prisma.service";
 import { buildAuditLogChainHashInput, sha256Hex } from "../../../common/content-hash.util";
 
@@ -106,7 +107,23 @@ export class AuditService {
       );
 
       await tx.auditLog.create({
-        data: { id, ...data, occurredAt, sequence, hashSha256, previousHashSha256 },
+        data: {
+          id,
+          ...data,
+          // Prisma tipa una columna Json nullable como
+          // InputJsonValue | JsonNull | DbNull: un `null` a secas no
+          // compila (y rompía `nest build`). JsonNull es exactamente lo
+          // que esta ruta ya venía escribiendo —json 'null', no SQL
+          // NULL—, así que nombrarlo no cambia lo almacenado. Se
+          // sustituye SOLO aquí, nunca en `data`, porque `data.metadata`
+          // alimenta buildAuditLogChainHashInput: cambiarlo recalcularía
+          // el hash de toda fila sin metadata y rompería la cadena.
+          metadata: data.metadata === null ? Prisma.JsonNull : data.metadata,
+          occurredAt,
+          sequence,
+          hashSha256,
+          previousHashSha256,
+        },
       });
 
       await tx.$executeRaw`
