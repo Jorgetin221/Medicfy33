@@ -50,6 +50,19 @@ function getTrackerByIpAndUser(req: Record<string, unknown>): string {
     ThrottlerModule.forRoot({
       throttlers: [{ name: "default", ttl: 60_000, limit: 120 }],
       getTracker: getTrackerByIpAndUser,
+      // Las pruebas de integración registran y autentican decenas de
+      // usuarios seguidos contra la misma IP: con el limitador activo
+      // agotan AuthThrottle (10/min) y reciben 429 donde esperan 201,
+      // porque getTracker agrupa por IP mientras la ruta aún no está
+      // autenticada — justo el caso de /auth/register y /auth/login,
+      // por donde entra casi toda prueba. vitest fija NODE_ENV=test y
+      // .env deja "development" fuera de pruebas, así que desarrollo y
+      // producción no cambian de comportamiento.
+      //
+      // Esto NO deja el mecanismo sin cobertura: rate-limit.spec.ts
+      // levanta su propio módulo con su propio ThrottlerGuard y sigue
+      // exigiendo 429 al superar el límite, sin pasar por este skipIf.
+      skipIf: () => process.env.NODE_ENV === "test",
     }),
     PrismaModule,
     HealthModule,
