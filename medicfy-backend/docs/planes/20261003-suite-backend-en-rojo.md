@@ -1,8 +1,8 @@
 # Plan: devolver la suite del backend a verde (throttler global + BigInt en audit_log)
 
 **Fecha:** 2026-10-03
-**Reglas de especificación involucradas:** M15-RN-010 (rate limiting), M15-RN-002 (encadenamiento de hashes en audit_log), R3 (toda lectura de dato clínico se audita)
-**Estimación de pasos:** 2 commits de código + 1 de cierre
+**Reglas de especificación involucradas:** M15-RN-010 (rate limiting), M15-RN-002 (encadenamiento de hashes en audit_log), M13-CA-003 / M13-RN-005 (antigüedad de la cola de verificación), R3 (toda lectura de dato clínico se audita)
+**Estimación de pasos:** 3 commits de código + 1 de cierre
 
 ## Contexto
 
@@ -65,22 +65,58 @@ médico que abra `/auditoria` con filas ya encadenadas recibe un error en vez de
 su bitácora. Como R3 obliga a registrar toda lectura clínica, las filas con
 `sequence` no nulo son la norma, no la excepción.
 
+### Fallo 3 — `businessHoursSince` construye un `Intl.DateTimeFormat` por hora
+
+Descubierto al ejecutar la suite ya con los pasos 1 y 2 aplicados: el último
+fallo no era un 429 sino un **timeout de 5 s** en `GET /admin/metrics`. No lo
+causaba la base —las seis agregaciones del endpoint tardan ~10 ms medidas
+directamente en psql— sino `businessHoursSince` (commit `504779c`, M13-CA-003).
+
+La función avanza **hora por hora** desde la fecha de alta y construye un
+`Intl.DateTimeFormat` **nuevo en cada iteración** para saber si ese instante
+cae en sábado o domingo. Construir un formateador de `Intl` es caro; hacerlo
+por hora transcurrida lo es mucho más.
+
+`AdminMetricsService.getMetrics()` la llama **una vez por médico en cola**.
+Medido en esta máquina, con la cola real de la base de desarrollo (7,642
+médicos, el más antiguo del 2026-08-13):
+
+| | un médico (51 días) | extrapolado a 7,642 |
+|---|---|---|
+| formateador por hora (actual) | 31 ms | **237 s** |
+| formateador compartido | ~0 ms | ~0 s |
+
+Ambas variantes devuelven el mismo número (875 horas hábiles), así que izar el
+formateador a nivel de módulo es un cambio sin efecto sobre el resultado.
+
+**Esto también es un bug de producción, no residuo de pruebas.** El costo crece
+con el tamaño de la cola multiplicado por la antigüedad de cada solicitud:
+justo las dos cosas que aumentan cuando la verificación se retrasa, que es
+precisamente cuando el admin necesita el panel. Un médico esperando un año son
+~8,760 iteraciones solo para él.
+
 ## Pasos de implementación
 
-1. [ ] Paso 1 — `audit.service.ts`: proyectar `sequence` (BigInt) a `string`
+1. [x] Paso 1 — `audit.service.ts`: proyectar `sequence` (BigInt) a `string`
    antes de devolver las filas, en los dos métodos de listado. Se conserva el
    campo (no se omite) para no perder información que el verificador de cadena
    pueda necesitar; `string` es la representación JSON habitual de un entero de
    64 bits. Prueba primero: extender `note-integrity.integration.spec.ts` para
    exigir 200 y `typeof sequence === "string"`.
    (commit: `fix(identity): serializar sequence de audit_log como string`)
-2. [ ] Paso 2 — `app.module.ts`: añadir `skipIf` al `ThrottlerModule` para
+2. [x] Paso 2 — `app.module.ts`: añadir `skipIf` al `ThrottlerModule` para
    desactivar el limitador cuando `NODE_ENV === "test"`. Verificado que vitest
    fija `NODE_ENV=test` y que `.env` deja `development` fuera de pruebas, así
    que producción y desarrollo quedan intactos. La cobertura del mecanismo la
    sigue dando `rate-limit.spec.ts`, que levanta su propio módulo con su propio
    guard y por tanto **no** se ve afectado por `skipIf`.
    (commit: `fix(security): no aplicar el rate limiting en entorno de pruebas`)
+
+3. [ ] Paso 3 — `business-hours.util.ts`: izar el `Intl.DateTimeFormat` a una
+   constante de módulo y reutilizarlo, en vez de construir uno por iteración.
+   Prueba primero: un test que fija la equivalencia con la implementación
+   anterior sobre rangos variados y acota el tiempo de una cola grande.
+   (commit: `fix(admin): reutilizar el formateador de Intl en businessHoursSince`)
 
 ## Criterios de aceptación
 
@@ -90,6 +126,9 @@ su bitácora. Como R3 obliga a registrar toda lectura clínica, las filas con
 - [ ] CA-3: `rate-limit.spec.ts` sigue en verde — el mecanismo de 429 se sigue
       verificando pese al `skipIf`.
 - [ ] CA-4: La suite completa del backend queda en verde (0 fallidas).
+- [ ] CA-7: `GET /admin/metrics` responde dentro del timeout por defecto de
+      vitest (5 s) con la cola real de la base de desarrollo, y
+      `businessHoursSince` devuelve exactamente los mismos valores que antes.
 - [ ] CA-5: La suite del frontend sigue en verde.
 - [ ] CA-6: `/auditoria` carga la bitácora en la app real sin 500.
 
