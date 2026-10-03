@@ -27,7 +27,12 @@ function uniquePhone(): string {
   return `+52${Math.floor(1000000000 + Math.random() * 8999999999)}`;
 }
 function uniqueCedula(): string {
-  return Math.floor(1000000 + Math.random() * 8999999).toString();
+  // 8 dígitos: el formato admite 7 u 8 (cedulaSchema), y las cédulas ya
+  // acumuladas en la base de desarrollo son todas de 7, así que este
+  // rango es disjunto de ellas. Con 7 dígitos el espacio (9M) se
+  // rozaba con los miles de médicos de prueba acumulados y el registro
+  // devolvía 409 de forma intermitente, en un archivo distinto cada vez.
+  return Math.floor(10000000 + Math.random() * 89999999).toString();
 }
 function totpFromUri(otpauthUri: string): string {
   const url = new URL(otpauthUri);

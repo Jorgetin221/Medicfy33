@@ -116,7 +116,9 @@ describe("M5-RN-009 — autoregistro de paciente crea también su fila patients"
       password: STRONG_PASSWORD,
       legalFirstName: "Ana",
       legalLastName: "García",
-      professionalLicense: Math.floor(1000000 + Math.random() * 8999999).toString(),
+      // 8 dígitos, por el mismo motivo que el resto de las pruebas: el
+      // rango de 7 ya se rozaba con los médicos de prueba acumulados.
+      professionalLicense: Math.floor(10000000 + Math.random() * 89999999).toString(),
       primarySpecialtyCode: "GENERAL",
       phone: uniquePhone(),
     });
