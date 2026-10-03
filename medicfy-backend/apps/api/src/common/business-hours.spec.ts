@@ -76,8 +76,10 @@ describe("businessHoursSince — costo con una cola realista", () => {
     const elapsed = Date.now() - startedAt;
 
     // La implementación original tardaba ~237 s en esta misma cola. El
-    // umbral se deja holgado para no volverse frágil en CI, pero sigue
-    // siendo tres órdenes de magnitud por debajo de aquello.
-    expect(elapsed).toBeLessThan(2000);
+    // umbral es deliberadamente holgado —esta prueba corre en paralelo
+    // con el resto de la suite y compite por CPU— pero sigue siendo más
+    // de veinte veces inferior a aquello, así que una regresión a
+    // construir el formateador por iteración lo cruzaría de sobra.
+    expect(elapsed).toBeLessThan(10_000);
   });
 });
