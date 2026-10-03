@@ -11,8 +11,17 @@ const MX_TIME_ZONE = "America/Mexico_City";
 // CLAUDE.md §4 ("ningún cálculo de horario en el navegador") es la
 // razón de que esto viva en el servidor — el frontend solo formatea
 // el número que este módulo ya calculó.
+// Construir un Intl.DateTimeFormat es caro, y businessHoursSince lo
+// consultaba una vez por hora transcurrida, por cada médico en la cola
+// de verificación: con la cola real eso llevaba GET /admin/metrics a
+// timeout (~237 s medidos). El formateador no guarda estado entre
+// llamadas, así que se construye una sola vez y se reutiliza; el
+// resultado es idéntico (lo fija business-hours.spec.ts contra la
+// implementación anterior).
+const MX_WEEKDAY_FORMATTER = new Intl.DateTimeFormat("en-US", { timeZone: MX_TIME_ZONE, weekday: "short" });
+
 export function isMexicoCityWeekend(date: Date): boolean {
-  const weekday = new Intl.DateTimeFormat("en-US", { timeZone: MX_TIME_ZONE, weekday: "short" }).format(date);
+  const weekday = MX_WEEKDAY_FORMATTER.format(date);
   return weekday === "Sat" || weekday === "Sun";
 }
 
