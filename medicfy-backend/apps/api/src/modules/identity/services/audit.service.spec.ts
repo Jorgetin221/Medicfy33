@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildAuditLogChainHashInput, sha256Hex } from "../../../common/content-hash.util";
 import { AuditService } from "./audit.service";
+import { Prisma } from "@prisma/client";
 
 // M15-RN-002: estas pruebas cubren el encadenamiento de hashes, no la
 // persistencia real (no hay Postgres en este entorno) — se mockea
@@ -113,9 +114,17 @@ describe("AuditService.log — encadenamiento de hashes (M15-RN-002)", () => {
     expect(recomputed).toBe(row.hashSha256);
   });
 
-  it("metadata ausente se guarda como null (columna Json?, nunca undefined)", async () => {
+  it("metadata ausente se guarda como Prisma.JsonNull (columna Json?, nunca undefined)", async () => {
     await service.log({ action: "no.metadata", resourceType: "r", result: "DENIED" });
-    expect(mock.createdRows[0]!.metadata).toBeNull();
+    // Prisma tipa una columna Json nullable como
+    // InputJsonValue | JsonNull | DbNull, así que el valor explícito que
+    // viaja al create es el centinela JsonNull, no un `null` crudo.
+    // Equivalen en la base: ambos escriben json 'null' (no SQL NULL),
+    // que es lo que las filas encadenadas ya contenían antes del cambio.
+    expect(mock.createdRows[0]!.metadata).toBe(Prisma.JsonNull);
+    // Lo que esta prueba cuida de verdad: nunca `undefined`, porque
+    // Prisma lo interpretaría como "no toques esta columna".
+    expect(mock.createdRows[0]!.metadata).not.toBeUndefined();
   });
 
   it("bloquea la fila puntero con FOR UPDATE antes de calcular el hash (no lee sin bloquear)", async () => {
