@@ -6,6 +6,10 @@ import Link from "next/link";
 import { apiFetch, expectArray } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
 import { Card, EmptyState, ErrorState, LoadingState } from "@/components/ui/states";
+import { useI18n } from "@/lib/i18n/context";
+import { formatDateTimeMedium } from "@/lib/i18n/format";
+import type { MessageKey } from "@/lib/i18n/dictionaries";
+import { translateKeyed } from "@/lib/i18n/keyed";
 
 interface AuditLogEntry {
   id: string;
@@ -19,12 +23,12 @@ interface AuditLogEntry {
   occurredAt: string;
 }
 
-const MX_TIME_ZONE = "America/Mexico_City";
-function formatMxDateTime(iso: string): string {
-  return new Intl.DateTimeFormat("es-MX", { timeZone: MX_TIME_ZONE, dateStyle: "medium", timeStyle: "short" }).format(new Date(iso));
-}
-
-const ACTOR_ROLE_LABEL: Record<string, string> = { DOCTOR: "Médico", ASSISTANT: "Asistente", ADMIN: "Administrador", PATIENT: "Paciente" };
+const ACTOR_ROLE_LABEL_KEYS: Record<string, MessageKey> = {
+  DOCTOR: "auditoria.rol.DOCTOR",
+  ASSISTANT: "auditoria.rol.ASSISTANT",
+  ADMIN: "auditoria.rol.ADMIN",
+  PATIENT: "auditoria.rol.PATIENT",
+};
 
 // Fase 6 · Prompt 45: "panel de auditoría para el médico titular:
 // quién ha visto a sus pacientes." Lee GET /doctors/me/patient-access-log
@@ -56,6 +60,7 @@ export default function AuditoriaPage() {
 }
 
 function AuditoriaContent({ accessToken }: { accessToken: string }) {
+  const { t, locale } = useI18n();
   const [entries, setEntries] = useState<AuditLogEntry[] | null>(null);
   const [error, setError] = useState<unknown>(null);
 
@@ -68,39 +73,39 @@ function AuditoriaContent({ accessToken }: { accessToken: string }) {
   return (
     <main className="mx-auto flex max-w-4xl flex-col gap-6 p-6">
       <div>
-        <h1 className="font-heading text-2xl text-brand-900">Auditoría</h1>
-        <p className="text-base text-gray-500">Quién ha accedido al expediente de tus pacientes, cuándo y desde dónde — incluidos tus propios accesos.</p>
+        <h1 className="font-heading text-2xl text-brand-900">{t("auditoria.titulo")}</h1>
+        <p className="text-base text-gray-500">{t("auditoria.subtitulo")}</p>
       </div>
 
       <Card>
         {error ? <ErrorState error={error} /> : null}
-        {!entries && !error ? <LoadingState label="Cargando bitácora…" /> : null}
+        {!entries && !error ? <LoadingState label={t("auditoria.cargando")} /> : null}
         {entries && entries.length === 0 ? (
-          <EmptyState title="Sin registros todavía" description="Aquí aparecerá cada acceso al expediente de tus pacientes." />
+          <EmptyState title={t("auditoria.vacio")} description={t("auditoria.vacioAyuda")} />
         ) : null}
         {entries && entries.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] border-collapse text-left text-sm">
               <thead>
                 <tr className="border-b border-gray-300 text-gray-500">
-                  <th className="py-2 pr-3 font-medium">Cuándo</th>
-                  <th className="py-2 pr-3 font-medium">Quién</th>
-                  <th className="py-2 pr-3 font-medium">Acción</th>
-                  <th className="py-2 pr-3 font-medium">Paciente</th>
-                  <th className="py-2 pr-3 font-medium">Desde</th>
-                  <th className="py-2 font-medium">Resultado</th>
+                  <th className="py-2 pr-3 font-medium">{t("auditoria.cuando")}</th>
+                  <th className="py-2 pr-3 font-medium">{t("auditoria.quien")}</th>
+                  <th className="py-2 pr-3 font-medium">{t("auditoria.accion")}</th>
+                  <th className="py-2 pr-3 font-medium">{t("auditoria.paciente")}</th>
+                  <th className="py-2 pr-3 font-medium">{t("auditoria.desde")}</th>
+                  <th className="py-2 font-medium">{t("auditoria.resultado")}</th>
                 </tr>
               </thead>
               <tbody>
                 {entries.map((entry) => (
                   <tr key={entry.id} className="border-b border-gray-100 text-gray-900">
-                    <td className="py-2 pr-3 whitespace-nowrap">{formatMxDateTime(entry.occurredAt)}</td>
-                    <td className="py-2 pr-3">{entry.actorRole ? (ACTOR_ROLE_LABEL[entry.actorRole] ?? entry.actorRole) : "—"}</td>
+                    <td className="py-2 pr-3 whitespace-nowrap">{formatDateTimeMedium(locale, entry.occurredAt)}</td>
+                    <td className="py-2 pr-3">{entry.actorRole ? translateKeyed(t, ACTOR_ROLE_LABEL_KEYS, entry.actorRole) : "—"}</td>
                     <td className="py-2 pr-3 font-mono text-xs text-gray-700">{entry.action}</td>
                     <td className="py-2 pr-3">
                       {entry.patientId ? (
                         <Link href={`/pacientes/${entry.patientId}`} className="text-brand-700 underline">
-                          Ver expediente
+                          {t("auditoria.verExpediente")}
                         </Link>
                       ) : (
                         "—"
@@ -113,7 +118,7 @@ function AuditoriaContent({ accessToken }: { accessToken: string }) {
                           entry.result === "SUCCESS" ? "border-success-600 text-success-600" : "border-danger-600 text-danger-600"
                         }`}
                       >
-                        {entry.result === "SUCCESS" ? "Concedido" : "Denegado"}
+                        {entry.result === "SUCCESS" ? t("auditoria.concedido") : t("auditoria.denegado")}
                       </span>
                     </td>
                   </tr>

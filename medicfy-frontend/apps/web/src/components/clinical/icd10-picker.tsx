@@ -5,6 +5,7 @@ import type { EncounterDiagnosisInput } from "@medicfy/contracts";
 import { apiFetch } from "@/lib/api-client";
 import { TextInput, Textarea } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
+import { useT } from "@/lib/i18n/context";
 
 interface Icd10Result {
   code: string;
@@ -33,6 +34,7 @@ export function Icd10Picker({
   selected: EncounterDiagnosisInput[];
   onChange: (diagnoses: EncounterDiagnosisInput[]) => void;
 }) {
+  const t = useT();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Icd10Result[]>([]);
   // DOC-06: "consulta completa sin tocar el ratón" — el buscador se
@@ -104,7 +106,7 @@ export function Icd10Picker({
     <div className="flex flex-col gap-3">
       <div className="relative">
         <TextInput
-          placeholder="Buscar por código o descripción (CIE-10)…"
+          placeholder={t("clinico.diagnosticoPicker.buscar")}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => {
@@ -131,14 +133,14 @@ export function Icd10Picker({
           aria-expanded={results.length > 0}
           aria-controls="icd10-results"
           aria-activedescendant={highlightedIndex >= 0 ? `icd10-option-${highlightedIndex}` : undefined}
-          aria-label="Buscar diagnóstico CIE-10"
+          aria-label={t("clinico.diagnosticoPicker.buscarEtiqueta")}
         />
         {query.trim().length >= 2 && (
           <div id="icd10-results" role="listbox" className="absolute z-10 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-gray-300 bg-white shadow-card">
             {isSearching ? (
-              <p className="p-3 text-sm text-gray-500">Buscando…</p>
+              <p className="p-3 text-sm text-gray-500">{t("clinico.diagnosticoPicker.buscando")}</p>
             ) : results.length === 0 ? (
-              <p className="p-3 text-sm text-gray-500">Sin resultados para &quot;{query}&quot;.</p>
+              <p className="p-3 text-sm text-gray-500">{t("clinico.diagnosticoPicker.sinResultadosPara", { consulta: query })}</p>
             ) : (
               results.map((r, index) => (
                 <button
@@ -164,26 +166,25 @@ export function Icd10Picker({
 
       {!showManualForm ? (
         <button type="button" onClick={() => setShowManualForm(true)} className="min-h-11 w-fit text-sm font-medium text-brand-700 underline">
-          No tengo un código CIE-10 para este diagnóstico
+          {t("clinico.diagnosticoPicker.sinCodigo")}
         </button>
       ) : (
         <div className="flex flex-col gap-3 rounded-md border border-gray-300 p-4">
           <p className="text-sm text-gray-500">
-            El diagnóstico principal necesita un código CIE-10 (M8-RN-006). Usa esto solo cuando de verdad no aplique ninguno — se guarda con
-            tu justificación como parte del expediente.
+            {t("clinico.diagnosticoPicker.sinCodigoAviso")}
           </p>
           <TextInput
-            placeholder="Descripción del diagnóstico"
+            placeholder={t("clinico.diagnosticoPicker.descripcion")}
             value={manualDescription}
             onChange={(e) => setManualDescription(e.target.value)}
-            aria-label="Descripción del diagnóstico sin código CIE-10"
+            aria-label={t("clinico.diagnosticoPicker.descripcionEtiqueta")}
           />
           <Textarea
-            placeholder="¿Por qué no hay código CIE-10? (mínimo 10 caracteres)"
+            placeholder={t("clinico.diagnosticoPicker.razon")}
             rows={2}
             value={manualReason}
             onChange={(e) => setManualReason(e.target.value)}
-            aria-label="Razón por la que no hay código CIE-10"
+            aria-label={t("clinico.diagnosticoPicker.razonEtiqueta")}
           />
           <div className="flex gap-3">
             <Button
@@ -195,17 +196,17 @@ export function Icd10Picker({
                 setManualReason("");
               }}
             >
-              Cancelar
+              {t("common.acciones.cancelar")}
             </Button>
             <Button type="button" disabled={manualDescription.trim().length === 0 || manualReason.trim().length < 10} onClick={addManualDiagnosis}>
-              Agregar sin código
+              {t("clinico.diagnosticoPicker.agregarSinCodigo")}
             </Button>
           </div>
         </div>
       )}
 
       {selected.length === 0 ? (
-        <p className="text-sm text-gray-500">Sin diagnósticos agregados todavía.</p>
+        <p className="text-sm text-gray-500">{t("clinico.diagnosticoPicker.sinDiagnosticos")}</p>
       ) : (
         <ul className="flex flex-col gap-2">
           {selected.map((d, index) => (

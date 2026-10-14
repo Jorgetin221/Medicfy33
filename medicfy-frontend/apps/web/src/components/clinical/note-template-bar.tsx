@@ -5,6 +5,7 @@ import type { NoteTemplateCreateInput } from "@medicfy/contracts";
 import { apiFetch, ApiError, expectArray } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { TextInput, FieldWrapper } from "@/components/ui/field";
+import { useT } from "@/lib/i18n/context";
 
 export interface NoteTemplate {
   id: string;
@@ -27,6 +28,9 @@ export function NoteTemplateBar({
   pendingContent: string;
 }) {
   const [templates, setTemplates] = useState<NoteTemplate[]>([]);
+  // `tr` y no `t`: en este archivo `t` ya es el nombre de cada
+  // plantilla dentro del .map().
+  const tr = useT();
   const [isCreating, setIsCreating] = useState(false);
   const [label, setLabel] = useState("");
   const [shortcutKey, setShortcutKey] = useState("");
@@ -75,8 +79,8 @@ export function NoteTemplateBar({
 
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-md border border-dashed border-gray-300 p-2">
-      <span className="text-sm font-medium text-gray-500">Plantillas:</span>
-      {templates.length === 0 && !isCreating && <span className="text-sm text-gray-500">Ninguna todavía — escribe algo y guárdalo como plantilla.</span>}
+      <span className="text-sm font-medium text-gray-500">{tr("clinico.plantillas.etiqueta")}</span>
+      {templates.length === 0 && !isCreating && <span className="text-sm text-gray-500">{tr("clinico.plantillas.ninguna")}</span>}
       {templates.map((t) => (
         <span key={t.id} className="inline-flex items-center gap-1 rounded-full border border-gray-300 pl-3 pr-1 text-sm">
           <button type="button" onClick={() => onInsert(t.content)} className="min-h-11 py-1 font-medium text-gray-700 hover:text-brand-700">
@@ -86,7 +90,7 @@ export function NoteTemplateBar({
           <button
             type="button"
             onClick={() => removeTemplate(t.id)}
-            aria-label={`Eliminar plantilla ${t.label}`}
+            aria-label={tr("clinico.plantillas.eliminar", { nombre: t.label })}
             className="flex min-h-11 min-w-11 items-center justify-center text-gray-500 hover:text-danger-600"
           >
             ✕
@@ -102,18 +106,17 @@ export function NoteTemplateBar({
               se reinsertará en expedientes de OTROS pacientes y esas
               notas se firman y se vuelven inmutables. */}
           <div className="w-full rounded-md border border-warn-600 bg-warn-50 p-2">
-            <p className="text-sm font-medium text-gray-700">Esto es exactamente lo que se guardará como plantilla:</p>
+            <p className="text-sm font-medium text-gray-700">{tr("clinico.plantillas.vistaPrevia")}</p>
             <pre className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap text-sm text-gray-700">{pendingContent.trim()}</pre>
             <p className="mt-1 text-sm text-gray-600">
-              Revisa que no contenga datos del paciente actual (nombre, edad, teléfono, hallazgos específicos). Una plantilla se
-              reutiliza en expedientes de otros pacientes.
+              {tr("clinico.plantillas.advertencia")}
             </p>
           </div>
           <div className="flex flex-wrap items-end gap-2">
-          <FieldWrapper label="Nombre" htmlFor="template-label">
+          <FieldWrapper label={tr("clinico.plantillas.nombre")} htmlFor="template-label">
             <TextInput id="template-label" value={label} onChange={(e) => setLabel(e.target.value)} className="w-40" />
           </FieldWrapper>
-          <FieldWrapper label="Atajo Alt+ (1-9, opcional)" htmlFor="template-shortcut">
+          <FieldWrapper label={tr("clinico.plantillas.atajo")} htmlFor="template-shortcut">
             <TextInput
               id="template-shortcut"
               maxLength={1}
@@ -123,21 +126,21 @@ export function NoteTemplateBar({
             />
           </FieldWrapper>
           <Button type="button" onClick={saveAsTemplate} disabled={!label.trim() || !pendingContent.trim()} className="min-h-11 px-3 text-sm">
-            Guardar
+            {tr("common.acciones.guardar")}
           </Button>
           <Button type="button" variant="secondary" onClick={() => setIsCreating(false)} className="min-h-11 px-3 text-sm">
-            Cancelar
+            {tr("common.acciones.cancelar")}
           </Button>
           </div>
         </div>
       ) : (
         <Button type="button" variant="secondary" onClick={() => setIsCreating(true)} disabled={!pendingContent.trim()} className="min-h-11 px-3 text-sm">
-          + Guardar campo actual como plantilla
+          {tr("clinico.plantillas.guardarCampo")}
         </Button>
       )}
       {error ? (
         <p role="alert" className="w-full text-sm text-danger-600">
-          {error instanceof ApiError ? error.message : "No se pudo guardar la plantilla."}
+          {error instanceof ApiError ? error.message : tr("clinico.plantillas.noSePudoGuardar")}
         </p>
       ) : null}
     </div>

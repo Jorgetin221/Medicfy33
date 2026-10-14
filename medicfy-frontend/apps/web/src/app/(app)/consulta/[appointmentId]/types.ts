@@ -1,3 +1,4 @@
+import type { MessageKey } from "@/lib/i18n/dictionaries";
 // DOC-06 — formas de solo lectura del lado del cliente, reflejan lo
 // que appointment-state-machine.service.ts (findByIdWithDetails) y
 // clinical-encounter.service.ts (getById) ya devuelven.
@@ -91,9 +92,11 @@ export function patientAgeYears(birthDate: string): number {
   return age;
 }
 
-export const ENCOUNTER_TYPE_LABEL: Record<EncounterType, string> = {
-  FIRST_VISIT: "Historia clínica (primera vez)",
-  FOLLOW_UP: "Nota de evolución (seguimiento)",
-  TELECONSULTATION: "Teleconsulta",
-  URGENT: "Urgencia",
+// Clave de traducción, no texto: el tipo de encuentro encabeza cada
+// nota del expediente y debe leerse en el idioma elegido.
+export const ENCOUNTER_TYPE_LABEL_KEY: Record<EncounterType, MessageKey> = {
+  FIRST_VISIT: "tipoEncuentro.FIRST_VISIT",
+  FOLLOW_UP: "tipoEncuentro.FOLLOW_UP",
+  TELECONSULTATION: "tipoEncuentro.TELECONSULTATION",
+  URGENT: "tipoEncuentro.URGENT",
 };

@@ -5,11 +5,8 @@ import { useParams } from "next/navigation";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import { Card, LoadingState, ErrorState } from "@/components/ui/states";
 import { Aviso } from "@/components/ui/alert";
-
-const MX_TIME_ZONE = "America/Mexico_City";
-function formatMxDateTime(iso: string): string {
-  return new Intl.DateTimeFormat("es-MX", { timeZone: MX_TIME_ZONE, dateStyle: "long", timeStyle: "short" }).format(new Date(iso));
-}
+import { useI18n } from "@/lib/i18n/context";
+import { formatDateTimeLong } from "@/lib/i18n/format";
 
 interface VerificationResult {
   folio: string;
@@ -26,6 +23,7 @@ interface VerificationResult {
 // aprobado: "vista pública... fuera del route group (app)").
 export default function VerificarPage() {
   const params = useParams<{ token: string }>();
+  const { t, locale } = useI18n();
   const [result, setResult] = useState<VerificationResult | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -54,54 +52,53 @@ export default function VerificarPage() {
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-6 p-6">
       <div>
         <p className="font-brand text-lg text-brand-900">Medicfy</p>
-        <h1 className="font-heading text-2xl text-brand-900">Verificación de documento</h1>
+        <h1 className="font-heading text-2xl text-brand-900">{t("verificacionPublica.titulo")}</h1>
       </div>
 
       <Card>
         {isLoading ? (
-          <LoadingState label="Verificando…" />
+          <LoadingState label={t("verificacionPublica.verificando")} />
         ) : notFound ? (
-          <Aviso variant="advertencia" title="Documento no encontrado">
-            Este enlace no corresponde a una receta u orden emitida por Medicfy, o el código está incompleto.
+          <Aviso variant="advertencia" title={t("verificacionPublica.noEncontradoTitulo")}>
+            {t("verificacionPublica.noEncontradoCuerpo")}
           </Aviso>
         ) : error ? (
           <ErrorState error={error} />
         ) : result ? (
           <div className="flex flex-col gap-4">
             {result.status === "CANCELLED" ? (
-              <Aviso variant="critico" title="Documento cancelado">
-                Este {isPrescription ? "receta" : "orden de laboratorio"} fue cancelada por el médico y ya no es válida.
+              <Aviso variant="critico" title={t("verificacionPublica.canceladoTitulo")}>
+                {isPrescription ? t("verificacionPublica.canceladoReceta") : t("verificacionPublica.canceladoOrden")}
               </Aviso>
             ) : (
-              <Aviso variant="exito" title={`${isPrescription ? "Receta" : "Orden de laboratorio"} vigente`} />
+              <Aviso variant="exito" title={isPrescription ? t("verificacionPublica.vigenteReceta") : t("verificacionPublica.vigenteOrden")} />
             )}
             <dl className="flex flex-col gap-3">
               <div>
-                <dt className="text-sm font-medium text-gray-500">Folio</dt>
+                <dt className="text-sm font-medium text-gray-500">{t("verificacionPublica.folio")}</dt>
                 <dd className="text-base font-medium text-gray-900">{result.folio}</dd>
               </div>
               <div>
-                <dt className="text-sm font-medium text-gray-500">Fecha de emisión</dt>
-                <dd className="text-base text-gray-900">{formatMxDateTime(result.issuedAt)}</dd>
+                <dt className="text-sm font-medium text-gray-500">{t("verificacionPublica.fechaEmision")}</dt>
+                <dd className="text-base text-gray-900">{formatDateTimeLong(locale, result.issuedAt)}</dd>
               </div>
               {result.doctorName && (
                 <div>
-                  <dt className="text-sm font-medium text-gray-500">Médico</dt>
+                  <dt className="text-sm font-medium text-gray-500">{t("verificacionPublica.medico")}</dt>
                   <dd className="text-base text-gray-900">
-                    {result.doctorName} — Céd. {result.doctorLicense}
+                    {result.doctorName} — {t("verificacionPublica.cedulaAbreviada")} {result.doctorLicense}
                   </dd>
                 </div>
               )}
               {result.patientNameMasked && (
                 <div>
-                  <dt className="text-sm font-medium text-gray-500">Paciente</dt>
+                  <dt className="text-sm font-medium text-gray-500">{t("verificacionPublica.paciente")}</dt>
                   <dd className="text-base text-gray-900">{result.patientNameMasked}</dd>
                 </div>
               )}
             </dl>
             <p className="text-sm text-gray-500">
-              Esta verificación confirma que el documento fue emitido por Medicfy. No muestra diagnóstico, medicamentos ni resultados por
-              confidencialidad del paciente.
+              {t("verificacionPublica.nota")}
             </p>
           </div>
         ) : null}

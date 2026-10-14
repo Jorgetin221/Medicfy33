@@ -8,6 +8,8 @@ import { useAuth } from "@/lib/auth-context";
 import { Card, LoadingState, EmptyState, ErrorState } from "@/components/ui/states";
 import { IconPulse, IconLogout } from "@/components/ui/nav-icons";
 import { EstadoCita, type AppointmentStatus } from "@/components/ui/status-badge";
+import { useI18n, useT } from "@/lib/i18n/context";
+import { formatDateTimeLong } from "@/lib/i18n/format";
 
 interface OwnPatientProfile {
   id: string;
@@ -27,11 +29,6 @@ interface OwnAppointment {
   service: { name: string; durationMinutes: number };
 }
 
-const MX_TIME_ZONE = "America/Mexico_City";
-function formatMxDateTime(iso: string): string {
-  return new Intl.DateTimeFormat("es-MX", { timeZone: MX_TIME_ZONE, dateStyle: "long", timeStyle: "short" }).format(new Date(iso));
-}
-
 // M5-RN-009 (spec §7, v2.3): portal mínimo real de paciente — fuera
 // del grupo (app) a propósito, mismo criterio que /dr/[slug]: AppNav
 // es enteramente de médico (Agenda/Pacientes/Disponibilidad), no
@@ -39,6 +36,7 @@ function formatMxDateTime(iso: string): string {
 export default function MiCuentaPage() {
   const router = useRouter();
   const { accessToken, isLoading: authLoading, logout } = useAuth();
+  const t = useT();
 
   useEffect(() => {
     if (!authLoading && !accessToken) {
@@ -68,7 +66,7 @@ export default function MiCuentaPage() {
         </span>
         <button type="button" onClick={() => void handleLogout()} className="flex items-center gap-2 text-sm font-medium text-gray-700">
           <IconLogout className="h-5 w-5" />
-          Cerrar sesión
+          {t("nav.rail.cerrarSesion")}
         </button>
       </header>
       <MiCuentaContent accessToken={accessToken} />
@@ -77,6 +75,7 @@ export default function MiCuentaPage() {
 }
 
 function MiCuentaContent({ accessToken }: { accessToken: string }) {
+  const t = useT();
   const [profile, setProfile] = useState<OwnPatientProfile | null>(null);
   const [error, setError] = useState<unknown>(null);
 
@@ -99,15 +98,15 @@ function MiCuentaContent({ accessToken }: { accessToken: string }) {
   return (
     <main className="mx-auto flex max-w-2xl flex-col gap-6 p-6">
       <div>
-        <h1 className="font-heading text-2xl text-brand-900">Mi cuenta</h1>
-        <p className="text-base text-gray-500">Tus datos y tus citas con tus médicos.</p>
+        <h1 className="font-heading text-2xl text-brand-900">{t("cuenta.titulo")}</h1>
+        <p className="text-base text-gray-500">{t("cuenta.subtitulo")}</p>
       </div>
 
       {profile === null && !error ? <LoadingState /> : null}
       {notFound ? (
         <Card>
           <p className="text-base text-gray-700">
-            Tu cuenta todavía no tiene un expediente de paciente asociado. Contacta a tu médico para vincularlo.
+            {t("cuenta.sinExpediente")}
           </p>
         </Card>
       ) : null}
@@ -115,24 +114,24 @@ function MiCuentaContent({ accessToken }: { accessToken: string }) {
 
       {profile ? (
         <Card>
-          <h2 className="font-heading text-lg text-brand-900">Datos personales</h2>
+          <h2 className="font-heading text-lg text-brand-900">{t("cuenta.datosPersonales")}</h2>
           <dl className="mt-4 grid grid-cols-2 gap-4 text-base text-gray-900">
             <div>
-              <dt className="text-sm text-gray-500">Nombre</dt>
+              <dt className="text-sm text-gray-500">{t("cuenta.nombre")}</dt>
               <dd>
                 {profile.firstName} {profile.lastNamePaternal} {profile.lastNameMaternal ?? ""}
               </dd>
             </div>
             <div>
-              <dt className="text-sm text-gray-500">Medicfy ID</dt>
+              <dt className="text-sm text-gray-500">{t("cuenta.medicfyId")}</dt>
               <dd>{profile.medicfyId}</dd>
             </div>
             <div className="col-span-2 break-all">
-              <dt className="text-sm text-gray-500">Correo</dt>
+              <dt className="text-sm text-gray-500">{t("cuenta.correo")}</dt>
               <dd>{profile.email}</dd>
             </div>
             <div>
-              <dt className="text-sm text-gray-500">Teléfono</dt>
+              <dt className="text-sm text-gray-500">{t("cuenta.telefono")}</dt>
               <dd>{profile.phoneE164}</dd>
             </div>
           </dl>
@@ -145,6 +144,7 @@ function MiCuentaContent({ accessToken }: { accessToken: string }) {
 }
 
 function AppointmentsSection({ accessToken }: { accessToken: string }) {
+  const { t, locale } = useI18n();
   const [appointments, setAppointments] = useState<OwnAppointment[] | null>(null);
   const [error, setError] = useState<unknown>(null);
 
@@ -164,17 +164,17 @@ function AppointmentsSection({ accessToken }: { accessToken: string }) {
 
   return (
     <Card>
-      <h2 className="font-heading text-lg text-brand-900">Mis citas</h2>
+      <h2 className="font-heading text-lg text-brand-900">{t("cuenta.misCitas")}</h2>
       <div className="mt-4">
         {appointments === null && !error ? <LoadingState /> : null}
         {error ? <ErrorState error={error} /> : null}
         {appointments && appointments.length === 0 ? (
           <EmptyState
-            title="Sin citas todavía"
-            description="Agenda desde el perfil público de tu médico."
+            title={t("cuenta.sinCitas")}
+            description={t("cuenta.sinCitasAyuda")}
             action={
               <Link href="/doctores" className="text-sm font-medium text-brand-700 underline">
-                Buscar un médico
+                {t("cuenta.buscarMedico")}
               </Link>
             }
           />
@@ -188,7 +188,7 @@ function AppointmentsSection({ accessToken }: { accessToken: string }) {
                     {a.doctor.displayName ?? `${a.doctor.legalFirstName} ${a.doctor.legalLastName}`}
                   </p>
                   <p className="text-sm text-gray-500">
-                    {a.service.name} · {formatMxDateTime(a.startsAt)}
+                    {a.service.name} · {formatDateTimeLong(locale, a.startsAt)}
                   </p>
                 </div>
                 <EstadoCita status={a.status} />

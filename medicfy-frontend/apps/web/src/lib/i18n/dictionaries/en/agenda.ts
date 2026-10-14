@@ -1,0 +1,56 @@
+import type { agenda as esAgenda, citaNueva as esCitaNueva } from "../es/agenda";
+
+export const agenda: typeof esAgenda = {
+  titulo: "Schedule",
+  bloquearHorario: "Block time",
+  nuevaCita: "+ New appointment",
+  sinCitasHoy: "No appointments today",
+  sinCitasHoyAyuda: "Appointments you book for today will appear here.",
+  confirmarCancelar: "Cancel this appointment?",
+  confirmarNoShow: "Mark this appointment as a no-show?",
+  acciones: {
+    confirmar: "Confirm",
+    iniciar: "Start",
+    cancelar: "Cancel",
+    noSePresento: "No-show",
+    continuarConsulta: "Resume consultation",
+    cerrarSinNota: "Close without a clinical note",
+    confirmarCierre: "Confirm closing",
+    abrirConsulta: "Open consultation",
+  },
+  justificacionCierre:
+    'Justification — M5-RN-006 exception: this closes the appointment without a signed clinical note. The normal path is to sign the consultation from "Resume consultation".',
+  resumen: {
+    titulo: "Day summary",
+    atendidas: "Seen",
+    enConsulta: "In consultation",
+    porAtender: "Upcoming",
+    ausente: "No-show",
+  },
+  leyenda: "Appointment statuses",
+  siguiente: "Up next",
+};
+
+export const citaNueva: typeof esCitaNueva = {
+  titulo: "New appointment",
+  subtitulo: "Choose a patient, a service and an available slot.",
+  agendada: "Appointment booked",
+  verPerfilPaciente: "View patient profile",
+  atenderAhora: "Don't need to book? You can see them right now, without reserving a slot.",
+  espaciosDisponibles: "Available slots",
+  sinEspacios: "No slots available",
+  sinEspaciosAyuda: "Try another service, or set up more availability.",
+  elPaciente: "The patient",
+  agendadaCuerpo: "{paciente} — {fecha} at {hora}.",
+  irALaAgenda: "Go to the schedule",
+  paciente: "Patient",
+  sinPacientes: "No patients registered.",
+  registraUno: "Register one first.",
+  servicio: "Service",
+  sinServicios: "No services configured.",
+  configuraAgenda: "Set up your schedule first.",
+  atenderAhoraBoton: "See them now, without an appointment",
+  irADisponibilidad: "Go to Availability",
+  agendando: "Booking…",
+  seleccionaPaciente: "Select a patient to book an appointment.",
+};

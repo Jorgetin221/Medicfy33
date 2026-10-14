@@ -11,58 +11,63 @@ import { Aviso } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { FieldWrapper, SelectInput } from "@/components/ui/field";
 import { IconShieldCheck } from "@/components/ui/landing-icons";
+import { useI18n, useT, type TranslateFn } from "@/lib/i18n/context";
+import { INTL_LOCALE, type Locale } from "@/lib/i18n/config";
+import { formatDateLong, formatTime, formatWeekdayLong, toIsoDateKey } from "@/lib/i18n/format";
+import type { MessageKey } from "@/lib/i18n/dictionaries";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
 
 // M2B (spec §7, v2.2). Mismo criterio de "redeclarar, no importar
 // tipos del backend" que el resto de este archivo.
-const CATEGORY_LABELS: Record<PostCategory, string> = {
-  HEALTH_EDUCATION: "Educación en salud",
-  HEALTH_TIP: "Consejo de salud",
-  HEALTH_FACT: "Dato curioso de salud",
-  PROFESSIONAL_UPDATE: "Actualización profesional",
-  CONGRESS: "Congreso",
-  RESEARCH: "Investigación",
-  CERTIFICATION: "Certificación",
-  PATIENT_NOTICE: "Aviso para pacientes",
-  PREVENTION: "Prevención",
-  LIFESTYLE: "Hábitos de salud",
-  VIDEO: "Video",
-  PHOTO: "Fotografía",
-  ANNOUNCEMENT: "Anuncio",
+const CATEGORY_LABEL_KEYS: Record<PostCategory, MessageKey> = {
+  HEALTH_EDUCATION: "perfilPublico.categorias.HEALTH_EDUCATION",
+  HEALTH_TIP: "perfilPublico.categorias.HEALTH_TIP",
+  HEALTH_FACT: "perfilPublico.categorias.HEALTH_FACT",
+  PROFESSIONAL_UPDATE: "perfilPublico.categorias.PROFESSIONAL_UPDATE",
+  CONGRESS: "perfilPublico.categorias.CONGRESS",
+  RESEARCH: "perfilPublico.categorias.RESEARCH",
+  CERTIFICATION: "perfilPublico.categorias.CERTIFICATION",
+  PATIENT_NOTICE: "perfilPublico.categorias.PATIENT_NOTICE",
+  PREVENTION: "perfilPublico.categorias.PREVENTION",
+  LIFESTYLE: "perfilPublico.categorias.LIFESTYLE",
+  VIDEO: "perfilPublico.categorias.VIDEO",
+  PHOTO: "perfilPublico.categorias.PHOTO",
+  ANNOUNCEMENT: "perfilPublico.categorias.ANNOUNCEMENT",
 };
 const EDUCATIONAL_SET = new Set<string>(EDUCATIONAL_POST_CATEGORIES);
-const EDUCATIONAL_DISCLAIMER = "Información general con fines educativos. No sustituye una valoración médica individual.";
-
-const MX_TIME_ZONE = "America/Mexico_City";
 
 // Estilo "hace 2 días" para que el feed se sienta vivo, sin pretender
 // más precisión de la que aporta — pasado un mes, mejor una fecha real.
-function relativeTime(iso: string): string {
+// Intl.RelativeTimeFormat hace la concordancia de cada idioma sola
+// ("hace 2 días" / "2 days ago"), que a mano se vuelve una tabla de
+// plurales por idioma.
+function relativeTime(locale: Locale, t: TranslateFn, iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
   const minutes = Math.floor(diffMs / 60_000);
-  if (minutes < 1) return "Justo ahora";
-  if (minutes < 60) return `Hace ${minutes} min`;
+  if (minutes < 1) return t("perfilPublico.justoAhora");
+  const rtf = new Intl.RelativeTimeFormat(INTL_LOCALE[locale], { numeric: "auto", style: "short" });
+  if (minutes < 60) return rtf.format(-minutes, "minute");
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `Hace ${hours} h`;
+  if (hours < 24) return rtf.format(-hours, "hour");
   const days = Math.floor(hours / 24);
-  if (days < 7) return `Hace ${days} d`;
+  if (days < 7) return rtf.format(-days, "day");
   const weeks = Math.floor(days / 7);
-  if (weeks < 5) return `Hace ${weeks} sem`;
-  return new Intl.DateTimeFormat("es-MX", { timeZone: MX_TIME_ZONE, dateStyle: "long" }).format(new Date(iso));
+  if (weeks < 5) return rtf.format(-weeks, "week");
+  return formatDateLong(locale, iso);
 }
 
 function mxDateKey(iso: string): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: MX_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
+  return toIsoDateKey(iso);
 }
-function mxDateLabel(dateKey: string): string {
-  const label = new Intl.DateTimeFormat("es-MX", { timeZone: MX_TIME_ZONE, weekday: "long", day: "numeric", month: "long" }).format(
-    new Date(`${dateKey}T12:00:00Z`)
-  );
+function mxDateLabel(locale: Locale, dateKey: string): string {
+  // En inglés el día de la semana ya viene en mayúscula; en español
+  // no, y aquí encabeza una línea.
+  const label = formatWeekdayLong(locale, new Date(`${dateKey}T12:00:00Z`));
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
-function mxTime(iso: string): string {
-  return new Intl.DateTimeFormat("es-MX", { timeZone: MX_TIME_ZONE, hour: "2-digit", minute: "2-digit", hour12: true }).format(new Date(iso));
+function mxTime(locale: Locale, iso: string): string {
+  return formatTime(locale, iso);
 }
 
 // Mismos shapes que doctor-public-view.ts (backend) — este archivo no
@@ -126,6 +131,7 @@ function formatLocationAddress(loc: PublicPracticeLocation): string {
 }
 
 export function DoctorPublicProfile({ slug }: { slug: string }) {
+  const t = useT();
   const [doctor, setDoctor] = useState<PublicDoctor | null>(null);
   const [error, setError] = useState<unknown>(null);
 
@@ -149,8 +155,8 @@ export function DoctorPublicProfile({ slug }: { slug: string }) {
     return (
       <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-6 p-6">
         <Card>
-          <Aviso variant="advertencia" title="Médico no encontrado">
-            Este enlace no corresponde a ningún perfil publicado en Medicfy.
+          <Aviso variant="advertencia" title={t("perfilPublico.noEncontradoTitulo")}>
+            {t("perfilPublico.noEncontradoCuerpo")}
           </Aviso>
         </Card>
       </main>
@@ -180,7 +186,7 @@ export function DoctorPublicProfile({ slug }: { slug: string }) {
         <div className="flex flex-col gap-6 lg:sticky lg:top-6">
           {doctor.biography ? (
             <Card>
-              <h2 className="font-heading text-lg text-brand-900">Acerca de</h2>
+              <h2 className="font-heading text-lg text-brand-900">{t("perfilPublico.acercaDe")}</h2>
               <p className="mt-3 whitespace-pre-line text-base text-gray-900">{doctor.biography}</p>
             </Card>
           ) : null}
@@ -194,11 +200,13 @@ export function DoctorPublicProfile({ slug }: { slug: string }) {
 }
 
 function HeroSection({ doctor }: { doctor: PublicDoctor }) {
+  const t = useT();
+
   async function share() {
     const url = window.location.href;
     if (navigator.share) {
       try {
-        await navigator.share({ title: doctor.displayName ?? "Perfil médico en Medicfy", url });
+        await navigator.share({ title: doctor.displayName ?? t("perfilPublico.perfilEnMedicfy"), url });
         return;
       } catch {
         // Usuario canceló el share nativo — cae al copiar el enlace.
@@ -208,16 +216,17 @@ function HeroSection({ doctor }: { doctor: PublicDoctor }) {
   }
 
   const facts: string[] = [];
-  if (doctor.yearsExperience !== null) facts.push(`📅 ${doctor.yearsExperience}+ años de experiencia`);
+  if (doctor.yearsExperience !== null)
+    facts.push(`📅 ${t("perfilPublico.aniosExperiencia", { anios: doctor.yearsExperience })}`);
   if (doctor.university) facts.push(`🎓 ${doctor.university}`);
   if (doctor.languages.length > 0) facts.push(`🗣️ ${doctor.languages.join(", ")}`);
-  if (doctor.acceptsTeleconsultation) facts.push("💻 Ofrece teleconsulta");
+  if (doctor.acceptsTeleconsultation) facts.push(`💻 ${t("perfilPublico.ofreceTeleconsulta")}`);
 
   return (
     <Card>
       <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:items-start sm:text-left">
         {doctor.photoUrl ? (
-          <img src={doctor.photoUrl} alt={doctor.displayName ?? "Foto del médico"} className="h-28 w-28 shrink-0 rounded-full object-cover" />
+          <img src={doctor.photoUrl} alt={doctor.displayName ?? t("perfilPublico.fotoDelMedico")} className="h-28 w-28 shrink-0 rounded-full object-cover" />
         ) : (
           <div className="flex h-28 w-28 shrink-0 items-center justify-center rounded-full bg-gray-100 text-3xl text-gray-400" aria-hidden="true">
             {doctor.displayName ? doctor.displayName.charAt(0).toUpperCase() : "?"}
@@ -225,15 +234,15 @@ function HeroSection({ doctor }: { doctor: PublicDoctor }) {
         )}
         <div className="flex-1">
           <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
-            <h1 className="font-heading text-2xl text-brand-900">{doctor.displayName ?? "Perfil en configuración"}</h1>
+            <h1 className="font-heading text-2xl text-brand-900">{doctor.displayName ?? t("landing.destacados.perfilEnConfiguracion")}</h1>
             {doctor.verified ? (
-              <span className="inline-flex items-center gap-1 text-sm font-medium text-success-600" title="Médico verificado">
+              <span className="inline-flex items-center gap-1 text-sm font-medium text-success-600" title={t("perfilPublico.medicoVerificado")}>
                 <IconShieldCheck className="h-5 w-5" />
-                Verificado
+                {t("landing.destacados.verificado")}
               </span>
             ) : null}
           </div>
-          <p className="mt-1 text-base font-medium text-brand-700">{doctor.primarySpecialtyName ?? "Medicina General"}</p>
+          <p className="mt-1 text-base font-medium text-brand-700">{doctor.primarySpecialtyName ?? t("catalogos.especialidades.GENERAL")}</p>
 
           {facts.length > 0 ? (
             <div className="mt-3 flex flex-wrap justify-center gap-2 sm:justify-start">
@@ -251,7 +260,7 @@ function HeroSection({ doctor }: { doctor: PublicDoctor }) {
       </div>
       {!doctor.acceptsNewPatients ? (
         <div className="mt-4">
-          <Aviso variant="advertencia" title="No acepta pacientes nuevos por ahora" />
+          <Aviso variant="advertencia" title={t("perfilPublico.noAceptaPacientes")} />
         </div>
       ) : null}
     </Card>
@@ -265,6 +274,7 @@ function HeroSection({ doctor }: { doctor: PublicDoctor }) {
 // quedaron fuera de esta versión, spec §7 M2B) — mostrarlos sería una
 // función que no hace nada (CLAUDE.md §25).
 function PostsSection({ slug, doctor }: { slug: string; doctor: PublicDoctor }) {
+  const { t, locale } = useI18n();
   const [posts, setPosts] = useState<PublicPost[] | null>(null);
   const [error, setError] = useState<unknown>(null);
 
@@ -286,7 +296,7 @@ function PostsSection({ slug, doctor }: { slug: string; doctor: PublicDoctor }) 
   if (posts === null) {
     return (
       <Card>
-        <h2 className="font-heading text-xl text-brand-900">Publicaciones</h2>
+        <h2 className="font-heading text-xl text-brand-900">{t("perfilPublico.publicaciones")}</h2>
         <div className="mt-4">
           <LoadingState />
         </div>
@@ -296,9 +306,9 @@ function PostsSection({ slug, doctor }: { slug: string; doctor: PublicDoctor }) 
   if (posts.length === 0) {
     return (
       <Card>
-        <h2 className="font-heading text-xl text-brand-900">Publicaciones</h2>
+        <h2 className="font-heading text-xl text-brand-900">{t("perfilPublico.publicaciones")}</h2>
         <div className="mt-4">
-          <EmptyState title="Sin publicaciones públicas todavía" />
+          <EmptyState title={t("perfilPublico.sinPublicaciones")} />
         </div>
       </Card>
     );
@@ -317,11 +327,11 @@ function PostsSection({ slug, doctor }: { slug: string; doctor: PublicDoctor }) 
               </div>
             )}
             <div className="min-w-0 flex-1">
-              <p className="truncate text-base font-medium text-gray-900">{doctor.displayName ?? "Médico"}</p>
-              {post.publishedAt ? <p className="text-sm text-gray-500">{relativeTime(post.publishedAt)}</p> : null}
+              <p className="truncate text-base font-medium text-gray-900">{doctor.displayName ?? t("landing.misMedicos.medico")}</p>
+              {post.publishedAt ? <p className="text-sm text-gray-500">{relativeTime(locale, t, post.publishedAt)}</p> : null}
             </div>
             <span className="shrink-0 rounded-full bg-brand-100 px-3 py-1 text-sm font-medium text-brand-700">
-              {CATEGORY_LABELS[post.category]}
+              {t(CATEGORY_LABEL_KEYS[post.category])}
             </span>
           </div>
 
@@ -340,7 +350,7 @@ function PostsSection({ slug, doctor }: { slug: string; doctor: PublicDoctor }) 
             </div>
           ) : null}
           {EDUCATIONAL_SET.has(post.category) ? (
-            <p className="mt-3 border-t border-gray-200 pt-3 text-sm text-gray-500">{EDUCATIONAL_DISCLAIMER}</p>
+            <p className="mt-3 border-t border-gray-200 pt-3 text-sm text-gray-500">{t("perfilPublico.disclaimerEducativo")}</p>
           ) : null}
         </Card>
       ))}
@@ -355,6 +365,7 @@ function PostsSection({ slug, doctor }: { slug: string; doctor: PublicDoctor }) 
 // ?redirect de vuelta a este perfil — nunca un botón que no hace nada.
 function AvailabilitySection({ doctor }: { doctor: PublicDoctor }) {
   const { accessToken } = useAuth();
+  const { t, locale } = useI18n();
   const isPatientSession = !!accessToken && tokenPrimaryRole(accessToken) === "PATIENT";
 
   const [services, setServices] = useState<PublicService[] | null>(null);
@@ -412,10 +423,10 @@ function AvailabilitySection({ doctor }: { doctor: PublicDoctor }) {
   if (!doctor.isBookable) {
     return (
       <Card>
-        <h2 className="font-heading text-xl text-brand-900">Disponibilidad</h2>
+        <h2 className="font-heading text-xl text-brand-900">{t("perfilPublico.disponibilidad")}</h2>
         <div className="mt-4">
-          <Aviso variant="info" title="Este médico no tiene consultorio activo ni teleconsulta habilitada">
-            Por ahora no hay espacios que mostrar.
+          <Aviso variant="info" title={t("perfilPublico.noAgendable")}>
+            {t("perfilPublico.noAgendableCuerpo")}
           </Aviso>
         </div>
       </Card>
@@ -425,11 +436,14 @@ function AvailabilitySection({ doctor }: { doctor: PublicDoctor }) {
   if (booked) {
     return (
       <Card>
-        <Aviso variant="exito" title="Cita agendada">
-          {mxDateLabel(mxDateKey(booked.startAt))} · {mxTime(booked.startAt)}. El médico confirma el pago directamente contigo.
+        <Aviso variant="exito" title={t("perfilPublico.citaAgendada")}>
+          {t("perfilPublico.citaAgendadaCuerpo", {
+            fecha: mxDateLabel(locale, mxDateKey(booked.startAt)),
+            hora: mxTime(locale, booked.startAt),
+          })}
         </Aviso>
         <Link href="/mi-cuenta" className="mt-3 inline-block text-sm font-medium text-brand-700 underline">
-          Ver mis citas
+          {t("perfilPublico.verMisCitas")}
         </Link>
       </Card>
     );
@@ -438,25 +452,25 @@ function AvailabilitySection({ doctor }: { doctor: PublicDoctor }) {
   if (!isPatientSession) {
     return (
       <Card>
-        <h2 className="font-heading text-xl text-brand-900">Disponibilidad</h2>
-        <p className="text-sm text-gray-500">Inicia sesión como paciente para agendar.</p>
+        <h2 className="font-heading text-xl text-brand-900">{t("perfilPublico.disponibilidad")}</h2>
+        <p className="text-sm text-gray-500">{t("perfilPublico.iniciaSesionParaAgendar")}</p>
       </Card>
     );
   }
 
   return (
     <Card>
-      <h2 className="font-heading text-xl text-brand-900">Disponibilidad</h2>
-      <p className="text-sm text-gray-500">Elige un servicio y un horario para agendar.</p>
+      <h2 className="font-heading text-xl text-brand-900">{t("perfilPublico.disponibilidad")}</h2>
+      <p className="text-sm text-gray-500">{t("perfilPublico.eligeServicio")}</p>
 
       <div className="mt-4">
         {services === null && !servicesError ? <LoadingState /> : null}
         {servicesError ? <ErrorState error={servicesError} /> : null}
-        {services && services.length === 0 ? <EmptyState title="Sin servicios publicados" /> : null}
+        {services && services.length === 0 ? <EmptyState title={t("perfilPublico.sinServicios")} /> : null}
         {services && services.length > 0 ? (
-          <FieldWrapper label="Servicio" htmlFor="public-service">
+          <FieldWrapper label={t("perfilPublico.servicio")} htmlFor="public-service">
             <SelectInput id="public-service" value={serviceId} onChange={(e) => setServiceId(e.target.value)}>
-              <option value="">Selecciona…</option>
+              <option value="">{t("auth.campos.selecciona")}</option>
               {services.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name} · {s.durationMinutes} min
@@ -471,7 +485,7 @@ function AvailabilitySection({ doctor }: { doctor: PublicDoctor }) {
         <div className="mt-4">
           {slots === null && !slotsError ? <LoadingState /> : null}
           {slotsError ? <ErrorState error={slotsError} onRetry={loadSlots} /> : null}
-          {slots && slots.length === 0 ? <EmptyState title="Sin espacios disponibles en los próximos días" /> : null}
+          {slots && slots.length === 0 ? <EmptyState title={t("perfilPublico.sinEspacios")} /> : null}
           {bookingError ? (
             <div className="mb-3">
               <ErrorState error={bookingError} />
@@ -488,7 +502,9 @@ function AvailabilitySection({ doctor }: { doctor: PublicDoctor }) {
                       onClick={() => void book(slot)}
                       className="min-h-[44px] rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-900 hover:bg-brand-100 disabled:pointer-events-none disabled:opacity-50"
                     >
-                      {bookingSlot === slot.startAt ? "Agendando…" : `${mxDateLabel(mxDateKey(slot.startAt))} · ${mxTime(slot.startAt)}`}
+                      {bookingSlot === slot.startAt
+                        ? t("perfilPublico.agendando")
+                        : `${mxDateLabel(locale, mxDateKey(slot.startAt))} · ${mxTime(locale, slot.startAt)}`}
                     </button>
                   </li>
                 ) : (
@@ -497,7 +513,7 @@ function AvailabilitySection({ doctor }: { doctor: PublicDoctor }) {
                       href={`/login?redirect=${encodeURIComponent(`/dr/${doctor.slug}`)}`}
                       className="inline-flex min-h-[44px] items-center rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-900 hover:bg-brand-100"
                     >
-                      {mxDateLabel(mxDateKey(slot.startAt))} · {mxTime(slot.startAt)}
+                      {mxDateLabel(locale, mxDateKey(slot.startAt))} · {mxTime(locale, slot.startAt)}
                     </Link>
                   </li>
                 )
@@ -511,17 +527,18 @@ function AvailabilitySection({ doctor }: { doctor: PublicDoctor }) {
 }
 
 function LocationsSection({ locations, teleconsultation }: { locations: PublicPracticeLocation[]; teleconsultation: boolean }) {
+  const t = useT();
   if (locations.length === 0 && !teleconsultation) return null;
 
   return (
     <Card>
-      <h2 className="font-heading text-xl text-brand-900">Consultorios</h2>
+      <h2 className="font-heading text-xl text-brand-900">{t("perfilPublico.consultorios")}</h2>
       <div className="mt-4 flex flex-col gap-3">
         {locations.map((loc) => (
           <div key={loc.id} className="rounded-md border border-gray-300 p-4">
             <p className="text-base font-medium text-gray-900">
               {loc.name}
-              {loc.isPrimary ? <span className="ml-2 text-sm font-normal text-brand-700">Principal</span> : null}
+              {loc.isPrimary ? <span className="ml-2 text-sm font-normal text-brand-700">{t("perfilPublico.principal")}</span> : null}
             </p>
             <p className="text-sm text-gray-600">{formatLocationAddress(loc)}</p>
             {loc.phone ? (
@@ -532,7 +549,7 @@ function LocationsSection({ locations, teleconsultation }: { locations: PublicPr
           </div>
         ))}
         {locations.length === 0 && teleconsultation ? (
-          <p className="text-base text-gray-500">Este médico solo atiende por teleconsulta.</p>
+          <p className="text-base text-gray-500">{t("perfilPublico.soloTeleconsulta")}</p>
         ) : null}
       </div>
     </Card>

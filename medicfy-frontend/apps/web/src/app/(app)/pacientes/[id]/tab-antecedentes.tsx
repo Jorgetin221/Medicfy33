@@ -2,16 +2,11 @@
 
 import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
 import {
   ADMINISTRATION_ROUTES,
-  ADMINISTRATION_ROUTE_LABELS,
   ALLERGY_SEVERITIES,
-  ALLERGY_SEVERITY_LABELS,
   ALLERGY_TYPES,
-  ALLERGY_TYPE_LABELS,
   CLINICAL_DATA_SOURCES,
-  CLINICAL_DATA_SOURCE_LABELS,
   patientAllergyCatalogCreateSchema,
   patientMedicationCreateSchema,
   type PatientAllergyCatalogCreateInput,
@@ -26,6 +21,10 @@ import { AllergySummary } from "@/components/clinical/allergy-summary";
 import { AntecedentesEditor } from "@/components/clinical/antecedentes-editor";
 import { SolicitarTermino } from "@/components/clinical/historia-fase2";
 import { useEffect } from "react";
+import { useT } from "@/lib/i18n/context";
+import { useVocabulary } from "@/lib/i18n/vocabulary";
+import { useZodResolver } from "@/lib/i18n/validation";
+import type { MessageKey } from "@/lib/i18n/dictionaries";
 
 // M8-RN-012: "los antecedentes se capturan una vez y se arrastran; no
 // se recapturan nunca" — este tab es el único lugar donde se
@@ -46,16 +45,18 @@ export function TabAntecedentes({
   historyItems: PatientHistoryItem[];
   onChanged: () => void;
 }) {
+  const t = useT();
+  const vocab = useVocabulary();
   return (
     <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
-      <nav aria-label="Bloques de la historia clínica" className="order-2 flex flex-row flex-wrap gap-1 lg:sticky lg:top-6 lg:order-1 lg:w-56 lg:shrink-0 lg:flex-col">
+      <nav aria-label={t("pacientes.antecedentesTab.bloques")} className="order-2 flex flex-row flex-wrap gap-1 lg:sticky lg:top-6 lg:order-1 lg:w-56 lg:shrink-0 lg:flex-col">
         {BLOQUES.map((b) => (
           <a
             key={b.id}
             href={`#${b.id}`}
             className="min-h-11 rounded-md px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 lg:flex lg:items-center"
           >
-            {b.label}
+            {t(b.labelKey)}
           </a>
         ))}
       </nav>
@@ -79,9 +80,9 @@ export function TabAntecedentes({
         </Card>
 
         <Card id="bloque-medicacion" className="scroll-mt-20">
-          <h2 className="mb-3 text-base font-semibold text-gray-900">Medicamentos habituales</h2>
+          <h2 className="mb-3 text-base font-semibold text-gray-900">{t("pacientes.antecedentesTab.medicamentosHabituales")}</h2>
           {medications.length === 0 ? (
-            <p className="text-base text-gray-500">Ninguno registrado.</p>
+            <p className="text-base text-gray-500">{t("pacientes.antecedentesTab.ningunoRegistrado")}</p>
           ) : (
             <ul className="flex flex-col gap-2">
               {medications.map((m) => (
@@ -90,10 +91,10 @@ export function TabAntecedentes({
                     {m.genericName} {m.brandName ? `(${m.brandName})` : ""}
                   </p>
                   <p className="text-sm text-gray-700">
-                    {m.dose} · {m.route} · {m.frequency}
+                    {m.dose} · {vocab("via", m.route)} · {m.frequency}
                   </p>
                   <p className="text-sm text-gray-500">
-                    {m.status === "ACTIVE" ? "Activo" : m.status === "SUSPENDED" ? "Suspendido" : "Completado"}
+                    {vocab("estadoMedicamento", m.status)}
                     {m.reason ? ` — ${m.reason}` : ""}
                   </p>
                 </li>
@@ -112,16 +113,18 @@ export function TabAntecedentes({
 // Orden de exploración de la página, no el orden del mockup — Alergias
 // y Medicación viven primero en el DOM (tarjetas propias de este
 // componente); Historia clínica los bloques de AntecedentesEditor.
-const BLOQUES = [
-  { id: "bloque-alergias", label: "Alergias" },
-  { id: "bloque-medicacion", label: "Medicación crónica" },
-  { id: "bloque-heredofamiliares", label: "Heredofamiliares" },
-  { id: "bloque-no-patologicos", label: "No patológicos" },
-  { id: "bloque-patologicos", label: "Personales patológicos" },
-  { id: "bloque-gineco", label: "Gineco-obstétricos" },
+const BLOQUES: { id: string; labelKey: MessageKey }[] = [
+  { id: "bloque-alergias", labelKey: "pacientes.antecedentesTab.alergias" },
+  { id: "bloque-medicacion", labelKey: "pacientes.antecedentesTab.medicacionCronica" },
+  { id: "bloque-heredofamiliares", labelKey: "pacientes.antecedentesTab.heredofamiliares" },
+  { id: "bloque-no-patologicos", labelKey: "pacientes.antecedentesTab.noPatologicos" },
+  { id: "bloque-patologicos", labelKey: "pacientes.antecedentesTab.personalesPatologicos" },
+  { id: "bloque-gineco", labelKey: "pacientes.antecedentesTab.gineco" },
 ];
 
 function AddAllergyForm({ patientId, accessToken, onCreated }: { patientId: string; accessToken: string; onCreated: () => void }) {
+  const t = useT();
+  const vocab = useVocabulary();
   const [agentOptions, setAgentOptions] = useState<{ key: string; preferredTerm: string }[]>([]);
   useEffect(() => {
     apiFetch<{ key: string; preferredTerm: string }[]>("/catalogs/ALERGIA_AGENTE", { accessToken })
@@ -131,7 +134,7 @@ function AddAllergyForm({ patientId, accessToken, onCreated }: { patientId: stri
   const [isOpen, setIsOpen] = useState(false);
   const [submitError, setSubmitError] = useState<unknown>(null);
   const form = useForm<PatientAllergyCatalogCreateInput>({
-    resolver: zodResolver(patientAllergyCatalogCreateSchema),
+    resolver: useZodResolver<PatientAllergyCatalogCreateInput>(patientAllergyCatalogCreateSchema),
     defaultValues: { certainty: "CONFIRMED" },
   });
 
@@ -158,11 +161,11 @@ function AddAllergyForm({ patientId, accessToken, onCreated }: { patientId: stri
   return (
     <form onSubmit={form.handleSubmit(onSubmit)} className="mt-4 flex flex-col gap-3 border-t border-gray-300 pt-4" noValidate>
       <div className="grid grid-cols-2 gap-3">
-        <FieldWrapper label="Agente (del catálogo)" htmlFor="allergy-agent" error={form.formState.errors.agentKey?.message}>
+        <FieldWrapper label={t("pacientes.antecedentesTab.agente")} htmlFor="allergy-agent" error={form.formState.errors.agentKey?.message}>
           {/* Prompt 23A: el agente viene del catálogo cerrado — nunca
               texto libre. ¿Falta uno? Se solicita al curador. */}
           <SelectInput id="allergy-agent" error={!!form.formState.errors.agentKey} {...form.register("agentKey")}>
-            <option value="">Elige un agente…</option>
+            <option value="">{t("pacientes.antecedentesTab.eligeAgente")}</option>
             {agentOptions.map((a) => (
               <option key={a.key} value={a.key}>
                 {a.preferredTerm}
@@ -170,41 +173,41 @@ function AddAllergyForm({ patientId, accessToken, onCreated }: { patientId: stri
             ))}
           </SelectInput>
         </FieldWrapper>
-        <FieldWrapper label="Tipo" htmlFor="allergy-type" error={form.formState.errors.allergyType?.message}>
+        <FieldWrapper label={t("pacientes.antecedentesTab.tipo")} htmlFor="allergy-type" error={form.formState.errors.allergyType?.message}>
           {/* P4 §6.1: vocabulario cerrado — el hint ya contenía la lista */}
           <SelectInput id="allergy-type" error={!!form.formState.errors.allergyType} {...form.register("allergyType")}>
             {ALLERGY_TYPES.map((value) => (
               <option key={value} value={value}>
-                {ALLERGY_TYPE_LABELS[value]}
+                {vocab("alergiaTipo", value)}
               </option>
             ))}
           </SelectInput>
         </FieldWrapper>
-        <FieldWrapper label="Severidad" htmlFor="allergy-severity" error={form.formState.errors.severity?.message}>
+        <FieldWrapper label={t("pacientes.antecedentesTab.severidad")} htmlFor="allergy-severity" error={form.formState.errors.severity?.message}>
           {/* Cerrado para poder ordenar/filtrar por gravedad (P4 §2.7) */}
           <SelectInput id="allergy-severity" error={!!form.formState.errors.severity} {...form.register("severity")}>
             {ALLERGY_SEVERITIES.map((value) => (
               <option key={value} value={value}>
-                {ALLERGY_SEVERITY_LABELS[value]}
+                {vocab("alergiaSeveridad", value)}
               </option>
             ))}
           </SelectInput>
         </FieldWrapper>
-        <FieldWrapper label="Certeza" htmlFor="allergy-certainty">
+        <FieldWrapper label={t("pacientes.antecedentesTab.certeza")} htmlFor="allergy-certainty">
           <SelectInput id="allergy-certainty" {...form.register("certainty")}>
-            <option value="CONFIRMED">Confirmada</option>
-            <option value="LIKELY">Probable</option>
-            <option value="UNCERTAIN">Incierta</option>
+            <option value="CONFIRMED">{vocab("certeza", "CONFIRMED")}</option>
+            <option value="LIKELY">{vocab("certeza", "LIKELY")}</option>
+            <option value="UNCERTAIN">{vocab("certeza", "UNCERTAIN")}</option>
           </SelectInput>
         </FieldWrapper>
-        <FieldWrapper label="Reacción (opcional)" htmlFor="allergy-reaction">
+        <FieldWrapper label={t("pacientes.antecedentesTab.reaccion")} htmlFor="allergy-reaction">
           <TextInput id="allergy-reaction" {...form.register("reaction")} />
         </FieldWrapper>
-        <FieldWrapper label="Fuente" htmlFor="allergy-source" error={form.formState.errors.source?.message}>
+        <FieldWrapper label={t("pacientes.antecedentesTab.fuente")} htmlFor="allergy-source" error={form.formState.errors.source?.message}>
           <SelectInput id="allergy-source" error={!!form.formState.errors.source} {...form.register("source")}>
             {CLINICAL_DATA_SOURCES.map((value) => (
               <option key={value} value={value}>
-                {CLINICAL_DATA_SOURCE_LABELS[value]}
+                {vocab("fuente", value)}
               </option>
             ))}
           </SelectInput>
@@ -214,7 +217,7 @@ function AddAllergyForm({ patientId, accessToken, onCreated }: { patientId: stri
       {submitError ? <ErrorState error={submitError} /> : null}
       <div className="flex gap-3">
         <Button type="button" variant="secondary" onClick={() => setIsOpen(false)}>
-          Cancelar
+          {t("common.acciones.cancelar")}
         </Button>
         <Button type="submit" isLoading={form.formState.isSubmitting}>
           Guardar alergia
@@ -225,9 +228,11 @@ function AddAllergyForm({ patientId, accessToken, onCreated }: { patientId: stri
 }
 
 function AddMedicationForm({ patientId, accessToken, onCreated }: { patientId: string; accessToken: string; onCreated: () => void }) {
+  const t = useT();
+  const vocab = useVocabulary();
   const [isOpen, setIsOpen] = useState(false);
   const [submitError, setSubmitError] = useState<unknown>(null);
-  const form = useForm<PatientMedicationCreateInput>({ resolver: zodResolver(patientMedicationCreateSchema) });
+  const form = useForm<PatientMedicationCreateInput>({ resolver: useZodResolver<PatientMedicationCreateInput>(patientMedicationCreateSchema) });
 
   async function onSubmit(values: PatientMedicationCreateInput) {
     setSubmitError(null);
@@ -252,33 +257,33 @@ function AddMedicationForm({ patientId, accessToken, onCreated }: { patientId: s
   return (
     <form onSubmit={form.handleSubmit(onSubmit)} className="mt-4 flex flex-col gap-3 border-t border-gray-300 pt-4" noValidate>
       <div className="grid grid-cols-2 gap-3">
-        <FieldWrapper label="Nombre genérico" htmlFor="med-generic" error={form.formState.errors.genericName?.message}>
+        <FieldWrapper label={t("pacientes.antecedentesTab.nombreGenerico")} htmlFor="med-generic" error={form.formState.errors.genericName?.message}>
           <TextInput id="med-generic" error={!!form.formState.errors.genericName} {...form.register("genericName")} />
         </FieldWrapper>
-        <FieldWrapper label="Nombre comercial (opcional)" htmlFor="med-brand">
+        <FieldWrapper label={t("pacientes.antecedentesTab.nombreComercial")} htmlFor="med-brand">
           <TextInput id="med-brand" {...form.register("brandName")} />
         </FieldWrapper>
-        <FieldWrapper label="Dosis" htmlFor="med-dose-hab" error={form.formState.errors.dose?.message}>
+        <FieldWrapper label={t("pacientes.antecedentesTab.dosis")} htmlFor="med-dose-hab" error={form.formState.errors.dose?.message}>
           <TextInput id="med-dose-hab" error={!!form.formState.errors.dose} {...form.register("dose")} />
         </FieldWrapper>
-        <FieldWrapper label="Vía" htmlFor="med-route-hab" error={form.formState.errors.route?.message}>
+        <FieldWrapper label={t("pacientes.antecedentesTab.via")} htmlFor="med-route-hab" error={form.formState.errors.route?.message}>
           {/* P4 §2.8: la vía de administración es un catálogo cerrado */}
           <SelectInput id="med-route-hab" error={!!form.formState.errors.route} {...form.register("route")}>
             {ADMINISTRATION_ROUTES.map((value) => (
               <option key={value} value={value}>
-                {ADMINISTRATION_ROUTE_LABELS[value]}
+                {vocab("via", value)}
               </option>
             ))}
           </SelectInput>
         </FieldWrapper>
-        <FieldWrapper label="Frecuencia" htmlFor="med-freq-hab" error={form.formState.errors.frequency?.message}>
+        <FieldWrapper label={t("pacientes.antecedentesTab.frecuencia")} htmlFor="med-freq-hab" error={form.formState.errors.frequency?.message}>
           <TextInput id="med-freq-hab" error={!!form.formState.errors.frequency} {...form.register("frequency")} />
         </FieldWrapper>
-        <FieldWrapper label="Fuente" htmlFor="med-source" error={form.formState.errors.source?.message}>
+        <FieldWrapper label={t("pacientes.antecedentesTab.fuente")} htmlFor="med-source" error={form.formState.errors.source?.message}>
           <SelectInput id="med-source" error={!!form.formState.errors.source} {...form.register("source")}>
             {CLINICAL_DATA_SOURCES.map((value) => (
               <option key={value} value={value}>
-                {CLINICAL_DATA_SOURCE_LABELS[value]}
+                {vocab("fuente", value)}
               </option>
             ))}
           </SelectInput>
@@ -287,10 +292,10 @@ function AddMedicationForm({ patientId, accessToken, onCreated }: { patientId: s
       {submitError ? <ErrorState error={submitError} /> : null}
       <div className="flex gap-3">
         <Button type="button" variant="secondary" onClick={() => setIsOpen(false)}>
-          Cancelar
+          {t("common.acciones.cancelar")}
         </Button>
         <Button type="submit" isLoading={form.formState.isSubmitting}>
-          Guardar medicamento
+          {t("pacientes.antecedentesTab.guardarMedicamento")}
         </Button>
       </div>
     </form>

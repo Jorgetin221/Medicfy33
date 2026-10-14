@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, type ReactNode } from "react";
+import { useT } from "@/lib/i18n/context";
 
 // Panel (§3.5 del doc de UX): panel lateral deslizable, para ficha
 // resumen y expediente "sin perder contexto". Primitivo puro — sin
@@ -24,6 +25,7 @@ export function Panel({
   wide?: boolean;
   children: ReactNode;
 }) {
+  const t = useT();
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
   // Ref de "última versión" — un caller como ConsultaForm re-renderiza
@@ -56,7 +58,7 @@ export function Panel({
     <div className="fixed inset-0 z-50 flex justify-end">
       <button
         type="button"
-        aria-label="Cerrar panel"
+        aria-label={t("common.cerrarPanel")}
         onClick={onClose}
         className="absolute inset-0 bg-overlay"
       />
@@ -74,7 +76,7 @@ export function Panel({
             ref={closeButtonRef}
             type="button"
             onClick={onClose}
-            aria-label="Cerrar"
+            aria-label={t("common.acciones.cerrar")}
             className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-xl text-gray-500 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-700"
           >
             ✕

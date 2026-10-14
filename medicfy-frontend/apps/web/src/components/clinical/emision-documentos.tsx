@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/states";
 import { Aviso } from "@/components/ui/alert";
 import { PrescriptionPanel } from "@/components/clinical/prescription-panel";
 import { LabOrderPanel } from "@/components/clinical/lab-order-panel";
+import { useT } from "@/lib/i18n/context";
 
 // Fase 4 / prompts 32-38A — el PLAN DEL PACIENTE: receta, órdenes de
 // estudio e indicaciones son documentos independientes ("el paciente
@@ -36,6 +37,7 @@ export function EmisionDocumentos({
   // guardar (ver ConsultaForm).
   onOpenStateChange?: (isOpen: boolean) => void;
 }) {
+  const t = useT();
   const [rxOpen, setRxOpen] = useState(false);
   const [labOpen, setLabOpen] = useState(false);
 
@@ -51,7 +53,7 @@ export function EmisionDocumentos({
     try {
       const blob = await apiFetchBlob(`/records/encounters/${encounterId}/indicaciones/pdf`, { accessToken });
       if (!blob) {
-        setIndicacionesError(new Error("No se encontró el PDF de indicaciones."));
+        setIndicacionesError(new Error(t("clinico.emision.pdfNoEncontrado")));
         return;
       }
       window.open(URL.createObjectURL(blob), "_blank");
@@ -64,13 +66,13 @@ export function EmisionDocumentos({
 
   return (
     <Card data-testid="emision-documentos">
-      <p className="text-sm font-medium text-gray-500">Documentos de esta consulta</p>
+      <p className="text-sm font-medium text-gray-500">{t("clinico.emision.titulo")}</p>
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <Button type="button" variant="secondary" onClick={() => setRxOpen(true)} className="min-h-11 px-3 text-sm">
-          Emitir receta
+          {t("clinico.emision.emitirReceta")}
         </Button>
         <Button type="button" variant="secondary" onClick={() => setLabOpen(true)} className="min-h-11 px-3 text-sm">
-          Ordenar estudios
+          {t("clinico.emision.ordenarEstudios")}
         </Button>
         {hasPatientInstructions ? (
           <Button
@@ -80,18 +82,18 @@ export function EmisionDocumentos({
             onClick={() => void downloadIndicaciones()}
             className="min-h-11 px-3 text-sm"
           >
-            Imprimir indicaciones al paciente
+            {t("clinico.emision.imprimirIndicaciones")}
           </Button>
         ) : null}
         {onNextPatient ? (
           <Button type="button" onClick={onNextPatient} className="min-h-11 px-4">
-            Siguiente paciente
+            {t("clinico.emision.siguientePaciente")}
           </Button>
         ) : null}
       </div>
       {indicacionesError ? (
-        <Aviso variant="advertencia" title="No se pudo abrir el PDF de indicaciones">
-          {indicacionesError instanceof ApiError ? indicacionesError.message : "Intenta de nuevo."}
+        <Aviso variant="advertencia" title={t("clinico.emision.noSePudoAbrir")}>
+          {indicacionesError instanceof ApiError ? indicacionesError.message : t("clinico.emision.intentaDeNuevo")}
         </Aviso>
       ) : null}
 

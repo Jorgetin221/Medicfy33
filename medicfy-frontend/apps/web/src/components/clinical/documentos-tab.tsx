@@ -8,6 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/ui/panel";
 import { FieldWrapper, SelectInput, TextInput } from "@/components/ui/field";
 import { PdfViewer } from "@/components/clinical/pdf-viewer";
+import { useI18n } from "@/lib/i18n/context";
+import { formatDateLong } from "@/lib/i18n/format";
+import type { MessageKey } from "@/lib/i18n/dictionaries";
 
 type AttachmentCategory = "LAB_RESULT" | "IMAGING" | "EXTERNAL_DOCUMENT" | "PHOTO" | "OTHER";
 
@@ -22,24 +25,19 @@ interface ClinicalAttachmentRecord {
   uploadedAt: string;
 }
 
-const CATEGORY_LABEL: Record<AttachmentCategory, string> = {
-  LAB_RESULT: "Resultado de laboratorio",
-  IMAGING: "Estudio de imagen",
-  EXTERNAL_DOCUMENT: "Documento externo",
-  PHOTO: "Fotografía clínica",
-  OTHER: "Otro",
+const CATEGORY_LABEL_KEY: Record<AttachmentCategory, MessageKey> = {
+  LAB_RESULT: "clinico.documentos.categoria.LAB_RESULT",
+  IMAGING: "clinico.documentos.categoria.IMAGING",
+  EXTERNAL_DOCUMENT: "clinico.documentos.categoria.EXTERNAL_DOCUMENT",
+  PHOTO: "clinico.documentos.categoria.PHOTO",
+  OTHER: "clinico.documentos.categoria.OTHER",
 };
 
 // Mismo trío que ya acepta el resto de la app (perfil, resultados de
 // laboratorio) — upload-validation.util.ts (backend) es la autoridad
 // real; esto es solo el filtro nativo del selector de archivo.
 const DOCUMENT_ACCEPT = "application/pdf,image/jpeg,image/png";
-const DOCUMENT_FORMAT_HINT = "PDF, JPG o PNG · máx. 10 MB";
 
-const MX_TIME_ZONE = "America/Mexico_City";
-function formatMxDate(iso: string): string {
-  return new Intl.DateTimeFormat("es-MX", { timeZone: MX_TIME_ZONE, dateStyle: "long" }).format(new Date(iso));
-}
 
 // Fase 5 · Prompt 41 — "Documentos con acceso controlado": el visor
 // SIEMPRE pasa por una URL firmada de vida corta que se pide cada vez
@@ -47,6 +45,7 @@ function formatMxDate(iso: string): string {
 // — nunca ofrece descargarlo, a diferencia del visor de resultados de
 // laboratorio (tab-ordenes.tsx), que sí lo permite.
 export function DocumentosTab({ patientId, accessToken }: { patientId: string; accessToken: string }) {
+  const { t, locale } = useI18n();
   const [documents, setDocuments] = useState<ClinicalAttachmentRecord[] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [category, setCategory] = useState<AttachmentCategory>("EXTERNAL_DOCUMENT");
@@ -106,36 +105,36 @@ export function DocumentosTab({ patientId, accessToken }: { patientId: string; a
   }
 
   const previewPanel = (
-    <Panel open={preview !== null} onClose={() => setPreview(null)} title="Documento" wide>
+    <Panel open={preview !== null} onClose={() => setPreview(null)} title={t("clinico.documentos.documento")} wide>
       {preview?.pdfData ? (
         <PdfViewer data={preview.pdfData} />
       ) : preview?.imageUrl ? (
-        <img src={preview.imageUrl} alt="Documento clínico" className="max-w-full" />
+        <img src={preview.imageUrl} alt={t("clinico.documentos.documentoClinico")} className="max-w-full" />
       ) : null}
     </Panel>
   );
 
   const uploadForm = (
     <Card>
-      <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">Subir documento</h3>
+      <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">{t("clinico.documentos.subirDocumento")}</h3>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <FieldWrapper label="Categoría" htmlFor="doc-category">
+        <FieldWrapper label={t("clinico.documentos.etiquetaCategoria")} htmlFor="doc-category">
           <SelectInput
             id="doc-category"
             value={category}
             onChange={(e) => setCategory(e.target.value as AttachmentCategory)}
           >
-            {(Object.keys(CATEGORY_LABEL) as AttachmentCategory[]).map((value) => (
+            {(Object.keys(CATEGORY_LABEL_KEY) as AttachmentCategory[]).map((value) => (
               <option key={value} value={value}>
-                {CATEGORY_LABEL[value]}
+                {t(CATEGORY_LABEL_KEY[value])}
               </option>
             ))}
           </SelectInput>
         </FieldWrapper>
-        <FieldWrapper label="Fecha del estudio (opcional)" htmlFor="doc-study-date">
+        <FieldWrapper label={t("clinico.documentos.fechaEstudio")} htmlFor="doc-study-date">
           <TextInput id="doc-study-date" type="date" value={studyDate} onChange={(e) => setStudyDate(e.target.value)} />
         </FieldWrapper>
-        <FieldWrapper label="Descripción (opcional)" htmlFor="doc-description">
+        <FieldWrapper label={t("clinico.documentos.descripcion")} htmlFor="doc-description">
           <TextInput id="doc-description" value={description} onChange={(e) => setDescription(e.target.value)} />
         </FieldWrapper>
       </div>
@@ -152,9 +151,9 @@ export function DocumentosTab({ patientId, accessToken }: { patientId: string; a
           }}
         />
         <Button type="button" variant="secondary" isLoading={isUploading} onClick={() => fileInputRef.current?.click()} className="min-h-11 px-3 text-sm">
-          Elegir archivo
+          {t("clinico.documentos.elegirArchivo")}
         </Button>
-        <span className="text-sm text-gray-500">{DOCUMENT_FORMAT_HINT}</span>
+        <span className="text-sm text-gray-500">{t("clinico.documentos.formatoPermitido")}</span>
       </div>
     </Card>
   );
@@ -173,7 +172,7 @@ export function DocumentosTab({ patientId, accessToken }: { patientId: string; a
     return (
       <div className="flex flex-col gap-4">
         {uploadForm}
-        <LoadingState label="Cargando documentos…" />
+        <LoadingState label={t("clinico.cargando.documentos")} />
       </div>
     );
   }
@@ -183,18 +182,18 @@ export function DocumentosTab({ patientId, accessToken }: { patientId: string; a
       {uploadForm}
       {error ? <ErrorState error={error} /> : null}
       {documents.length === 0 ? (
-        <EmptyState title="Sin documentos" description="Sube un estudio, imagen o documento externo del paciente." />
+        <EmptyState title={t("clinico.documentos.sinDocumentos")} description={t("clinico.documentos.sinDocumentosAyuda")} />
       ) : (
         <ul className="flex flex-col gap-2">
           {documents.map((doc) => (
             <li key={doc.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-gray-300 px-3 py-2">
               <div>
                 <p className="text-base text-gray-900">
-                  {CATEGORY_LABEL[doc.category]}
-                  {doc.studyDate ? ` · estudio del ${formatMxDate(doc.studyDate)}` : ""}
+                  {t(CATEGORY_LABEL_KEY[doc.category])}
+                  {doc.studyDate ? t("clinico.documentos.estudioDel", { fecha: formatDateLong(locale, doc.studyDate) }) : ""}
                 </p>
                 <p className="text-sm text-gray-500">
-                  {doc.fileName} · subido {formatMxDate(doc.uploadedAt)}
+                  {t("clinico.documentos.subido", { archivo: doc.fileName, fecha: formatDateLong(locale, doc.uploadedAt) })}
                   {doc.description ? ` · "${doc.description}"` : ""}
                 </p>
               </div>

@@ -6,14 +6,9 @@ import { apiFetch } from "@/lib/api-client";
 import { LoadingState, ErrorState } from "@/components/ui/states";
 import { AllergySummary } from "@/components/clinical/allergy-summary";
 import type { PatientAllergy, PatientMedication, ActiveDiagnosis, PatientHistoryItem } from "@/lib/use-patient-clinical";
+import { useI18n } from "@/lib/i18n/context";
+import { formatDateMedium, formatDateTimeMedium } from "@/lib/i18n/format";
 
-const MX_TIME_ZONE = "America/Mexico_City";
-function formatMxDateTime(iso: string): string {
-  return new Intl.DateTimeFormat("es-MX", { timeZone: MX_TIME_ZONE, dateStyle: "medium", timeStyle: "short" }).format(new Date(iso));
-}
-function formatMxDate(iso: string): string {
-  return new Intl.DateTimeFormat("es-MX", { timeZone: MX_TIME_ZONE, dateStyle: "medium" }).format(new Date(iso));
-}
 
 interface HojaFrontalPatient {
   id: string;
@@ -70,6 +65,7 @@ function formatAddress(p: HojaFrontalPatient): string | null {
 // Ninguna acción de aquí interrumpe la captura de la nota (prueba de
 // aceptación #2 de la Fase 5) — este componente nunca escribe nada.
 export function HojaFrontal({ patientId, accessToken }: { patientId: string; accessToken: string }) {
+  const { t, locale } = useI18n();
   const [data, setData] = useState<HojaFrontalData | null>(null);
   const [error, setError] = useState<unknown>(null);
 
@@ -80,7 +76,7 @@ export function HojaFrontal({ patientId, accessToken }: { patientId: string; acc
   }, [patientId, accessToken]);
 
   if (error) return <ErrorState error={error} />;
-  if (!data) return <LoadingState label="Cargando hoja frontal…" />;
+  if (!data) return <LoadingState label={t("clinico.hojaFrontal.cargando")} />;
 
   const { patient, allergies, medications, activeDiagnoses, surgeries, lastEncounter, nextAppointment } = data;
   const activeMedications = medications.filter((m) => m.status === "ACTIVE");
@@ -93,21 +89,22 @@ export function HojaFrontal({ patientId, accessToken }: { patientId: string; acc
           {patient.firstName} {patient.lastNamePaternal} {patient.lastNameMaternal ?? ""}
         </p>
         <p className="text-gray-500">
-          {patient.medicfyId} · {ageYears(patient.birthDate)} años · {patient.sexAtBirth === "F" ? "Mujer" : "Hombre"}
+          {patient.medicfyId} · {t("pacientes.anios", { n: ageYears(patient.birthDate) })} ·{" "}
+          {patient.sexAtBirth === "F" ? t("pacientes.mujer") : t("pacientes.hombre")}
         </p>
         <p className="text-gray-500">{patient.phoneE164} · {patient.email}</p>
         {address ? <p className="text-gray-500">{address}</p> : null}
       </div>
 
       <div>
-        <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Alergias</h3>
+        <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">{t("clinico.hojaFrontal.alergias")}</h3>
         <AllergySummary allergies={allergies} />
       </div>
 
       <div>
-        <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Diagnósticos vigentes</h3>
+        <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">{t("clinico.hojaFrontal.diagnosticosVigentes")}</h3>
         {activeDiagnoses.length === 0 ? (
-          <p className="text-gray-500">Ninguno registrado.</p>
+          <p className="text-gray-500">{t("clinico.hojaFrontal.ningunoRegistrado")}</p>
         ) : (
           <ul className="flex flex-col gap-0.5">
             {activeDiagnoses.map((d) => (
@@ -121,9 +118,9 @@ export function HojaFrontal({ patientId, accessToken }: { patientId: string; acc
       </div>
 
       <div>
-        <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Medicación vigente ({activeMedications.length})</h3>
+        <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">{t("clinico.hojaFrontal.medicacionVigente", { n: activeMedications.length })}</h3>
         {activeMedications.length === 0 ? (
-          <p className="text-gray-500">Ninguna registrada.</p>
+          <p className="text-gray-500">{t("clinico.hojaFrontal.ningunaRegistrada")}</p>
         ) : (
           <ul className="flex flex-col gap-0.5">
             {activeMedications.map((m) => (
@@ -137,11 +134,11 @@ export function HojaFrontal({ patientId, accessToken }: { patientId: string; acc
 
       {surgeries.length > 0 ? (
         <div>
-          <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Cirugías</h3>
+          <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">{t("clinico.hojaFrontal.cirugias")}</h3>
           <ul className="flex flex-col gap-0.5">
             {surgeries.map((s) => (
               <li key={s.id} className="text-gray-700">
-                {s.freeText || "Registrada, sin detalle"}
+                {s.freeText || t("clinico.hojaFrontal.sinDetalle")}
               </li>
             ))}
           </ul>
@@ -149,30 +146,31 @@ export function HojaFrontal({ patientId, accessToken }: { patientId: string; acc
       ) : null}
 
       <div>
-        <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Última consulta</h3>
+        <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">{t("clinico.hojaFrontal.ultimaConsulta")}</h3>
         {lastEncounter ? (
           <p className="text-gray-700">
-            {formatMxDateTime(lastEncounter.signedAt)} — Dr(a). {lastEncounter.doctor.legalFirstName} {lastEncounter.doctor.legalLastName}
+            {formatDateTimeMedium(locale, lastEncounter.signedAt)} — {t("clinico.notasTimeline.doctorPrefijo")} {lastEncounter.doctor.legalFirstName}{" "}
+            {lastEncounter.doctor.legalLastName}
             {lastEncounter.doctor.primarySpecialty ? ` (${lastEncounter.doctor.primarySpecialty.nameEs})` : ""}
           </p>
         ) : (
-          <p className="text-gray-500">Sin consultas previas firmadas.</p>
+          <p className="text-gray-500">{t("clinico.hojaFrontal.sinConsultasPrevias")}</p>
         )}
       </div>
 
       <div>
-        <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Próxima cita</h3>
+        <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">{t("clinico.hojaFrontal.proximaCita")}</h3>
         {nextAppointment ? (
           <p className="text-gray-700">
-            {formatMxDate(nextAppointment.startsAt)} — {nextAppointment.service.name}
+            {formatDateMedium(locale, nextAppointment.startsAt)} — {nextAppointment.service.name}
           </p>
         ) : (
-          <p className="text-gray-500">Sin cita agendada.</p>
+          <p className="text-gray-500">{t("clinico.hojaFrontal.sinCita")}</p>
         )}
       </div>
 
       <Link href={`/pacientes/${patientId}`} className="w-fit text-sm font-medium text-brand-700 underline">
-        Ver expediente completo
+        {t("clinico.verExpediente")}
       </Link>
     </div>
   );

@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button";
 import { FieldWrapper, TextInput, SelectInput } from "@/components/ui/field";
 import { IconShieldCheck } from "@/components/ui/landing-icons";
 import { SiteHeader } from "@/components/site-header";
+import { useT } from "@/lib/i18n/context";
+import { useSpecialtyName } from "@/lib/i18n/catalog";
 
 interface PublicDoctorSummary {
   id: string;
@@ -48,6 +50,8 @@ function DoctoresContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { specialties } = useSpecialties();
+  const t = useT();
+  const specialtyName = useSpecialtyName();
 
   const [q, setQ] = useState(searchParams.get("q") ?? "");
   const [specialty, setSpecialty] = useState(searchParams.get("specialty") ?? "");
@@ -115,22 +119,22 @@ function DoctoresContent() {
       <SiteHeader />
       <main className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
         <div>
-          <h1 className="font-heading text-2xl text-brand-900">Especialistas</h1>
-          <p className="text-base text-gray-500">Busca por nombre o especialidad, y filtra por lo que necesites.</p>
+          <h1 className="font-heading text-2xl text-brand-900">{t("directorio.titulo")}</h1>
+          <p className="text-base text-gray-500">{t("directorio.subtitulo")}</p>
         </div>
 
         <Card>
           <form onSubmit={onSubmit} className="flex flex-col gap-4">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <FieldWrapper label="Nombre del médico" htmlFor="search-q">
-                <TextInput id="search-q" placeholder="Ej. Dra. López" value={q} onChange={(e) => setQ(e.target.value)} />
+              <FieldWrapper label={t("directorio.nombreMedico")} htmlFor="search-q">
+                <TextInput id="search-q" placeholder={t("directorio.nombrePlaceholder")} value={q} onChange={(e) => setQ(e.target.value)} />
               </FieldWrapper>
-              <FieldWrapper label="Especialidad" htmlFor="search-specialty">
+              <FieldWrapper label={t("directorio.especialidad")} htmlFor="search-specialty">
                 <SelectInput id="search-specialty" value={specialty} onChange={(e) => setSpecialty(e.target.value)}>
-                  <option value="">Todas</option>
+                  <option value="">{t("common.etiquetas.todas")}</option>
                   {specialties.map((s) => (
                     <option key={s.code} value={s.code}>
-                      {s.nameEs}
+                      {specialtyName(s.code, s.nameEs)}
                     </option>
                   ))}
                 </SelectInput>
@@ -139,7 +143,7 @@ function DoctoresContent() {
             <div className="flex flex-wrap gap-4">
               <label className="flex items-center gap-2 text-base text-gray-900">
                 <input type="checkbox" className="h-5 w-5" checked={teleconsultation} onChange={(e) => setTeleconsultation(e.target.checked)} />
-                Consulta en línea
+                {t("directorio.consultaEnLinea")}
               </label>
               <label className="flex items-center gap-2 text-base text-gray-900">
                 <input
@@ -148,11 +152,11 @@ function DoctoresContent() {
                   checked={acceptsNewPatients}
                   onChange={(e) => setAcceptsNewPatients(e.target.checked)}
                 />
-                Acepta pacientes nuevos
+                {t("directorio.aceptaPacientes")}
               </label>
             </div>
             <Button type="submit" className="w-fit">
-              Buscar
+              {t("common.acciones.buscar")}
             </Button>
           </form>
         </Card>
@@ -160,7 +164,7 @@ function DoctoresContent() {
         {results === null && !error ? <LoadingState /> : null}
         {error ? <ErrorState error={error} onRetry={runSearch} /> : null}
         {results && results.length === 0 ? (
-          <EmptyState title="Sin resultados" description="Prueba con otro nombre, especialidad o quitando filtros." />
+          <EmptyState title={t("directorio.sinResultados")} description={t("directorio.sinResultadosAyuda")} />
         ) : null}
 
         {results && results.length > 0 ? (
@@ -172,7 +176,7 @@ function DoctoresContent() {
             </div>
             {nextCursor ? (
               <Button type="button" variant="secondary" isLoading={isLoadingMore} onClick={() => void loadMore()} className="mx-auto">
-                Cargar más
+                {t("directorio.cargarMas")}
               </Button>
             ) : null}
           </>
@@ -183,6 +187,7 @@ function DoctoresContent() {
 }
 
 function DoctorCard({ doctor }: { doctor: PublicDoctorSummary }) {
+  const t = useT();
   return (
     <Card className="flex flex-col gap-3">
       <div className="flex items-center gap-3">
@@ -194,21 +199,21 @@ function DoctorCard({ doctor }: { doctor: PublicDoctorSummary }) {
           </div>
         )}
         <div className="min-w-0">
-          <p className="truncate text-base font-medium text-gray-900">{doctor.displayName ?? "Perfil en configuración"}</p>
-          <p className="truncate text-sm text-gray-500">{doctor.primarySpecialtyName ?? "Medicina General"}</p>
+          <p className="truncate text-base font-medium text-gray-900">{doctor.displayName ?? t("landing.destacados.perfilEnConfiguracion")}</p>
+          <p className="truncate text-sm text-gray-500">{doctor.primarySpecialtyName ?? t("catalogos.especialidades.GENERAL")}</p>
         </div>
       </div>
       {doctor.verified ? (
         <span className="inline-flex w-fit items-center gap-1 text-sm font-medium text-success-600">
           <IconShieldCheck className="h-4 w-4" />
-          Verificado
+          {t("landing.destacados.verificado")}
         </span>
       ) : null}
       {doctor.university ? <p className="text-sm text-gray-600">{doctor.university}</p> : null}
-      {doctor.acceptsTeleconsultation ? <p className="text-sm text-gray-500">Ofrece teleconsulta</p> : null}
+      {doctor.acceptsTeleconsultation ? <p className="text-sm text-gray-500">{t("directorio.ofreceTeleconsulta")}</p> : null}
       <Link href={`/dr/${doctor.slug}`}>
         <Button type="button" variant="secondary" className="w-full">
-          Ver perfil
+          {t("landing.destacados.verPerfil")}
         </Button>
       </Link>
     </Card>

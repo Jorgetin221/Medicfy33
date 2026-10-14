@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { FieldWrapper, TextInput } from "@/components/ui/field";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Aviso } from "@/components/ui/alert";
+import { useT } from "@/lib/i18n/context";
 
 // Prompt 37 (F4): el estudio viene del catálogo en DOS niveles (el
 // tipo vive en externalCode del término) y cada estudio lleva su
@@ -54,6 +55,7 @@ export function LabOrderPanel({
   encounterId: string;
   onIssued: () => void;
 }) {
+  const t = useT();
   const [items, setItems] = useState<DraftStudy[]>([]);
   const [tipos, setTipos] = useState<CatalogTerm[]>([]);
   const [estudios, setEstudios] = useState<CatalogTerm[]>([]);
@@ -151,7 +153,7 @@ export function LabOrderPanel({
     try {
       const blob = await apiFetchBlob(`/lab-orders/${issued.id}/pdf`, { accessToken });
       if (!blob) {
-        setPdfError(new Error("No se encontró el PDF de esta orden."));
+        setPdfError(new Error(t("clinico.orden.pdfNoEncontrado")));
         return;
       }
       window.open(URL.createObjectURL(blob), "_blank");
@@ -168,34 +170,33 @@ export function LabOrderPanel({
     (signatureRoute === "HANDWRITTEN_AFTER_PRINT" || (signatureRoute === "ELECTRONIC" && password.length > 0 && totpCode.length === 6));
 
   return (
-    <Panel open={open} onClose={handleClose} title="Ordenar laboratorio">
+    <Panel open={open} onClose={handleClose} title={t("clinico.orden.panelTitulo")}>
       {issued ? (
         <div className="flex flex-col gap-4">
-          <Aviso variant="exito" title={`Orden emitida — folio ${issued.folio}`}>
+          <Aviso variant="exito" title={t("clinico.orden.emitida", { folio: issued.folio })}>
             <p className="mt-1 break-all">
-              Verificación pública: <span className="font-mono">/verificar/{issued.qrVerificationToken}</span>
+              {t("clinico.orden.verificacionPublica")} <span className="font-mono">/verificar/{issued.qrVerificationToken}</span>
             </p>
           </Aviso>
           {issued.signatureRoute === "HANDWRITTEN_AFTER_PRINT" && (
-            <Aviso variant="advertencia" title="Firma pendiente">
-              Imprime esta orden y fírmala a mano antes de entregarla al paciente. Si ya tienes una firma visual cargada en tu perfil, el PDF ya
-              la incluye como referencia.
+            <Aviso variant="advertencia" title={t("clinico.orden.firmaPendiente")}>
+              {t("clinico.orden.firmaPendienteCuerpo")}
             </Aviso>
           )}
           <Button type="button" variant="secondary" isLoading={isDownloadingPdf} onClick={() => void downloadPdf()} className="w-fit">
-            Descargar / imprimir PDF
+            {t("clinico.orden.descargarPdf")}
           </Button>
           {pdfError ? (
-            <Aviso variant="advertencia" title="No se pudo abrir el PDF">
-              {pdfError instanceof ApiError ? pdfError.message : "Intenta de nuevo."}
+            <Aviso variant="advertencia" title={t("clinico.orden.noSePudoAbrirPdf")}>
+              {pdfError instanceof ApiError ? pdfError.message : t("clinico.receta.intentaDeNuevo")}
             </Aviso>
           ) : null}
           <div className="flex gap-3">
             <Button type="button" variant="secondary" onClick={resetAll}>
-              Ordenar otro estudio
+              {t("clinico.orden.ordenarOtro")}
             </Button>
             <Button type="button" onClick={handleClose}>
-              Cerrar
+              {t("common.acciones.cerrar")}
             </Button>
           </div>
         </div>
@@ -207,10 +208,10 @@ export function LabOrderPanel({
                 <li key={`${item.studyKey}-${index}`} className="flex items-center justify-between rounded-md border border-gray-300 px-3 py-2">
                   <span>
                     <span className="block text-base text-gray-900">{item.studyLabel}</span>
-                    <span className="block text-sm text-gray-500">Motivo: {item.motiveLabel}</span>
+                    <span className="block text-sm text-gray-500">{t("clinico.orden.motivoLinea", { motivo: item.motiveLabel })}</span>
                   </span>
                   <Button type="button" variant="destructive" onClick={() => removeStudy(index)} className="min-h-11 px-3 text-sm">
-                    Quitar
+                    {t("common.acciones.quitar")}
                   </Button>
                 </li>
               ))}
@@ -221,7 +222,7 @@ export function LabOrderPanel({
               estudio del catálogo; sin texto libre (R2: si falta un
               estudio, se solicita el término al curador). */}
           <div className="grid grid-cols-1 gap-3">
-            <FieldWrapper label="Tipo de estudio" htmlFor="lab-tipo">
+            <FieldWrapper label={t("clinico.orden.tipoEstudio")} htmlFor="lab-tipo">
               <select
                 id="lab-tipo"
                 value={tipoKey}
@@ -231,7 +232,7 @@ export function LabOrderPanel({
                 }}
                 className="min-h-11 w-full rounded-md border border-gray-300 px-3 text-base"
               >
-                <option value="">Todos los tipos</option>
+                <option value="">{t("clinico.orden.todosLosTipos")}</option>
                 {tipos.map((t) => (
                   <option key={t.key} value={t.key}>
                     {t.preferredTerm}
@@ -239,14 +240,14 @@ export function LabOrderPanel({
                 ))}
               </select>
             </FieldWrapper>
-            <FieldWrapper label="Estudio (del catálogo)" htmlFor="lab-study">
+            <FieldWrapper label={t("clinico.orden.estudioCatalogo")} htmlFor="lab-study">
               <select
                 id="lab-study"
                 value={studyKey}
                 onChange={(e) => setStudyKey(e.target.value)}
                 className="min-h-11 w-full rounded-md border border-gray-300 px-3 text-base"
               >
-                <option value="">Selecciona un estudio…</option>
+                <option value="">{t("clinico.orden.seleccionaEstudio")}</option>
                 {estudios
                   .filter((e) => !tipoKey || e.externalCode === tipoKey)
                   .map((e) => (
@@ -256,14 +257,14 @@ export function LabOrderPanel({
                   ))}
               </select>
             </FieldWrapper>
-            <FieldWrapper label="Motivo del estudio (obligatorio)" htmlFor="lab-motive" hint="Sin motivo, la orden no se emite.">
+            <FieldWrapper label={t("clinico.orden.motivoEstudio")} htmlFor="lab-motive" hint={t("clinico.orden.motivoAyuda")}>
               <select
                 id="lab-motive"
                 value={motiveKey}
                 onChange={(e) => setMotiveKey(e.target.value)}
                 className="min-h-11 w-full rounded-md border border-gray-300 px-3 text-base"
               >
-                <option value="">Selecciona el motivo…</option>
+                <option value="">{t("clinico.orden.seleccionaMotivo")}</option>
                 {motivos.map((m) => (
                   <option key={m.key} value={m.key}>
                     {m.preferredTerm}
@@ -276,19 +277,19 @@ export function LabOrderPanel({
             </Button>
           </div>
 
-          <FieldWrapper label="Indicación clínica" htmlFor="lab-indication">
+          <FieldWrapper label={t("clinico.orden.indicacionClinica")} htmlFor="lab-indication">
             <TextInput id="lab-indication" value={clinicalIndication} onChange={(e) => setClinicalIndication(e.target.value)} />
           </FieldWrapper>
 
           <label className="flex min-h-11 cursor-pointer items-center gap-2 text-base text-gray-700">
             <input type="checkbox" checked={fastingRequired} onChange={(e) => setFastingRequired(e.target.checked)} className="h-5 w-5" />
-            Requiere ayuno
+            {t("clinico.orden.requiereAyuno")}
           </label>
 
           {/* Mismo principio que PrescriptionPanel: la firma
               electrónica nunca es obligatoria, el médico elige. */}
           <fieldset className="flex flex-col gap-2 rounded-md border border-gray-300 p-4">
-            <legend className="px-1 text-sm font-medium text-gray-700">¿Cómo desea firmar esta orden?</legend>
+            <legend className="px-1 text-sm font-medium text-gray-700">{t("clinico.orden.comoFirmar")}</legend>
             <label className="flex min-h-11 cursor-pointer items-start gap-3 rounded-md p-2 hover:bg-gray-100">
               <input
                 type="radio"
@@ -298,10 +299,8 @@ export function LabOrderPanel({
                 onChange={() => setSignatureRoute("HANDWRITTEN_AFTER_PRINT")}
               />
               <span>
-                <span className="block text-base font-medium text-gray-900">Imprimir y firmar a mano</span>
-                <span className="block text-sm text-gray-500">
-                  No pide contraseña ni código. Si ya tienes una firma visual cargada en tu perfil, se incluye en el PDF como referencia.
-                </span>
+                <span className="block text-base font-medium text-gray-900">{t("clinico.receta.imprimirYFirmar")}</span>
+                <span className="block text-sm text-gray-500">{t("clinico.orden.imprimirYFirmarAyuda")}</span>
               </span>
             </label>
             <label className="flex min-h-11 cursor-pointer items-start gap-3 rounded-md p-2 hover:bg-gray-100">
@@ -313,18 +312,18 @@ export function LabOrderPanel({
                 onChange={() => setSignatureRoute("ELECTRONIC")}
               />
               <span>
-                <span className="block text-base font-medium text-gray-900">Firma digital o electrónica</span>
-                <span className="block text-sm text-gray-500">Firma dentro de Medicfy confirmando tu contraseña y un código de verificación.</span>
+                <span className="block text-base font-medium text-gray-900">{t("clinico.receta.firmaDigital")}</span>
+                <span className="block text-sm text-gray-500">{t("clinico.receta.firmaDigitalAyuda")}</span>
               </span>
             </label>
           </fieldset>
 
           {signatureRoute === "ELECTRONIC" && (
             <div className="grid grid-cols-2 gap-3">
-              <FieldWrapper label="Confirma tu contraseña" htmlFor="lab-password">
+              <FieldWrapper label={t("clinico.receta.confirmaContrasena")} htmlFor="lab-password">
                 <PasswordInput id="lab-password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
               </FieldWrapper>
-              <FieldWrapper label="Código de verificación (6 dígitos)" htmlFor="lab-totp">
+              <FieldWrapper label={t("clinico.receta.codigoVerificacion")} htmlFor="lab-totp">
                 <TextInput
                   id="lab-totp"
                   inputMode="numeric"
@@ -337,13 +336,13 @@ export function LabOrderPanel({
           )}
 
           {submitError ? (
-            <Aviso variant="critico" title="No se pudo emitir la orden">
-              {submitError instanceof ApiError ? submitError.message : "Intenta de nuevo."}
+            <Aviso variant="critico" title={t("clinico.orden.noSePudoEmitir")}>
+              {submitError instanceof ApiError ? submitError.message : t("clinico.receta.intentaDeNuevo")}
             </Aviso>
           ) : null}
 
           <Button type="button" isLoading={isSubmitting} disabled={!canSubmit} onClick={() => void submit()}>
-            {signatureRoute === "HANDWRITTEN_AFTER_PRINT" ? "Generar orden para firma" : "Firmar y emitir orden"}
+            {signatureRoute === "HANDWRITTEN_AFTER_PRINT" ? t("clinico.orden.generarParaFirma") : t("clinico.orden.firmarYEmitir")}
           </Button>
         </div>
       )}

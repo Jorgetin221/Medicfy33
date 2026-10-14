@@ -6,7 +6,9 @@ import { Card, EmptyState, ErrorState, LoadingState } from "@/components/ui/stat
 import { Button } from "@/components/ui/button";
 import { FieldWrapper, TextInput } from "@/components/ui/field";
 import { VitalLineChart } from "@/components/clinical/resultados-charts";
-import { VITAL_RANGE_LABEL, VITAL_RANGE_TILE_CLASS, type VitalRangeStatus } from "@/lib/vital-ranges";
+import { VITAL_RANGE_LABEL_KEY, VITAL_RANGE_TILE_CLASS, type VitalRangeStatus } from "@/lib/vital-ranges";
+import { useI18n } from "@/lib/i18n/context";
+import { formatDateLong } from "@/lib/i18n/format";
 
 interface LabAnalyteRecord {
   id: string;
@@ -29,12 +31,9 @@ interface LabAnalyteRecord {
 
 const ANALYTE_LINE_COLOR = "var(--brand-700)";
 
-const MX_TIME_ZONE = "America/Mexico_City";
-function formatMxDate(iso: string): string {
-  return new Intl.DateTimeFormat("es-MX", { timeZone: MX_TIME_ZONE, dateStyle: "long" }).format(new Date(iso));
-}
 
 function AddAnalyteForm({ patientId, accessToken, onCreated }: { patientId: string; accessToken: string; onCreated: () => void }) {
+  const { t } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -87,7 +86,7 @@ function AddAnalyteForm({ patientId, accessToken, onCreated }: { patientId: stri
   if (!isOpen) {
     return (
       <Button type="button" variant="secondary" onClick={() => setIsOpen(true)}>
-        + Agregar analito
+        {t("clinico.analitos.agregar")}
       </Button>
     );
   }
@@ -96,31 +95,31 @@ function AddAnalyteForm({ patientId, accessToken, onCreated }: { patientId: stri
     <form onSubmit={onSubmit} className="flex flex-col gap-3 rounded-md border border-gray-300 p-4" noValidate>
       {error ? <ErrorState error={error} /> : null}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <FieldWrapper label="Analito" htmlFor="analyte-name">
+        <FieldWrapper label={t("clinico.analitos.analito")} htmlFor="analyte-name">
           <TextInput id="analyte-name" required value={analyteName} onChange={(e) => setAnalyteName(e.target.value)} />
         </FieldWrapper>
-        <FieldWrapper label="Código LOINC (opcional)" htmlFor="analyte-loinc">
+        <FieldWrapper label={t("clinico.analitos.loinc")} htmlFor="analyte-loinc">
           <TextInput id="analyte-loinc" value={loincCode} onChange={(e) => setLoincCode(e.target.value)} />
         </FieldWrapper>
-        <FieldWrapper label="Fecha de la medición" htmlFor="analyte-measured-at">
+        <FieldWrapper label={t("clinico.analitos.fechaMedicion")} htmlFor="analyte-measured-at">
           <TextInput id="analyte-measured-at" type="date" required value={measuredAt} onChange={(e) => setMeasuredAt(e.target.value)} />
         </FieldWrapper>
-        <FieldWrapper label="Valor" htmlFor="analyte-value">
+        <FieldWrapper label={t("clinico.analitos.valor")} htmlFor="analyte-value">
           <TextInput id="analyte-value" type="number" step="any" required value={value} onChange={(e) => setValue(e.target.value)} />
         </FieldWrapper>
-        <FieldWrapper label="Unidad" htmlFor="analyte-unit">
+        <FieldWrapper label={t("clinico.analitos.unidad")} htmlFor="analyte-unit">
           <TextInput id="analyte-unit" required value={unit} onChange={(e) => setUnit(e.target.value)} />
         </FieldWrapper>
-        <FieldWrapper label="Ref. mínima (opcional)" htmlFor="analyte-ref-min">
+        <FieldWrapper label={t("clinico.analitos.refMinima")} htmlFor="analyte-ref-min">
           <TextInput id="analyte-ref-min" type="number" step="any" value={referenceMin} onChange={(e) => setReferenceMin(e.target.value)} />
         </FieldWrapper>
-        <FieldWrapper label="Ref. máxima (opcional)" htmlFor="analyte-ref-max">
+        <FieldWrapper label={t("clinico.analitos.refMaxima")} htmlFor="analyte-ref-max">
           <TextInput id="analyte-ref-max" type="number" step="any" value={referenceMax} onChange={(e) => setReferenceMax(e.target.value)} />
         </FieldWrapper>
       </div>
       <div className="flex gap-3">
         <Button type="submit" isLoading={isSubmitting}>
-          Guardar analito
+          {t("clinico.analitos.guardar")}
         </Button>
         <Button type="button" variant="secondary" onClick={() => setIsOpen(false)}>
           Cancelar
@@ -152,6 +151,7 @@ export function LabAnalytesPanel({
   // — sin endpoint nuevo, solo abre la pestaña que ya dispara un pase.
   onOpenAsistente?: () => void;
 }) {
+  const { t, locale } = useI18n();
   const [analytes, setAnalytes] = useState<LabAnalyteRecord[] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
@@ -208,7 +208,7 @@ export function LabAnalytesPanel({
   }
 
   if (error && !analytes) return <ErrorState error={error} onRetry={load} />;
-  if (!analytes) return <LoadingState label="Cargando analitos…" />;
+  if (!analytes) return <LoadingState label={t("clinico.cargando.analitos")} />;
 
   const groups = new Map<string, LabAnalyteRecord[]>();
   for (const a of analytes) {
@@ -222,11 +222,11 @@ export function LabAnalytesPanel({
       {error ? <ErrorState error={error} /> : null}
       {onOpenAsistente && groups.size > 0 ? (
         <Button type="button" variant="secondary" onClick={onOpenAsistente} className="min-h-11 w-fit px-3 text-sm">
-          Interpretar con el Segundo Lector
+          {t("clinico.analitos.interpretar")}
         </Button>
       ) : null}
       {groups.size === 0 ? (
-        <EmptyState title="Sin analitos capturados" description="Agrega un valor de laboratorio para empezar a graficar su tendencia." />
+        <EmptyState title={t("clinico.analitos.sinAnalitos")} description={t("clinico.analitos.sinAnalitosAyuda")} />
       ) : (
         Array.from(groups.entries()).map(([analyteName, entries]) => {
           const sorted = [...entries].sort((a, b) => new Date(a.measuredAt).getTime() - new Date(b.measuredAt).getTime());
@@ -235,7 +235,7 @@ export function LabAnalytesPanel({
           const min = latest.referenceMin === null ? null : Number(latest.referenceMin);
           const max = latest.referenceMax === null ? null : Number(latest.referenceMax);
           const status = latest.status;
-          const statusLabel = VITAL_RANGE_LABEL[status];
+          const statusLabelKey = VITAL_RANGE_LABEL_KEY[status];
 
           return (
             <Card key={analyteName}>
@@ -246,12 +246,12 @@ export function LabAnalytesPanel({
                   </h4>
                   <p className={`mt-1 inline-flex items-center gap-1 rounded-md border px-2 py-1 text-base font-medium text-gray-900 ${VITAL_RANGE_TILE_CLASS[status]}`}>
                     {latest.value} {latest.unit}
-                    {statusLabel ? <span aria-hidden="true">·</span> : null}
-                    {statusLabel}
+                    {statusLabelKey ? <span aria-hidden="true">·</span> : null}
+                    {statusLabelKey ? t(statusLabelKey) : null}
                   </p>
                   <p className="text-sm text-gray-500">
-                    Medido {formatMxDate(latest.measuredAt)}
-                    {latest.reviewedAt ? ` · revisado ${formatMxDate(latest.reviewedAt)}` : ""}
+                    {t("clinico.analitos.medido", { fecha: formatDateLong(locale, latest.measuredAt) })}
+                    {latest.reviewedAt ? t("clinico.analitos.revisado", { fecha: formatDateLong(locale, latest.reviewedAt) }) : ""}
                   </p>
                 </div>
                 <div className="flex flex-col items-end gap-2">
@@ -263,12 +263,12 @@ export function LabAnalytesPanel({
                         checked={selectedIds.has(latest.id)}
                         onChange={(e) => void toggleIncluded(latest.id, e.target.checked)}
                       />
-                      Incluir en esta nota
+                      {t("clinico.analitos.incluirEnNota")}
                     </label>
                   ) : null}
                   {!latest.reviewedAt ? (
                     <Button type="button" variant="secondary" isLoading={reviewingId === latest.id} onClick={() => void markReviewed(latest.id)} className="min-h-11 px-3 text-sm">
-                      Marcar como revisado
+                      {t("clinico.analitos.marcarRevisado")}
                     </Button>
                   ) : null}
                 </div>
@@ -276,10 +276,10 @@ export function LabAnalytesPanel({
               {sorted.length >= 2 ? (
                 <div className="mt-3">
                   <VitalLineChart
-                    title={`Tendencia — ${analyteName}`}
+                    title={t("clinico.analitos.tendencia", { analito: analyteName })}
                     unit={latest.unit}
                     series={[{ name: analyteName, color: ANALYTE_LINE_COLOR, points: sorted.map((e) => ({ x: new Date(e.measuredAt).getTime(), y: Number(e.value) })) }]}
-                    {...(min !== null && max !== null ? { band: { min, max, label: "Rango de referencia" } } : {})}
+                    {...(min !== null && max !== null ? { band: { min, max, label: t("clinico.analitos.rangoReferencia") } } : {})}
                   />
                 </div>
               ) : null}

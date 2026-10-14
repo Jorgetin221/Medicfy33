@@ -5,6 +5,9 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { tokenPrimaryRole } from "@/lib/jwt-claims";
+import { useT } from "@/lib/i18n/context";
+import type { MessageKey } from "@/lib/i18n/dictionaries";
+import { LanguageSwitcher } from "@/components/ui/language-switcher";
 import {
   IconPulse,
   IconCalendarNav,
@@ -21,16 +24,18 @@ import {
   IconClose,
 } from "@/components/ui/nav-icons";
 
-const NAV_LINKS = [
-  { href: "/agenda", label: "Agenda", Icon: IconCalendarNav },
-  { href: "/pacientes", label: "Pacientes", Icon: IconFolderNav },
-  { href: "/pacientes/nuevo", label: "Nuevo paciente", Icon: IconPersonPlus },
-  { href: "/disponibilidad", label: "Disponibilidad", Icon: IconClockNav },
+// La etiqueta se guarda como clave, no como texto: el rail se pinta en
+// el idioma que el médico haya elegido.
+const NAV_LINKS: { href: string; labelKey: MessageKey; Icon: IconComponent }[] = [
+  { href: "/agenda", labelKey: "nav.rail.agenda", Icon: IconCalendarNav },
+  { href: "/pacientes", labelKey: "nav.rail.pacientes", Icon: IconFolderNav },
+  { href: "/pacientes/nuevo", labelKey: "nav.rail.nuevoPaciente", Icon: IconPersonPlus },
+  { href: "/disponibilidad", labelKey: "nav.rail.disponibilidad", Icon: IconClockNav },
   // Fase 6 · Prompt 45: bitácora de acceso — "panel de auditoría para
   // el médico titular: quién ha visto a sus pacientes".
-  { href: "/auditoria", label: "Auditoría", Icon: IconClipboardCheckNav },
+  { href: "/auditoria", labelKey: "nav.rail.auditoria", Icon: IconClipboardCheckNav },
   // M2B (spec §7, v2.2): publicaciones del médico y control de audiencia.
-  { href: "/publicaciones", label: "Publicaciones", Icon: IconMegaphone },
+  { href: "/publicaciones", labelKey: "nav.rail.publicaciones", Icon: IconMegaphone },
 ];
 
 // Preferencia de UI (qué tan ancho se ve el rail), no dato clínico —
@@ -55,6 +60,7 @@ export function AppNav() {
   const pathname = usePathname();
   const router = useRouter();
   const { accessToken, isLoading, logout } = useAuth();
+  const t = useT();
   const [collapsed, setCollapsed] = useState(false);
   // Solo aplica bajo `md`. Deliberadamente NO se persiste: un panel que
   // tapa el contenido debe abrirse siempre cerrado, a diferencia de
@@ -149,14 +155,14 @@ export function AppNav() {
         <button
           type="button"
           onClick={() => setMobileOpen(true)}
-          aria-label="Abrir navegación"
+          aria-label={t("nav.rail.abrirNavegacion")}
           aria-expanded={mobileOpen}
           aria-controls="nav-principal"
           className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-rail-icon hover:bg-white/10"
         >
           <IconMenu className="h-6 w-6" />
         </button>
-        <Link href="/agenda" aria-label="Medicfy — ir a Agenda" className="flex min-h-11 items-center gap-2 rounded-md px-2 text-rail-icon-active">
+        <Link href="/agenda" aria-label={t("nav.rail.irAAgenda")} className="flex min-h-11 items-center gap-2 rounded-md px-2 text-rail-icon-active">
           <IconPulse className="h-6 w-6 shrink-0" />
           <span className="font-heading text-base">Medicfy</span>
         </Link>
@@ -166,11 +172,11 @@ export function AppNav() {
         <div className="fixed inset-0 z-40 bg-overlay md:hidden" onClick={() => setMobileOpen(false)} aria-hidden="true" />
       ) : null}
 
-      <nav id="nav-principal" aria-label="Navegación principal" className={navClassName}>
+      <nav id="nav-principal" aria-label={t("nav.rail.navegacionPrincipal")} className={navClassName}>
         <div className="mb-2 flex items-center gap-1">
           <Link
             href="/agenda"
-            aria-label="Medicfy — ir a Agenda"
+            aria-label={t("nav.rail.irAAgenda")}
             className={`flex min-h-11 flex-1 items-center gap-2 rounded-md bg-rail-icon-active-bg px-3 text-rail-icon-active ${collapsed ? "md:w-11 md:flex-none md:justify-center md:px-0" : ""}`}
           >
             <IconPulse className="h-6 w-6 shrink-0" />
@@ -180,7 +186,7 @@ export function AppNav() {
           <button
             type="button"
             onClick={() => setMobileOpen(false)}
-            aria-label="Cerrar navegación"
+            aria-label={t("nav.rail.cerrarNavegacion")}
             className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-rail-icon hover:bg-white/10 md:hidden"
           >
             <IconClose className="h-6 w-6" />
@@ -188,8 +194,9 @@ export function AppNav() {
         </div>
 
       <ul className="flex flex-1 flex-col gap-1">
-        {NAV_LINKS.map(({ href, label, Icon }) => {
+        {NAV_LINKS.map(({ href, labelKey, Icon }) => {
           const active = isActive(href);
+          const label = t(labelKey);
           return (
             <li key={href}>
               <Link href={href} aria-label={label} title={collapsed ? label : undefined} aria-current={active ? "page" : undefined} className={itemClassName(active)}>
@@ -205,29 +212,35 @@ export function AppNav() {
           <li>
             <Link
               href="/admin"
-              aria-label="Administración"
-              title={collapsed ? "Administración" : undefined}
+              aria-label={t("nav.rail.administracion")}
+              title={collapsed ? t("nav.rail.administracion") : undefined}
               aria-current={isActive("/admin") ? "page" : undefined}
               className={itemClassName(isActive("/admin"))}
             >
-              <NavLabel Icon={IconShieldNav} label="Administración" />
+              <NavLabel Icon={IconShieldNav} label={t("nav.rail.administracion")} />
             </Link>
           </li>
         )}
         <li>
           <Link
             href="/perfil"
-            aria-label="Perfil"
-            title={collapsed ? "Perfil" : undefined}
+            aria-label={t("nav.rail.perfil")}
+            title={collapsed ? t("nav.rail.perfil") : undefined}
             aria-current={isActive("/perfil") ? "page" : undefined}
             className={itemClassName(isActive("/perfil"))}
           >
-            <NavLabel Icon={IconUserCircle} label="Perfil" />
+            <NavLabel Icon={IconUserCircle} label={t("nav.rail.perfil")} />
           </Link>
         </li>
+        {/* El idioma se cambia desde cualquier pantalla autenticada, no
+            solo desde Perfil: es una preferencia de lectura, y quien la
+            necesita es porque no está entendiendo lo que ve ahora. */}
+        <li className={collapsed ? "md:flex md:justify-center" : ""}>
+          <LanguageSwitcher tone="rail" showLabel={!collapsed} align="left" />
+        </li>
         <li>
-          <button type="button" onClick={handleLogout} aria-label="Cerrar sesión" title={collapsed ? "Cerrar sesión" : undefined} className={itemClassName(false)}>
-            <NavLabel Icon={IconLogout} label="Cerrar sesión" />
+          <button type="button" onClick={handleLogout} aria-label={t("nav.rail.cerrarSesion")} title={collapsed ? t("nav.rail.cerrarSesion") : undefined} className={itemClassName(false)}>
+            <NavLabel Icon={IconLogout} label={t("nav.rail.cerrarSesion")} />
           </button>
         </li>
         {/* Plegar el rail no tiene sentido en el panel móvil: ahí se cierra. */}
@@ -235,12 +248,12 @@ export function AppNav() {
           <button
             type="button"
             onClick={toggleCollapsed}
-            aria-label={collapsed ? "Expandir barra lateral" : "Colapsar barra lateral"}
-            title={collapsed ? "Expandir" : undefined}
+            aria-label={collapsed ? t("nav.rail.expandirBarra") : t("nav.rail.colapsarBarra")}
+            title={collapsed ? t("nav.rail.expandir") : undefined}
             className={itemClassName(false)}
           >
             <IconChevronNav className={`h-5 w-5 shrink-0 transition-transform ${collapsed ? "rotate-180" : ""}`} />
-            {!collapsed ? <span className="truncate text-sm">Colapsar</span> : null}
+            {!collapsed ? <span className="truncate text-sm">{t("nav.rail.colapsar")}</span> : null}
           </button>
         </li>
       </ul>

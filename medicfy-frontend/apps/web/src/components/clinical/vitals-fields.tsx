@@ -3,7 +3,9 @@
 import type { UseFormReturn } from "react-hook-form";
 import type { ClinicalNoteSignInput } from "@medicfy/contracts";
 import { FieldWrapper, TextInput } from "@/components/ui/field";
-import { vitalRangeStatus, VITAL_RANGE_LABEL, VITAL_RANGE_TILE_CLASS } from "@/lib/vital-ranges";
+import { vitalRangeStatus, VITAL_RANGE_LABEL_KEY, VITAL_RANGE_TILE_CLASS } from "@/lib/vital-ranges";
+import { useT } from "@/lib/i18n/context";
+import type { MessageKey } from "@/lib/i18n/dictionaries";
 
 // Rangos de plausibilidad EXACTOS de vitalsSchema
 // (@medicfy/contracts/clinical.schema.ts) — nunca inventados aquí,
@@ -27,21 +29,25 @@ type VitalsFieldName =
 const PEDIATRIC_ONLY: Set<VitalsFieldName> = new Set(["headCircumferenceCm", "abdominalCircumferenceCm"]);
 const PEDIATRIC_AGE_LIMIT = 12;
 
-const VITALS_FIELDS: { name: VitalsFieldName; label: string; unit: string; min: number; max: number; step: string }[] = [
-  { name: "bpSystolic", label: "TA sistólica", unit: "mmHg", min: 40, max: 300, step: "1" },
-  { name: "bpDiastolic", label: "TA diastólica", unit: "mmHg", min: 20, max: 200, step: "1" },
-  { name: "heartRate", label: "Frecuencia cardiaca", unit: "lpm", min: 20, max: 250, step: "1" },
-  { name: "respiratoryRate", label: "Frecuencia respiratoria", unit: "rpm", min: 5, max: 60, step: "1" },
-  { name: "tempC", label: "Temperatura", unit: "°C", min: 30, max: 43, step: "0.1" },
-  { name: "spo2", label: "SpO2", unit: "%", min: 50, max: 100, step: "1" },
-  { name: "weightKg", label: "Peso", unit: "kg", min: 0.5, max: 400, step: "0.1" },
-  { name: "heightCm", label: "Talla", unit: "cm", min: 20, max: 250, step: "1" },
+// La unidad NO se traduce: mmHg, lpm, °C y kg son notación
+// internacional, y cambiarlas introduciría ambigüedad en un dato
+// clínico. Solo la etiqueta sale del diccionario.
+const VITALS_FIELDS: { name: VitalsFieldName; labelKey: MessageKey; unit: string; min: number; max: number; step: string }[] = [
+  { name: "bpSystolic", labelKey: "clinico.vitales.bpSystolic", unit: "mmHg", min: 40, max: 300, step: "1" },
+  { name: "bpDiastolic", labelKey: "clinico.vitales.bpDiastolic", unit: "mmHg", min: 20, max: 200, step: "1" },
+  { name: "heartRate", labelKey: "clinico.vitales.heartRate", unit: "lpm", min: 20, max: 250, step: "1" },
+  { name: "respiratoryRate", labelKey: "clinico.vitales.respiratoryRate", unit: "rpm", min: 5, max: 60, step: "1" },
+  { name: "tempC", labelKey: "clinico.vitales.tempC", unit: "°C", min: 30, max: 43, step: "0.1" },
+  { name: "spo2", labelKey: "clinico.vitales.spo2", unit: "%", min: 50, max: 100, step: "1" },
+  { name: "weightKg", labelKey: "clinico.vitales.weightKg", unit: "kg", min: 0.5, max: 400, step: "0.1" },
+  { name: "heightCm", labelKey: "clinico.vitales.heightCm", unit: "cm", min: 20, max: 250, step: "1" },
   // Prompt 26 (Fase 3): perímetros con unidad explícita.
-  { name: "headCircumferenceCm", label: "Perímetro cefálico", unit: "cm", min: 20, max: 70, step: "0.1" },
-  { name: "abdominalCircumferenceCm", label: "Perímetro abdominal", unit: "cm", min: 20, max: 250, step: "0.5" },
+  { name: "headCircumferenceCm", labelKey: "clinico.vitales.headCircumferenceCm", unit: "cm", min: 20, max: 70, step: "0.1" },
+  { name: "abdominalCircumferenceCm", labelKey: "clinico.vitales.abdominalCircumferenceCm", unit: "cm", min: 20, max: 250, step: "0.5" },
 ];
 
 export function VitalsFields({ form, patientAgeYears }: { form: UseFormReturn<ClinicalNoteSignInput>; patientAgeYears: number | null }) {
+  const t = useT();
   const errors = form.formState.errors.vitals;
   const watchedVitals = form.watch("vitals") ?? {};
   const isPediatric = patientAgeYears === null || patientAgeYears < PEDIATRIC_AGE_LIMIT;
@@ -52,10 +58,10 @@ export function VitalsFields({ form, patientAgeYears }: { form: UseFormReturn<Cl
       {visibleFields.map((field) => {
         const fieldError = errors?.[field.name];
         const status = vitalRangeStatus(field.name, watchedVitals[field.name], patientAgeYears);
-        const statusLabel = VITAL_RANGE_LABEL[status];
+        const statusLabelKey = VITAL_RANGE_LABEL_KEY[status];
         return (
           <div key={field.name} className={`rounded-md border bg-white p-3 ${fieldError ? "border-danger-600" : VITAL_RANGE_TILE_CLASS[status]}`}>
-            <FieldWrapper label={field.label} htmlFor={`vitals.${field.name}`} error={fieldError?.message}>
+            <FieldWrapper label={t(field.labelKey)} htmlFor={`vitals.${field.name}`} error={fieldError?.message}>
               <TextInput
                 id={`vitals.${field.name}`}
                 type="number"
@@ -71,7 +77,7 @@ export function VitalsFields({ form, patientAgeYears }: { form: UseFormReturn<Cl
               />
               <span className="text-sm text-gray-500">
                 {field.unit}
-                {statusLabel ? ` · ${statusLabel}` : ""}
+                {statusLabelKey ? ` · ${t(statusLabelKey)}` : ""}
               </span>
             </FieldWrapper>
           </div>

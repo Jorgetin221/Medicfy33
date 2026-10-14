@@ -5,6 +5,7 @@ import { apiFetch, apiUpload } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { FieldWrapper, TextInput } from "@/components/ui/field";
 import { ErrorState } from "@/components/ui/states";
+import { useT } from "@/lib/i18n/context";
 
 // Capa 1 (v2.5) — "Debe estar en un espacio más estratégico..." no
 // aplica aquí (eso fue Resumen objetivo); esto vive junto a
@@ -66,6 +67,7 @@ export function LabSheetUpload({
   accessToken: string;
   onAccepted: () => void;
 }) {
+  const t = useT();
   const [phase, setPhase] = useState<Phase>("idle");
   const [extractionId, setExtractionId] = useState<string | null>(null);
   const [rows, setRows] = useState<ReviewRow[]>([]);
@@ -168,32 +170,32 @@ export function LabSheetUpload({
   }
 
   return (
-    <section aria-label="Lectura automática de hoja de laboratorio" className="rounded-md border border-gray-300 p-3">
-      <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500">Subir hoja de laboratorio</h2>
+    <section aria-label={t("clinico.hojaLab.seccion")} className="rounded-md border border-gray-300 p-3">
+      <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500">{t("clinico.hojaLab.titulo")}</h2>
 
       {phase === "idle" && (
         <label className="flex min-h-11 w-fit cursor-pointer items-center rounded-md border border-brand-700 px-3 text-base font-medium text-brand-700">
-          Elegir archivo (imagen o PDF)
+          {t("clinico.hojaLab.elegirArchivo")}
           <input type="file" accept="image/jpeg,image/png,application/pdf" className="sr-only" onChange={(e) => void handleFileSelected(e)} />
         </label>
       )}
 
-      {phase === "uploading" && <p className="text-base text-gray-700">Extrayendo los valores de la hoja…</p>}
+      {phase === "uploading" && <p className="text-base text-gray-700">{t("clinico.hojaLab.extrayendo")}</p>}
 
       {phase === "error" && (
         <div className="flex flex-col gap-2">
-          {error ? <ErrorState error={error} /> : <p className="text-base text-gray-700">No se pudo leer la hoja.</p>}
+          {error ? <ErrorState error={error} /> : <p className="text-base text-gray-700">{t("clinico.hojaLab.noSePudoLeer")}</p>}
           <div className="flex gap-3">
             {extractionId && (
               <Button type="button" variant="secondary" onClick={() => void handleRetry()} className="min-h-11">
-                Reintentar
+                {t("common.acciones.reintentar")}
               </Button>
             )}
             <Button type="button" variant="secondary" onClick={reset} className="min-h-11">
-              Subir otra hoja
+              {t("clinico.hojaLab.subirOtra")}
             </Button>
           </div>
-          <p className="text-sm text-gray-500">O agrega los analitos manualmente en &quot;+ Agregar analito&quot;, abajo.</p>
+          <p className="text-sm text-gray-500">{t("clinico.hojaLab.agregaManual")}</p>
         </div>
       )}
 
@@ -201,17 +203,16 @@ export function LabSheetUpload({
         <form onSubmit={(e) => void handleSubmitReview(e)} className="flex flex-col gap-3">
           {/* Leyenda fija — nunca descartable mientras se revisa (petición explícita del usuario). */}
           <div className="sticky top-0 rounded-md border border-warn-600 bg-warn-50 p-2 text-base text-gray-900">
-            Los valores fueron extraídos automáticamente y pueden contener errores de lectura. Verifique cada
-            resultado contra la hoja original antes de aceptarlo.
+            {t("clinico.hojaLab.avisoLectura")}
           </div>
 
           {error ? <ErrorState error={error} /> : null}
 
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            <FieldWrapper label="Fecha del estudio" htmlFor="sheet-measured-at">
+            <FieldWrapper label={t("clinico.hojaLab.fechaEstudio")} htmlFor="sheet-measured-at">
               <TextInput id="sheet-measured-at" type="date" required value={measuredAt} onChange={(e) => setMeasuredAt(e.target.value)} />
             </FieldWrapper>
-            <FieldWrapper label="Laboratorio (opcional)" htmlFor="sheet-lab-name">
+            <FieldWrapper label={t("clinico.hojaLab.laboratorio")} htmlFor="sheet-lab-name">
               <TextInput id="sheet-lab-name" value={labName} onChange={(e) => setLabName(e.target.value)} />
             </FieldWrapper>
           </div>
@@ -220,12 +221,12 @@ export function LabSheetUpload({
             <table className="w-full border-collapse text-base">
               <thead>
                 <tr className="border-b border-gray-300 text-left text-sm text-gray-500">
-                  <th className="p-2">Incluir</th>
-                  <th className="p-2">Analito</th>
-                  <th className="p-2">Valor</th>
-                  <th className="p-2">Unidad</th>
-                  <th className="p-2">Ref. mín.</th>
-                  <th className="p-2">Ref. máx.</th>
+                  <th className="p-2">{t("clinico.hojaLab.incluir")}</th>
+                  <th className="p-2">{t("clinico.analitos.analito")}</th>
+                  <th className="p-2">{t("clinico.analitos.valor")}</th>
+                  <th className="p-2">{t("clinico.analitos.unidad")}</th>
+                  <th className="p-2">{t("clinico.hojaLab.refMin")}</th>
+                  <th className="p-2">{t("clinico.hojaLab.refMax")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -240,14 +241,14 @@ export function LabSheetUpload({
                         className="h-6 w-6"
                         checked={row.included}
                         onChange={(e) => updateRow(row.candidateId, { included: e.target.checked })}
-                        aria-label={`Incluir ${row.analyteName}`}
+                        aria-label={t("clinico.hojaLab.incluirFila", { analito: row.analyteName })}
                       />
                     </td>
                     <td className="p-2 align-top">
                       <TextInput
                         value={row.analyteName}
                         onChange={(e) => updateRow(row.candidateId, { analyteName: e.target.value })}
-                        aria-label="Nombre del analito"
+                        aria-label={t("clinico.hojaLab.nombreAnalito")}
                       />
                       {row.confidence === "LOW" && (
                         <label className="mt-1 flex items-center gap-1 text-sm text-gray-700">
@@ -256,7 +257,7 @@ export function LabSheetUpload({
                             checked={row.confirmedLowConfidence}
                             onChange={(e) => updateRow(row.candidateId, { confirmedLowConfidence: e.target.checked })}
                           />
-                          Confianza baja — confirmo este valor tras verlo en la hoja
+                          {t("clinico.hojaLab.confianzaBaja")}
                         </label>
                       )}
                     </td>
@@ -266,11 +267,11 @@ export function LabSheetUpload({
                         step="any"
                         value={row.value}
                         onChange={(e) => updateRow(row.candidateId, { value: e.target.value })}
-                        aria-label="Valor"
+                        aria-label={t("clinico.analitos.valor")}
                       />
                     </td>
                     <td className="p-2 align-top">
-                      <TextInput value={row.unit} onChange={(e) => updateRow(row.candidateId, { unit: e.target.value })} aria-label="Unidad" />
+                      <TextInput value={row.unit} onChange={(e) => updateRow(row.candidateId, { unit: e.target.value })} aria-label={t("clinico.analitos.unidad")} />
                     </td>
                     <td className="p-2 align-top">
                       <TextInput
@@ -278,7 +279,7 @@ export function LabSheetUpload({
                         step="any"
                         value={row.referenceMin}
                         onChange={(e) => updateRow(row.candidateId, { referenceMin: e.target.value })}
-                        aria-label="Referencia mínima"
+                        aria-label={t("clinico.hojaLab.referenciaMinima")}
                       />
                     </td>
                     <td className="p-2 align-top">
@@ -287,7 +288,7 @@ export function LabSheetUpload({
                         step="any"
                         value={row.referenceMax}
                         onChange={(e) => updateRow(row.candidateId, { referenceMax: e.target.value })}
-                        aria-label="Referencia máxima"
+                        aria-label={t("clinico.hojaLab.referenciaMaxima")}
                       />
                     </td>
                   </tr>
@@ -298,23 +299,23 @@ export function LabSheetUpload({
 
           <div className="flex gap-3">
             <Button type="submit" isLoading={phase === "submitting"} disabled={lowConfidenceUnconfirmed || !measuredAt}>
-              Aceptar valores revisados
+              {t("clinico.hojaLab.aceptarValores")}
             </Button>
             <Button type="button" variant="secondary" onClick={reset} className="min-h-11">
-              Cancelar
+              {t("common.acciones.cancelar")}
             </Button>
           </div>
           {lowConfidenceUnconfirmed && (
-            <p className="text-sm text-gray-700">Confirma cada fila de confianza baja antes de aceptar.</p>
+            <p className="text-sm text-gray-700">{t("clinico.hojaLab.confirmaFilas")}</p>
           )}
         </form>
       )}
 
       {phase === "accepted" && (
         <div className="flex flex-col gap-2">
-          <p className="text-base text-gray-900">Valores aceptados y agregados al expediente.</p>
+          <p className="text-base text-gray-900">{t("clinico.hojaLab.aceptados")}</p>
           <Button type="button" variant="secondary" onClick={reset} className="min-h-11 w-fit">
-            Subir otra hoja
+            {t("clinico.hojaLab.subirOtra")}
           </Button>
         </div>
       )}

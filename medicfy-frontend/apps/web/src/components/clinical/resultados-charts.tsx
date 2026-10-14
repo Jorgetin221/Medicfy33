@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, expectArray } from "@/lib/api-client";
 import { Card, ErrorState, LoadingState } from "@/components/ui/states";
+import { useT } from "@/lib/i18n/context";
 
 // Prompt 30 — gráficas de evolución (pestaña Resultados de la Zona 3).
 // Leen EXCLUSIVAMENTE campos estructurados de vital_sign_sets — ni una
@@ -72,12 +73,15 @@ export function VitalLineChart({
   // Pediatría: curvas de percentilas (P3..P97) como contexto gris.
   referenceCurves?: { label: string; points: { x: number; y: number }[] }[];
 }) {
+  // `tr` y no `t`: `t` ya es la función local que saca el timestamp
+  // de una fila de signos vitales.
+  const tr = useT();
   const nonEmpty = series.filter((s) => s.points.length > 0);
   if (nonEmpty.length === 0) {
     return (
       <Card>
         <h4 className="text-sm font-semibold text-gray-900">{title}</h4>
-        <p className="text-sm text-gray-500">Sin datos estructurados todavía.</p>
+        <p className="text-sm text-gray-500">{tr("clinico.graficas.sinDatos")}</p>
       </Card>
     );
   }
@@ -184,6 +188,7 @@ export function ResultadosCharts({
   ageYears: number;
   birthDate: string;
 }) {
+  const tr = useT();
   const [rows, setRows] = useState<VitalsRow[] | null>(null);
   const [growth, setGrowth] = useState<GrowthCurve | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -200,7 +205,7 @@ export function ResultadosCharts({
   useEffect(load, [load]);
 
   if (error) return <ErrorState error={error} />;
-  if (rows === null) return <LoadingState label="Cargando series estructuradas…" />;
+  if (rows === null) return <LoadingState label={tr("clinico.graficas.cargando")} />;
 
   const t = (row: VitalsRow) => new Date(row.recordedAt).getTime();
   // Pediatría: mismo eje X (edad en meses) para la serie del paciente
@@ -217,21 +222,21 @@ export function ResultadosCharts({
   return (
     <div className="flex flex-col gap-3" data-testid="resultados-charts">
       <VitalLineChart
-        title="Presión arterial"
+        title={tr("clinico.graficas.presionArterial")}
         unit="mmHg"
-        band={{ min: 90, max: 129, label: "Rango normal sistólica (adulto)" }}
+        band={{ min: 90, max: 129, label: tr("clinico.graficas.rangoSistolicaAdulto") }}
         series={[
-          { name: "Sistólica", color: SYSTOLIC_COLOR, points: seriesOf((r) => r.bpSystolicMmHg) },
-          { name: "Diastólica", color: DIASTOLIC_COLOR, points: seriesOf((r) => r.bpDiastolicMmHg) },
+          { name: tr("clinico.graficas.sistolica"), color: SYSTOLIC_COLOR, points: seriesOf((r) => r.bpSystolicMmHg) },
+          { name: tr("clinico.graficas.diastolica"), color: DIASTOLIC_COLOR, points: seriesOf((r) => r.bpDiastolicMmHg) },
         ]}
       />
       {ageYears < 20 && growth ? (
         <VitalLineChart
-          title="Peso por edad (percentilas)"
+          title={tr("clinico.graficas.pesoPorEdad")}
           unit="kg"
           series={[
             {
-              name: "Peso",
+              name: tr("clinico.graficas.peso"),
               color: SINGLE_COLOR,
               points: rows.flatMap((r) => {
                 const y = num(r.weightKg);
@@ -245,14 +250,22 @@ export function ResultadosCharts({
           }))}
         />
       ) : (
-        <VitalLineChart title="Peso" unit="kg" series={[{ name: "Peso", color: SINGLE_COLOR, points: seriesOf((r) => num(r.weightKg)) }]} />
+        <VitalLineChart
+          title={tr("clinico.graficas.peso")}
+          unit="kg"
+          series={[{ name: tr("clinico.graficas.peso"), color: SINGLE_COLOR, points: seriesOf((r) => num(r.weightKg)) }]}
+        />
       )}
-      <VitalLineChart title="Talla" unit="cm" series={[{ name: "Talla", color: SINGLE_COLOR, points: seriesOf((r) => num(r.heightCm)) }]} />
       <VitalLineChart
-        title="IMC"
+        title={tr("clinico.graficas.talla")}
+        unit="cm"
+        series={[{ name: tr("clinico.graficas.talla"), color: SINGLE_COLOR, points: seriesOf((r) => num(r.heightCm)) }]}
+      />
+      <VitalLineChart
+        title={tr("clinico.graficas.imc")}
         unit="kg/m²"
-        band={{ min: 18.5, max: 24.9, label: "IMC normal (adulto)" }}
-        series={[{ name: "IMC", color: SINGLE_COLOR, points: seriesOf((r) => num(r.bmi)) }]}
+        band={{ min: 18.5, max: 24.9, label: tr("clinico.graficas.imcNormalAdulto") }}
+        series={[{ name: tr("clinico.graficas.imc"), color: SINGLE_COLOR, points: seriesOf((r) => num(r.bmi)) }]}
       />
     </div>
   );

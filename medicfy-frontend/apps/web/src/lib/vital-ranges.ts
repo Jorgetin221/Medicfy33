@@ -1,3 +1,5 @@
+import type { MessageKey } from "@/lib/i18n/dictionaries";
+
 // Espejo de medicfy-backend/apps/api/src/common/vital-ranges.util.ts —
 // MISMOS umbrales (fuentes: PALS/AHA pediátrico, ACC/AHA 2017 crisis
 // hipertensiva adulto, SpO2/temperatura de uso generalizado). Solo
@@ -67,12 +69,15 @@ export function vitalRangeStatus(fieldName: string, value: number | undefined, a
   return "normal";
 }
 
-export const VITAL_RANGE_LABEL: Record<VitalRangeStatus, string | null> = {
+// Clave de traducción, no texto: la etiqueta acompaña a un valor
+// clínico y debe leerse en el idioma elegido. null = no se etiqueta
+// (un valor normal no necesita adjetivo).
+export const VITAL_RANGE_LABEL_KEY: Record<VitalRangeStatus, MessageKey | null> = {
   unknown: null,
   normal: null,
-  low: "bajo",
-  high: "alto",
-  critical: "crítico",
+  low: "clinico.rango.bajo",
+  high: "clinico.rango.alto",
+  critical: "clinico.rango.critico",
 };
 
 export const VITAL_RANGE_TILE_CLASS: Record<VitalRangeStatus, string> = {

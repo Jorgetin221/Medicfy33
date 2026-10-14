@@ -5,6 +5,9 @@ import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
 import { Card, LoadingState, ErrorState } from "@/components/ui/states";
+import { useT } from "@/lib/i18n/context";
+import type { MessageKey } from "@/lib/i18n/dictionaries";
+import { translateKeyed } from "@/lib/i18n/keyed";
 
 interface AdminMetrics {
   doctorsByVerificationStatus: Record<string, number>;
@@ -18,25 +21,25 @@ interface AdminMetrics {
   churn: number | null;
 }
 
-const VERIFICATION_LABELS: Record<string, string> = {
-  DRAFT: "Borrador",
-  SUBMITTED: "Por revisar",
-  IN_REVIEW: "En revisión",
-  VERIFIED: "Verificado",
-  VERIFIED_SPECIALTY_UNCONFIRMED: "Verificado (especialidad sin confirmar)",
-  REJECTED: "Rechazado",
-  SUSPENDED: "Suspendido",
+const VERIFICATION_LABEL_KEYS: Record<string, MessageKey> = {
+  DRAFT: "admin.verificacionEstado.DRAFT",
+  SUBMITTED: "admin.verificacionEstado.SUBMITTED",
+  IN_REVIEW: "admin.verificacionEstado.IN_REVIEW",
+  VERIFIED: "admin.verificacionEstado.VERIFIED",
+  VERIFIED_SPECIALTY_UNCONFIRMED: "admin.verificacionEstado.VERIFIED_SPECIALTY_UNCONFIRMED",
+  REJECTED: "admin.verificacionEstado.REJECTED",
+  SUSPENDED: "admin.verificacionEstado.SUSPENDED",
 };
 
-const APPOINTMENT_LABELS: Record<string, string> = {
-  PENDING_PAYMENT: "Pendiente de pago",
-  SCHEDULED: "Agendada",
-  CONFIRMED: "Confirmada",
-  IN_PROGRESS: "En consulta",
-  COMPLETED: "Completada",
-  CANCELLED_BY_PATIENT: "Cancelada por paciente",
-  CANCELLED_BY_DOCTOR: "Cancelada por médico",
-  NO_SHOW: "No se presentó",
+const APPOINTMENT_LABEL_KEYS: Record<string, MessageKey> = {
+  PENDING_PAYMENT: "admin.citaEstado.PENDING_PAYMENT",
+  SCHEDULED: "admin.citaEstado.SCHEDULED",
+  CONFIRMED: "admin.citaEstado.CONFIRMED",
+  IN_PROGRESS: "admin.citaEstado.IN_PROGRESS",
+  COMPLETED: "admin.citaEstado.COMPLETED",
+  CANCELLED_BY_PATIENT: "admin.citaEstado.CANCELLED_BY_PATIENT",
+  CANCELLED_BY_DOCTOR: "admin.citaEstado.CANCELLED_BY_DOCTOR",
+  NO_SHOW: "admin.citaEstado.NO_SHOW",
 };
 
 function StatCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
@@ -74,6 +77,7 @@ export default function AdminMetricasPage() {
 }
 
 function MetricsView({ accessToken }: { accessToken: string }) {
+  const t = useT();
   const [metrics, setMetrics] = useState<AdminMetrics | null>(null);
   const [error, setError] = useState<unknown>(null);
 
@@ -92,8 +96,8 @@ function MetricsView({ accessToken }: { accessToken: string }) {
   return (
     <main className="mx-auto flex max-w-4xl flex-col gap-6 p-6">
       <div>
-        <h1 className="font-heading text-2xl text-brand-900">Métricas</h1>
-        <p className="text-base text-gray-500">Salud operativa de la plataforma — sin contenido clínico.</p>
+        <h1 className="font-heading text-2xl text-brand-900">{t("admin.metricas.titulo")}</h1>
+        <p className="text-base text-gray-500">{t("admin.metricas.subtitulo")}</p>
       </div>
 
       {metrics === null && !error ? <LoadingState /> : null}
@@ -102,11 +106,11 @@ function MetricsView({ accessToken }: { accessToken: string }) {
       {metrics ? (
         <>
           <Card>
-            <h2 className="mb-3 text-lg font-medium text-gray-900">Cola de verificación</h2>
+            <h2 className="mb-3 text-lg font-medium text-gray-900">{t("admin.metricas.colaTitulo")}</h2>
             <div className="grid grid-cols-2 gap-4">
-              <StatCard label="Médicos en cola" value={String(metrics.verificationQueue.pending)} />
+              <StatCard label={t("admin.metricas.medicosEnCola")} value={String(metrics.verificationQueue.pending)} />
               <StatCard
-                label="Más de 24h hábiles esperando"
+                label={t("admin.metricas.masDe24h")}
                 value={String(metrics.verificationQueue.overdue)}
                 hint="M13-CA-003"
               />
@@ -115,7 +119,7 @@ function MetricsView({ accessToken }: { accessToken: string }) {
               <ul className="mt-4 flex flex-col gap-1 text-sm text-gray-600">
                 {Object.entries(metrics.doctorsByVerificationStatus).map(([status, count]) => (
                   <li key={status}>
-                    {VERIFICATION_LABELS[status] ?? status}: <span className="font-medium text-gray-900">{count}</span>
+                    {translateKeyed(t, VERIFICATION_LABEL_KEYS, status)}: <span className="font-medium text-gray-900">{count}</span>
                   </li>
                 ))}
               </ul>
@@ -123,39 +127,39 @@ function MetricsView({ accessToken }: { accessToken: string }) {
           </Card>
 
           <Card>
-            <h2 className="mb-3 text-lg font-medium text-gray-900">Actividad clínica</h2>
+            <h2 className="mb-3 text-lg font-medium text-gray-900">{t("admin.metricas.actividadClinica")}</h2>
             <div className="grid grid-cols-2 gap-4">
-              <StatCard label="Médicos activos (30 días)" value={String(metrics.activeDoctors30d)} hint="≥1 nota firmada" />
-              <StatCard label="Notas firmadas" value={String(metrics.signedNotesCount)} />
-              <StatCard label="Recetas emitidas" value={String(metrics.prescriptionsIssuedCount)} />
+              <StatCard label={t("admin.metricas.medicosActivos")} value={String(metrics.activeDoctors30d)} hint={t("admin.metricas.pistaMedicosActivos")} />
+              <StatCard label={t("admin.metricas.notasFirmadas")} value={String(metrics.signedNotesCount)} />
+              <StatCard label={t("admin.metricas.recetasEmitidas")} value={String(metrics.prescriptionsIssuedCount)} />
               <StatCard
-                label="Tasa de no-show"
-                value={metrics.noShowRate === null ? "Sin datos" : `${Math.round(metrics.noShowRate * 100)}%`}
-                hint="De citas completadas o no presentadas"
+                label={t("admin.metricas.tasaNoShow")}
+                value={metrics.noShowRate === null ? t("admin.metricas.sinDatos") : `${Math.round(metrics.noShowRate * 100)}%`}
+                hint={t("admin.metricas.pistaNoShow")}
               />
             </div>
           </Card>
 
           <Card>
-            <h2 className="mb-3 text-lg font-medium text-gray-900">Citas por estado</h2>
+            <h2 className="mb-3 text-lg font-medium text-gray-900">{t("admin.metricas.citasPorEstado")}</h2>
             {Object.keys(metrics.appointmentsByStatus).length > 0 ? (
               <ul className="flex flex-col gap-1 text-sm text-gray-600">
                 {Object.entries(metrics.appointmentsByStatus).map(([status, count]) => (
                   <li key={status}>
-                    {APPOINTMENT_LABELS[status] ?? status}: <span className="font-medium text-gray-900">{count}</span>
+                    {translateKeyed(t, APPOINTMENT_LABEL_KEYS, status)}: <span className="font-medium text-gray-900">{count}</span>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="text-sm text-gray-500">Sin citas registradas todavía.</p>
+              <p className="text-sm text-gray-500">{t("admin.metricas.sinCitas")}</p>
             )}
           </Card>
 
           <Card>
-            <h2 className="mb-3 text-lg font-medium text-gray-900">Negocio</h2>
+            <h2 className="mb-3 text-lg font-medium text-gray-900">{t("admin.metricas.negocio")}</h2>
             <div className="grid grid-cols-2 gap-4">
-              <StatCard label="MRR" value="No disponible" hint="Requiere M6 (facturación) — no construido todavía" />
-              <StatCard label="Churn" value="No disponible" hint="Requiere M6 (facturación) — no construido todavía" />
+              <StatCard label="MRR" value={t("admin.metricas.noDisponible")} hint={t("admin.metricas.requiereM6")} />
+              <StatCard label="Churn" value={t("admin.metricas.noDisponible")} hint={t("admin.metricas.requiereM6")} />
             </div>
           </Card>
         </>

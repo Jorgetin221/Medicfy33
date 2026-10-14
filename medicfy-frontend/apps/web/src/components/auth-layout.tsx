@@ -1,12 +1,21 @@
+"use client";
+
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { IconShieldCheck, IconLock, IconClipboardList } from "@/components/ui/landing-icons";
+import { useT } from "@/lib/i18n/context";
+import type { MessageKey } from "@/lib/i18n/dictionaries";
 
 const DEFAULT_TRUST_ITEMS = [
-  { icon: IconShieldCheck, label: "Cédula profesional verificada ante la SEP" },
-  { icon: IconLock, label: "Datos clínicos cifrados, siempre" },
-  { icon: IconClipboardList, label: "Bitácora de cada acceso a un expediente" },
-] as const;
+  { icon: IconShieldCheck, labelKey: "nav.confianza.cedula" },
+  { icon: IconLock, labelKey: "nav.confianza.cifrado" },
+  { icon: IconClipboardList, labelKey: "nav.confianza.bitacora" },
+] as const satisfies readonly TrustItem[];
+
+interface TrustItem {
+  icon: (props: { className?: string }) => ReactNode;
+  labelKey: MessageKey;
+}
 
 // Layout compartido de login/registro-medico (PUB-04/PUB-03): panel de
 // marca a la izquierda en escritorio (mismo tono que la landing —
@@ -24,12 +33,14 @@ export function AuthLayout({
   children: ReactNode;
   panelTitle: string;
   panelBody: string;
-  trustItems?: readonly { icon: (props: { className?: string }) => ReactNode; label: string }[];
+  trustItems?: readonly TrustItem[];
   // v2.4: "/" pasó a ser el home de descubrimiento del paciente —
   // registro-medico pasa "/para-medicos" para no mandar a un médico a
   // media inscripción a una pantalla de pacientes.
   homeHref?: string;
 }) {
+  const t = useT();
+
   return (
     <div className="grid min-h-screen lg:grid-cols-2">
       <div className="flex flex-col gap-8 px-6 py-8 sm:px-10 sm:py-10 lg:justify-center lg:px-16 lg:py-16">
@@ -53,12 +64,12 @@ export function AuthLayout({
           <p className="max-w-md text-lg text-brand-100">{panelBody}</p>
         </div>
         <ul className="relative flex flex-col gap-4">
-          {trustItems.map(({ icon: Icon, label }) => (
-            <li key={label} className="flex items-center gap-3 text-base text-brand-100">
+          {trustItems.map(({ icon: Icon, labelKey }) => (
+            <li key={labelKey} className="flex items-center gap-3 text-base text-brand-100">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10">
                 <Icon className="h-5 w-5 text-white" />
               </span>
-              {label}
+              {t(labelKey)}
             </li>
           ))}
         </ul>

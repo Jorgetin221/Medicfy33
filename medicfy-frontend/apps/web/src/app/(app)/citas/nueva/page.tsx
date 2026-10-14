@@ -8,23 +8,22 @@ import { useAuth } from "@/lib/auth-context";
 import { FieldWrapper, SelectInput } from "@/components/ui/field";
 import { Card, LoadingState, EmptyState, ErrorState } from "@/components/ui/states";
 import { Button } from "@/components/ui/button";
-
-const MX_TIME_ZONE = "America/Mexico_City";
+import { useI18n } from "@/lib/i18n/context";
+import { formatTime, formatWeekdayLong, toIsoDateKey } from "@/lib/i18n/format";
+import type { Locale } from "@/lib/i18n/config";
 
 function mxDateKey(iso: string): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: MX_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
+  return toIsoDateKey(iso);
 }
 // Recibe la clave YYYY-MM-DD (no un instante) y ancla a mediodía UTC
 // para evitar indexar el primer slot del grupo solo para tomar su
 // fecha.
-function mxDateLabel(dateKey: string): string {
-  const label = new Intl.DateTimeFormat("es-MX", { timeZone: MX_TIME_ZONE, weekday: "long", day: "numeric", month: "long" }).format(
-    new Date(`${dateKey}T12:00:00Z`)
-  );
+function mxDateLabel(locale: Locale, dateKey: string): string {
+  const label = formatWeekdayLong(locale, new Date(`${dateKey}T12:00:00Z`));
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
-function mxTime(iso: string): string {
-  return new Intl.DateTimeFormat("es-MX", { timeZone: MX_TIME_ZONE, hour: "2-digit", minute: "2-digit", hour12: true }).format(new Date(iso));
+function mxTime(locale: Locale, iso: string): string {
+  return formatTime(locale, iso);
 }
 
 interface PatientOption {
@@ -64,6 +63,7 @@ export default function NuevaCitaPage() {
 
 function NuevaCitaForm() {
   const router = useRouter();
+  const { t, locale } = useI18n();
   const searchParams = useSearchParams();
   const { accessToken, isLoading: authLoading } = useAuth();
 
@@ -175,17 +175,20 @@ function NuevaCitaForm() {
     const bookedPatient = patients?.find((p) => p.id === booked.patientId);
     return (
       <main className="mx-auto flex min-h-screen max-w-xl flex-col items-center justify-center gap-4 p-6 text-center">
-        <h1 className="font-heading text-2xl text-brand-900">Cita agendada</h1>
+        <h1 className="font-heading text-2xl text-brand-900">{t("citaNueva.agendada")}</h1>
         <p className="text-base text-gray-700">
-          {bookedPatient ? `${bookedPatient.firstName} ${bookedPatient.lastNamePaternal}` : "El paciente"} — {mxDateLabel(mxDateKey(booked.startAt))} a
-          las {mxTime(booked.startAt)}.
+          {t("citaNueva.agendadaCuerpo", {
+            paciente: bookedPatient ? `${bookedPatient.firstName} ${bookedPatient.lastNamePaternal}` : t("citaNueva.elPaciente"),
+            fecha: mxDateLabel(locale, mxDateKey(booked.startAt)),
+            hora: mxTime(locale, booked.startAt),
+          })}
         </p>
         <div className="flex gap-3">
           <Link href={`/pacientes/${booked.patientId}`}>
-            <Button type="button">Ver perfil del paciente</Button>
+            <Button type="button">{t("citaNueva.verPerfilPaciente")}</Button>
           </Link>
           <Button variant="secondary" onClick={() => router.push("/agenda")}>
-            Ir a la agenda
+            {t("citaNueva.irALaAgenda")}
           </Button>
         </div>
       </main>
@@ -195,8 +198,8 @@ function NuevaCitaForm() {
   return (
     <main className="mx-auto flex max-w-2xl flex-col gap-6 p-6">
       <div>
-        <h1 className="font-heading text-2xl text-brand-900">Nueva cita</h1>
-        <p className="text-base text-gray-500">Elige paciente, servicio y un espacio disponible.</p>
+        <h1 className="font-heading text-2xl text-brand-900">{t("citaNueva.titulo")}</h1>
+        <p className="text-base text-gray-500">{t("citaNueva.subtitulo")}</p>
       </div>
 
       {patients === null && services === null && !loadError ? <LoadingState /> : null}
@@ -205,17 +208,17 @@ function NuevaCitaForm() {
       {patients && services ? (
         <Card>
           <div className="grid grid-cols-2 gap-4">
-            <FieldWrapper label="Paciente" htmlFor="patientId">
+            <FieldWrapper label={t("citaNueva.paciente")} htmlFor="patientId">
               {patients.length === 0 ? (
                 <p className="text-sm text-gray-500">
-                  Sin pacientes registrados.{" "}
+                  {t("citaNueva.sinPacientes")}{" "}
                   <a href="/pacientes/nuevo" className="font-medium text-brand-700 underline">
-                    Registra uno primero.
+                    {t("citaNueva.registraUno")}
                   </a>
                 </p>
               ) : (
                 <SelectInput id="patientId" value={patientId} onChange={(e) => setPatientId(e.target.value)}>
-                  <option value="">Selecciona…</option>
+                  <option value="">{t("auth.campos.selecciona")}</option>
                   {patients.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.firstName} {p.lastNamePaternal} · {p.medicfyId}
@@ -224,17 +227,17 @@ function NuevaCitaForm() {
                 </SelectInput>
               )}
             </FieldWrapper>
-            <FieldWrapper label="Servicio" htmlFor="serviceId">
+            <FieldWrapper label={t("citaNueva.servicio")} htmlFor="serviceId">
               {services.length === 0 ? (
                 <p className="text-sm text-gray-500">
-                  Sin servicios configurados.{" "}
+                  {t("citaNueva.sinServicios")}{" "}
                   <a href="/disponibilidad" className="font-medium text-brand-700 underline">
-                    Configura tu agenda primero.
+                    {t("citaNueva.configuraAgenda")}
                   </a>
                 </p>
               ) : (
                 <SelectInput id="serviceId" value={serviceId} onChange={(e) => setServiceId(e.target.value)}>
-                  <option value="">Selecciona…</option>
+                  <option value="">{t("auth.campos.selecciona")}</option>
                   {services.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name} · {s.durationMinutes} min
@@ -249,10 +252,10 @@ function NuevaCitaForm() {
 
       {patientId ? (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-brand-700 bg-brand-100 p-6">
-          <p className="text-base text-brand-900">¿No necesitas agendar? Puedes atenderlo ahora mismo, sin reservar un horario.</p>
+          <p className="text-base text-brand-900">{t("citaNueva.atenderAhora")}</p>
           <Link href={`/consulta/paciente/${patientId}`}>
             <Button type="button" variant="secondary" className="whitespace-nowrap">
-              Atender ahora sin cita
+              {t("citaNueva.atenderAhoraBoton")}
             </Button>
           </Link>
         </div>
@@ -262,17 +265,17 @@ function NuevaCitaForm() {
 
       {serviceId ? (
         <Card>
-          <h2 className="font-heading text-xl text-brand-900">Espacios disponibles</h2>
+          <h2 className="font-heading text-xl text-brand-900">{t("citaNueva.espaciosDisponibles")}</h2>
           <div className="mt-4">
             {slots === null && !slotsError ? <LoadingState /> : null}
             {slotsError ? <ErrorState error={slotsError} onRetry={loadSlots} /> : null}
             {slots && slots.length === 0 ? (
               <EmptyState
-                title="Sin espacios disponibles"
-                description="Prueba con otro servicio o configura más horario."
+                title={t("citaNueva.sinEspacios")}
+                description={t("citaNueva.sinEspaciosAyuda")}
                 action={
                   <Link href="/disponibilidad" className="text-sm font-medium text-brand-700 underline">
-                    Ir a Disponibilidad
+                    {t("citaNueva.irADisponibilidad")}
                   </Link>
                 }
               />
@@ -281,7 +284,7 @@ function NuevaCitaForm() {
               <div className="flex flex-col gap-4">
                 {groupedSlots.map(([dateKey, daySlots]) => (
                   <div key={dateKey}>
-                    <p className="mb-2 text-sm font-medium text-gray-700">{mxDateLabel(dateKey)}</p>
+                    <p className="mb-2 text-sm font-medium text-gray-700">{mxDateLabel(locale, dateKey)}</p>
                     <div className="flex flex-wrap gap-2">
                       {daySlots.map((slot) => (
                         <button
@@ -291,7 +294,7 @@ function NuevaCitaForm() {
                           onClick={() => book(slot)}
                           className="min-h-[44px] rounded-md border border-gray-300 bg-white px-3 text-base text-gray-900 hover:bg-brand-100 disabled:pointer-events-none disabled:opacity-50"
                         >
-                          {bookingSlot === slot.startAt ? "Agendando…" : mxTime(slot.startAt)}
+                          {bookingSlot === slot.startAt ? t("citaNueva.agendando") : mxTime(locale, slot.startAt)}
                         </button>
                       ))}
                     </div>
@@ -300,7 +303,7 @@ function NuevaCitaForm() {
               </div>
             ) : null}
             {!patientId && slots && slots.length > 0 ? (
-              <p className="mt-3 text-sm text-warn-600">Selecciona un paciente para poder agendar.</p>
+              <p className="mt-3 text-sm text-warn-600">{t("citaNueva.seleccionaPaciente")}</p>
             ) : null}
           </div>
         </Card>

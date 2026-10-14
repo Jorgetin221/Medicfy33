@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { apiFetch } from "@/lib/api-client";
+import { useT } from "@/lib/i18n/context";
+import type { MessageKey } from "@/lib/i18n/dictionaries";
 import type { PatientHistoryItem } from "@/lib/use-patient-clinical";
 import { ErrorState } from "@/components/ui/states";
 import { CollapsibleCard } from "@/components/ui/collapsible-card";
@@ -10,11 +12,11 @@ import { GinecoBlock, HeredofamiliarMatrix, PlantillasAntecedentes, SolicitarTer
 type Category = "HEREDOFAMILIAR" | "PERSONAL_NO_PATOLOGICO" | "PERSONAL_PATOLOGICO";
 type Status = "PRESENTE" | "NEGADO" | "DESCONOCIDO" | "NO_INVESTIGADO";
 
-const STATUS_OPTIONS: { value: Status; label: string }[] = [
-  { value: "PRESENTE", label: "Presente" },
-  { value: "NEGADO", label: "Niega" },
-  { value: "DESCONOCIDO", label: "Desconoce" },
-  { value: "NO_INVESTIGADO", label: "No investigado" },
+const STATUS_OPTIONS: { value: Status; labelKey: MessageKey }[] = [
+  { value: "PRESENTE", labelKey: "clinico.antecedentes.estado.PRESENTE" },
+  { value: "NEGADO", labelKey: "clinico.antecedentes.estado.NEGADO" },
+  { value: "DESCONOCIDO", labelKey: "clinico.antecedentes.estado.DESCONOCIDO" },
+  { value: "NO_INVESTIGADO", labelKey: "clinico.antecedentes.estado.NO_INVESTIGADO" },
 ];
 
 // bg-warn-100/text-warn-700 no existen en el sistema de diseño (solo
@@ -36,52 +38,56 @@ const STATUS_CLASS: Record<Status, string> = {
 // §10.1-10.3 de especificacion-plataforma-clinica-con-ia.md: vocabulario
 // transcrito literal — nada agregado. Alergias y medicamentos actuales
 // se excluyen porque ya viven en PatientAllergy/PatientMedication.
-export const HEREDOFAMILIAR_LABELS: Record<string, string> = {
-  estado_vital: "Estado vital",
-  diabetes: "Diabetes",
-  hipertension: "Hipertensión",
-  cardiopatia_evento_vascular: "Cardiopatía o evento vascular",
-  cancer: "Cáncer",
-  enfermedad_renal: "Enfermedad renal",
-  enfermedad_hereditaria_congenita: "Enfermedad hereditaria o congénita",
-  trastorno_neurologico_psiquiatrico: "Trastorno neurológico o psiquiátrico",
-  enfermedad_autoinmune: "Enfermedad autoinmune",
-  otro: "Otro antecedente",
+// Claves de traducción, no texto. El `subtype` del servidor
+// (estado_vital, diabetes…) sigue siendo el identificador; solo cambia
+// cómo se lee. Un subtype nuevo que el servidor mande y no esté aquí
+// cae de vuelta al propio subtype, no deja un hueco.
+export const HEREDOFAMILIAR_LABEL_KEYS: Record<string, MessageKey> = {
+  estado_vital: "clinico.antecedentes.heredofamiliar.estado_vital",
+  diabetes: "clinico.antecedentes.heredofamiliar.diabetes",
+  hipertension: "clinico.antecedentes.heredofamiliar.hipertension",
+  cardiopatia_evento_vascular: "clinico.antecedentes.heredofamiliar.cardiopatia_evento_vascular",
+  cancer: "clinico.antecedentes.heredofamiliar.cancer",
+  enfermedad_renal: "clinico.antecedentes.heredofamiliar.enfermedad_renal",
+  enfermedad_hereditaria_congenita: "clinico.antecedentes.heredofamiliar.enfermedad_hereditaria_congenita",
+  trastorno_neurologico_psiquiatrico: "clinico.antecedentes.heredofamiliar.trastorno_neurologico_psiquiatrico",
+  enfermedad_autoinmune: "clinico.antecedentes.heredofamiliar.enfermedad_autoinmune",
+  otro: "clinico.antecedentes.heredofamiliar.otro",
 };
 
-export const PERSONAL_NO_PATOLOGICO_LABELS: Record<string, string> = {
-  vivienda_servicios: "Vivienda y servicios",
-  alimentacion_hidratacion: "Alimentación e hidratación",
-  higiene: "Higiene",
-  actividad_fisica: "Actividad física",
-  sueno: "Sueño",
-  ocupacion_exposiciones: "Ocupación y exposiciones",
-  viajes_relevantes: "Viajes relevantes",
-  tabaquismo: "Tabaquismo",
-  alcohol: "Alcohol",
-  otras_sustancias: "Otras sustancias",
-  vacunacion: "Vacunación",
-  animales_vectores_riesgos: "Animales, vectores y riesgos ambientales",
+export const PERSONAL_NO_PATOLOGICO_LABEL_KEYS: Record<string, MessageKey> = {
+  vivienda_servicios: "clinico.antecedentes.noPatologico.vivienda_servicios",
+  alimentacion_hidratacion: "clinico.antecedentes.noPatologico.alimentacion_hidratacion",
+  higiene: "clinico.antecedentes.noPatologico.higiene",
+  actividad_fisica: "clinico.antecedentes.noPatologico.actividad_fisica",
+  sueno: "clinico.antecedentes.noPatologico.sueno",
+  ocupacion_exposiciones: "clinico.antecedentes.noPatologico.ocupacion_exposiciones",
+  viajes_relevantes: "clinico.antecedentes.noPatologico.viajes_relevantes",
+  tabaquismo: "clinico.antecedentes.noPatologico.tabaquismo",
+  alcohol: "clinico.antecedentes.noPatologico.alcohol",
+  otras_sustancias: "clinico.antecedentes.noPatologico.otras_sustancias",
+  vacunacion: "clinico.antecedentes.noPatologico.vacunacion",
+  animales_vectores_riesgos: "clinico.antecedentes.noPatologico.animales_vectores_riesgos",
 };
 
-export const PERSONAL_PATOLOGICO_LABELS: Record<string, string> = {
-  enfermedades_previas_activas: "Enfermedades previas y activas",
-  hospitalizaciones: "Hospitalizaciones",
-  cirugias: "Cirugías",
-  traumatismos: "Traumatismos",
-  transfusiones: "Transfusiones",
-  enfermedades_infecciosas_relevantes: "Enfermedades infecciosas relevantes",
-  discapacidad_apoyos: "Discapacidad y apoyos",
-  salud_mental: "Salud mental",
+export const PERSONAL_PATOLOGICO_LABEL_KEYS: Record<string, MessageKey> = {
+  enfermedades_previas_activas: "clinico.antecedentes.patologico.enfermedades_previas_activas",
+  hospitalizaciones: "clinico.antecedentes.patologico.hospitalizaciones",
+  cirugias: "clinico.antecedentes.patologico.cirugias",
+  traumatismos: "clinico.antecedentes.patologico.traumatismos",
+  transfusiones: "clinico.antecedentes.patologico.transfusiones",
+  enfermedades_infecciosas_relevantes: "clinico.antecedentes.patologico.enfermedades_infecciosas_relevantes",
+  discapacidad_apoyos: "clinico.antecedentes.patologico.discapacidad_apoyos",
+  salud_mental: "clinico.antecedentes.patologico.salud_mental",
 };
 
-const FAMILY_RELATIONSHIPS: { value: string; label: string }[] = [
-  { value: "MADRE", label: "Madre" },
-  { value: "PADRE", label: "Padre" },
-  { value: "HERMANOS", label: "Hermanos" },
-  { value: "HIJOS", label: "Hijos" },
-  { value: "ABUELOS", label: "Abuelos" },
-  { value: "OTRO", label: "Otro familiar" },
+const FAMILY_RELATIONSHIPS: { value: string; labelKey: MessageKey }[] = [
+  { value: "MADRE", labelKey: "clinico.antecedentes.parentesco.MADRE" },
+  { value: "PADRE", labelKey: "clinico.antecedentes.parentesco.PADRE" },
+  { value: "HERMANOS", labelKey: "clinico.antecedentes.parentesco.HERMANOS" },
+  { value: "HIJOS", labelKey: "clinico.antecedentes.parentesco.HIJOS" },
+  { value: "ABUELOS", labelKey: "clinico.antecedentes.parentesco.ABUELOS" },
+  { value: "OTRO", labelKey: "clinico.antecedentes.parentesco.OTRO" },
 ];
 
 function findItem(
@@ -112,6 +118,7 @@ function HistoryRow({
   existing: PatientHistoryItem | undefined;
   onChanged: () => void;
 }) {
+  const t = useT();
   const [detail, setDetail] = useState(existing?.freeText ?? "");
   const [savingStatus, setSavingStatus] = useState<Status | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -144,7 +151,7 @@ function HistoryRow({
     <div className="flex flex-col gap-2 border-b border-gray-100 py-3 last:border-0">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-base font-medium text-gray-900">{label}</p>
-        <div className="flex flex-wrap gap-1" role="group" aria-label={`Estado de ${label}`}>
+        <div className="flex flex-wrap gap-1" role="group" aria-label={t("clinico.antecedentes.estadoDe", { etiqueta: label })}>
           {STATUS_OPTIONS.map((opt) => (
             <button
               key={opt.value}
@@ -156,7 +163,7 @@ function HistoryRow({
                 currentStatus === opt.value ? STATUS_CLASS[opt.value] : "border-gray-300 bg-white text-gray-500 hover:bg-gray-100"
               }`}
             >
-              {savingStatus === opt.value ? "Guardando…" : opt.label}
+              {savingStatus === opt.value ? t("common.acciones.guardando") : t(opt.labelKey)}
             </button>
           ))}
         </div>
@@ -168,7 +175,7 @@ function HistoryRow({
         onBlur={() => {
           if (detail !== (existing?.freeText ?? "")) void save(currentStatus, detail);
         }}
-        placeholder="Detalle (opcional)"
+        placeholder={t("clinico.antecedentes.detalleOpcional")}
         className="min-h-11 rounded-md border border-gray-300 px-3 text-base text-gray-900"
       />
       {error ? <ErrorState error={error} /> : null}
@@ -181,7 +188,7 @@ function PersonalSection({
   patientId,
   accessToken,
   category,
-  labels,
+  labelKeys,
   historyItems,
   onChanged,
 }: {
@@ -189,21 +196,22 @@ function PersonalSection({
   patientId: string;
   accessToken: string;
   category: Category;
-  labels: Record<string, string>;
+  labelKeys: Record<string, MessageKey>;
   historyItems: PatientHistoryItem[];
   onChanged: () => void;
 }) {
+  const t = useT();
   return (
     <CollapsibleCard title={title}>
       <div>
-        {Object.entries(labels).map(([subtype, label]) => (
+        {Object.entries(labelKeys).map(([subtype, labelKey]) => (
           <HistoryRow
             key={subtype}
             patientId={patientId}
             accessToken={accessToken}
             category={category}
             subtype={subtype}
-            label={label}
+            label={t(labelKey)}
             existing={findItem(historyItems, category, subtype, "NONE")}
             onChanged={onChanged}
           />
@@ -237,8 +245,8 @@ function blockProgress(historyItems: PatientHistoryItem[]): { done: number; tota
     ["diabetes", "hipertension", "cancer"].every((k) =>
       historyItems.some((i) => i.category === "HEREDOFAMILIAR" && i.subtype === k && i.status !== "NO_INVESTIGADO")
     ),
-    investigated("PERSONAL_NO_PATOLOGICO", Object.keys(PERSONAL_NO_PATOLOGICO_LABELS)),
-    investigated("PERSONAL_PATOLOGICO", Object.keys(PERSONAL_PATOLOGICO_LABELS)),
+    investigated("PERSONAL_NO_PATOLOGICO", Object.keys(PERSONAL_NO_PATOLOGICO_LABEL_KEYS)),
+    investigated("PERSONAL_PATOLOGICO", Object.keys(PERSONAL_PATOLOGICO_LABEL_KEYS)),
   ];
   return { done: blocks.filter(Boolean).length, total: blocks.length };
 }
@@ -254,20 +262,21 @@ export function AntecedentesEditor({
   historyItems: PatientHistoryItem[];
   onChanged: () => void;
 }) {
+  const t = useT();
   const [filter, setFilter] = useState("");
   const progress = blockProgress(historyItems);
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm font-medium text-gray-700" data-testid="antecedentes-progress">
-          Avance: {progress.done} de {progress.total} bloques base completos
+          {t("clinico.antecedentes.avance", { hechos: progress.done, total: progress.total })}
         </p>
         <input
           type="search"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          placeholder="Buscar en el catálogo de antecedentes…"
-          aria-label="Buscar antecedente"
+          placeholder={t("clinico.antecedentes.buscarCatalogo")}
+          aria-label={t("clinico.antecedentes.buscarAntecedente")}
           className="min-h-11 w-72 rounded-md border border-gray-300 px-3 text-base text-gray-900"
         />
       </div>
@@ -287,11 +296,11 @@ export function AntecedentesEditor({
       <div id="bloque-no-patologicos" className="flex flex-col gap-6 scroll-mt-20">
         <ToxicomaniasBlock patientId={patientId} accessToken={accessToken} filter={filter} />
         <PersonalSection
-          title="Antecedentes personales no patológicos"
+          title={t("clinico.antecedentes.personalesNoPatologicos")}
           patientId={patientId}
           accessToken={accessToken}
           category="PERSONAL_NO_PATOLOGICO"
-          labels={PERSONAL_NO_PATOLOGICO_LABELS}
+          labelKeys={PERSONAL_NO_PATOLOGICO_LABEL_KEYS}
           historyItems={historyItems}
           onChanged={onChanged}
         />
@@ -299,11 +308,11 @@ export function AntecedentesEditor({
 
       <div id="bloque-patologicos" className="scroll-mt-20">
         <PersonalSection
-          title="Antecedentes personales patológicos"
+          title={t("clinico.antecedentes.personalesPatologicos")}
           patientId={patientId}
           accessToken={accessToken}
           category="PERSONAL_PATOLOGICO"
-          labels={PERSONAL_PATOLOGICO_LABELS}
+          labelKeys={PERSONAL_PATOLOGICO_LABEL_KEYS}
           historyItems={historyItems}
           onChanged={onChanged}
         />
@@ -322,20 +331,23 @@ export function AntecedentesEditor({
 // consulta-form.tsx. Solo positivos: es lo clínicamente relevante de
 // un vistazo (§10.1 UX: "resumen automático editable").
 export function AntecedentesSummary({ historyItems }: { historyItems: PatientHistoryItem[] }) {
+  const t = useT();
   const positives = historyItems.filter((i) => i.status === "PRESENTE");
   if (positives.length === 0) {
-    return <p className="text-sm text-gray-500">Sin antecedentes positivos registrados.</p>;
+    return <p className="text-sm text-gray-500">{t("clinico.antecedentes.sinPositivosRegistrados")}</p>;
   }
-  const labelsByCategory: Record<Category, Record<string, string>> = {
-    HEREDOFAMILIAR: HEREDOFAMILIAR_LABELS,
-    PERSONAL_NO_PATOLOGICO: PERSONAL_NO_PATOLOGICO_LABELS,
-    PERSONAL_PATOLOGICO: PERSONAL_PATOLOGICO_LABELS,
+  const keysByCategory: Record<Category, Record<string, MessageKey>> = {
+    HEREDOFAMILIAR: HEREDOFAMILIAR_LABEL_KEYS,
+    PERSONAL_NO_PATOLOGICO: PERSONAL_NO_PATOLOGICO_LABEL_KEYS,
+    PERSONAL_PATOLOGICO: PERSONAL_PATOLOGICO_LABEL_KEYS,
   };
   return (
     <ul className="flex flex-col gap-1">
       {positives.map((item) => {
-        const label = labelsByCategory[item.category][item.subtype] ?? item.subtype;
-        const familyLabel = FAMILY_RELATIONSHIPS.find((r) => r.value === item.familyRelationship)?.label;
+        const labelKey = keysByCategory[item.category][item.subtype];
+        const label = labelKey ? t(labelKey) : item.subtype;
+        const familyKey = FAMILY_RELATIONSHIPS.find((r) => r.value === item.familyRelationship)?.labelKey;
+        const familyLabel = familyKey ? t(familyKey) : undefined;
         return (
           <li key={item.id} className="text-sm text-gray-700">
             {label}

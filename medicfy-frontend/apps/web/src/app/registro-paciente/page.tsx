@@ -4,7 +4,6 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
 import { registerPatientSchema, emailVerifySchema, type RegisterPatientInput, type EmailVerifyInput } from "@medicfy/contracts";
 import { apiFetch } from "@/lib/api-client";
 import { AuthLayout } from "@/components/auth-layout";
@@ -13,11 +12,18 @@ import { FieldWrapper, TextInput, SelectInput } from "@/components/ui/field";
 import { PasswordInput } from "@/components/ui/password-input";
 import { ErrorState } from "@/components/ui/states";
 import { Aviso } from "@/components/ui/alert";
+import { useT } from "@/lib/i18n/context";
+import { useZodResolver } from "@/lib/i18n/validation";
 
-const PANEL_COPY = {
-  panelTitle: "Tu expediente y tus citas, en un solo lugar",
-  panelBody: "Agenda con tu médico, revisa lo que comparte contigo, y controla quién ve tu información.",
-};
+// Hook en vez de constante de módulo: el texto del panel depende del
+// idioma, que solo se conoce ya dentro del árbol de React.
+function usePanelCopy() {
+  const t = useT();
+  return {
+    panelTitle: t("auth.registroPaciente.panelTitulo"),
+    panelBody: t("auth.registroPaciente.panelCuerpo"),
+  };
+}
 
 // M5-RN-009 (spec §7, v2.3): registro de paciente con cuenta propia —
 // hoy solo creaba el `user`; ahora también crea la fila `patients`
@@ -26,6 +32,8 @@ const PANEL_COPY = {
 // alta por un adulto vía el flujo del médico.
 export default function RegistroPacientePage() {
   const router = useRouter();
+  const t = useT();
+  const PANEL_COPY = usePanelCopy();
   const [step, setStep] = useState<"form" | "verify" | "done">("form");
   const [userId, setUserId] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<unknown>(null);
@@ -34,7 +42,7 @@ export default function RegistroPacientePage() {
   // naturaleza (HTML ya las inicia en false) — declarar aquí
   // `false` chocaría con el tipo `true` literal que exige
   // registerPatientSchema para las dos obligatorias.
-  const form = useForm<RegisterPatientInput>({ resolver: zodResolver(registerPatientSchema) });
+  const form = useForm<RegisterPatientInput>({ resolver: useZodResolver<RegisterPatientInput>(registerPatientSchema) });
 
   async function onSubmit(values: RegisterPatientInput) {
     setSubmitError(null);
@@ -55,12 +63,12 @@ export default function RegistroPacientePage() {
     return (
       <AuthLayout {...PANEL_COPY}>
         <div className="flex flex-col items-center gap-4 text-center">
-          <h1 className="font-heading text-3xl text-brand-900">Cuenta creada</h1>
-          <Aviso variant="exito" title="Correo verificado">
-            Ya puedes iniciar sesión y agendar con tu médico.
+          <h1 className="font-heading text-3xl text-brand-900">{t("auth.registroMedico.listoTitulo")}</h1>
+          <Aviso variant="exito" title={t("auth.registroMedico.listoAviso")}>
+            {t("auth.registroPaciente.listoCuerpo")}
           </Aviso>
           <Button onClick={() => router.push("/login")} className="mt-2 w-full">
-            Ir a iniciar sesión
+            {t("auth.registroMedico.irALogin")}
           </Button>
         </div>
       </AuthLayout>
@@ -71,20 +79,20 @@ export default function RegistroPacientePage() {
     <AuthLayout {...PANEL_COPY}>
       <div className="flex flex-col gap-8">
         <div>
-          <h1 className="font-heading text-3xl text-brand-900">Crea tu cuenta</h1>
-          <p className="mt-2 text-base text-gray-500">Regístrate como paciente para agendar y ver tu información.</p>
+          <h1 className="font-heading text-3xl text-brand-900">{t("auth.registroPaciente.titulo")}</h1>
+          <p className="mt-2 text-base text-gray-500">{t("auth.registroPaciente.subtitulo")}</p>
         </div>
 
         <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-5" noValidate>
-          <FieldWrapper label="Correo electrónico" htmlFor="email" error={form.formState.errors.email?.message}>
+          <FieldWrapper label={t("auth.campos.correo")} htmlFor="email" error={form.formState.errors.email?.message}>
             <TextInput id="email" type="email" autoComplete="email" error={!!form.formState.errors.email} {...form.register("email")} />
           </FieldWrapper>
 
           <FieldWrapper
-            label="Contraseña"
+            label={t("auth.campos.contrasena")}
             htmlFor="password"
             error={form.formState.errors.password?.message}
-            hint="Usa al menos 8 caracteres (letras, números o símbolos)."
+            hint={t("auth.campos.pistaContrasena")}
           >
             <PasswordInput
               id="password"
@@ -95,7 +103,7 @@ export default function RegistroPacientePage() {
           </FieldWrapper>
 
           <div className="grid grid-cols-2 gap-4">
-            <FieldWrapper label="Nombre(s)" htmlFor="firstName" error={form.formState.errors.firstName?.message}>
+            <FieldWrapper label={t("auth.campos.nombres")} htmlFor="firstName" error={form.formState.errors.firstName?.message}>
               <TextInput
                 id="firstName"
                 autoComplete="given-name"
@@ -106,7 +114,7 @@ export default function RegistroPacientePage() {
                 {...form.register("firstName")}
               />
             </FieldWrapper>
-            <FieldWrapper label="Apellido paterno" htmlFor="lastNamePaternal" error={form.formState.errors.lastNamePaternal?.message}>
+            <FieldWrapper label={t("auth.campos.apellidoPaterno")} htmlFor="lastNamePaternal" error={form.formState.errors.lastNamePaternal?.message}>
               <TextInput
                 id="lastNamePaternal"
                 autoComplete="family-name"
@@ -119,7 +127,7 @@ export default function RegistroPacientePage() {
             </FieldWrapper>
           </div>
 
-          <FieldWrapper label="Apellido materno (opcional)" htmlFor="lastNameMaternal" error={form.formState.errors.lastNameMaternal?.message}>
+          <FieldWrapper label={t("auth.campos.apellidoMaterno")} htmlFor="lastNameMaternal" error={form.formState.errors.lastNameMaternal?.message}>
             <TextInput
               id="lastNameMaternal"
               autoComplete="additional-name"
@@ -133,23 +141,23 @@ export default function RegistroPacientePage() {
 
           <div className="grid grid-cols-2 gap-4">
             <FieldWrapper
-              label="Fecha de nacimiento"
+              label={t("auth.campos.fechaNacimiento")}
               htmlFor="birthDate"
               error={form.formState.errors.birthDate?.message}
-              hint="Debes ser mayor de edad para registrarte por tu cuenta."
+              hint={t("auth.campos.pistaMayorEdad")}
             >
               <TextInput id="birthDate" type="date" error={!!form.formState.errors.birthDate} {...form.register("birthDate")} />
             </FieldWrapper>
-            <FieldWrapper label="Sexo al nacer" htmlFor="sexAtBirth" error={form.formState.errors.sexAtBirth?.message}>
+            <FieldWrapper label={t("auth.campos.sexoAlNacer")} htmlFor="sexAtBirth" error={form.formState.errors.sexAtBirth?.message}>
               <SelectInput id="sexAtBirth" error={!!form.formState.errors.sexAtBirth} {...form.register("sexAtBirth")}>
-                <option value="">Selecciona…</option>
-                <option value="F">Femenino</option>
-                <option value="M">Masculino</option>
+                <option value="">{t("auth.campos.selecciona")}</option>
+                <option value="F">{t("auth.campos.femenino")}</option>
+                <option value="M">{t("auth.campos.masculino")}</option>
               </SelectInput>
             </FieldWrapper>
           </div>
 
-          <FieldWrapper label="Teléfono" htmlFor="phone" error={form.formState.errors.phone?.message} hint="10 dígitos.">
+          <FieldWrapper label={t("auth.campos.telefono")} htmlFor="phone" error={form.formState.errors.phone?.message} hint={t("auth.campos.pistaTelefono")}>
             <TextInput
               id="phone"
               type="tel"
@@ -169,35 +177,35 @@ export default function RegistroPacientePage() {
           <div className="flex flex-col gap-3 rounded-md border border-gray-300 p-4">
             <label className="flex items-start gap-3 text-base text-gray-900">
               <input type="checkbox" className="mt-1 h-5 w-5" {...form.register("consents.privacyNotice")} />
-              Acepto el aviso de privacidad.
+              {t("auth.registroPaciente.consentimientoPrivacidad")}
             </label>
             {form.formState.errors.consents?.privacyNotice ? (
               <p className="text-sm text-danger-600">{form.formState.errors.consents.privacyNotice.message}</p>
             ) : null}
             <label className="flex items-start gap-3 text-base text-gray-900">
               <input type="checkbox" className="mt-1 h-5 w-5" {...form.register("consents.sensitiveData")} />
-              Acepto el tratamiento de mis datos sensibles de salud.
+              {t("auth.registroPaciente.consentimientoDatos")}
             </label>
             {form.formState.errors.consents?.sensitiveData ? (
               <p className="text-sm text-danger-600">{form.formState.errors.consents.sensitiveData.message}</p>
             ) : null}
             <label className="flex items-start gap-3 text-base text-gray-900">
               <input type="checkbox" className="mt-1 h-5 w-5" {...form.register("consents.digitalPrescriptionChannel")} />
-              Acepto recibir recetas y órdenes por medios digitales (opcional).
+              {t("auth.registroPaciente.consentimientoDigital")}
             </label>
           </div>
 
           {submitError ? <ErrorState error={submitError} /> : null}
 
           <Button type="submit" isLoading={form.formState.isSubmitting} className="mt-1 w-full">
-            Crear cuenta
+            {t("auth.registroMedico.crearCuenta")}
           </Button>
         </form>
 
         <p className="text-center text-base text-gray-700">
-          ¿Ya tienes cuenta?{" "}
+          {t("auth.registroMedico.yaTienesCuenta")}{" "}
           <Link href="/login" className="font-medium text-brand-700 underline">
-            Inicia sesión
+            {t("auth.registroMedico.iniciaSesion")}
           </Link>
         </p>
       </div>
@@ -206,9 +214,11 @@ export default function RegistroPacientePage() {
 }
 
 function VerifyEmailStep({ userId, onVerified }: { userId: string; onVerified: () => void }) {
+  const t = useT();
+  const PANEL_COPY = usePanelCopy();
   const [error, setError] = useState<unknown>(null);
   const form = useForm<Omit<EmailVerifyInput, "userId">>({
-    resolver: zodResolver(emailVerifySchema.omit({ userId: true })),
+    resolver: useZodResolver<Omit<EmailVerifyInput, "userId">>(emailVerifySchema.omit({ userId: true })),
     defaultValues: { code: "" },
   });
 
@@ -226,11 +236,11 @@ function VerifyEmailStep({ userId, onVerified }: { userId: string; onVerified: (
     <AuthLayout {...PANEL_COPY}>
       <div className="flex flex-col gap-8">
         <div>
-          <h1 className="font-heading text-3xl text-brand-900">Verifica tu correo</h1>
-          <p className="mt-2 text-base text-gray-500">Te enviamos un código de 6 dígitos.</p>
+          <h1 className="font-heading text-3xl text-brand-900">{t("auth.verificarCorreo.titulo")}</h1>
+          <p className="mt-2 text-base text-gray-500">{t("auth.verificarCorreo.subtitulo")}</p>
         </div>
         <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-5" noValidate>
-          <FieldWrapper label="Código" htmlFor="code" error={form.formState.errors.code?.message}>
+          <FieldWrapper label={t("auth.campos.codigo")} htmlFor="code" error={form.formState.errors.code?.message}>
             <TextInput
               id="code"
               inputMode="numeric"
@@ -243,7 +253,7 @@ function VerifyEmailStep({ userId, onVerified }: { userId: string; onVerified: (
           </FieldWrapper>
           {error ? <ErrorState error={error} /> : null}
           <Button type="submit" isLoading={form.formState.isSubmitting} className="mt-1 w-full">
-            Verificar
+            {t("auth.verificarCorreo.verificar")}
           </Button>
         </form>
       </div>

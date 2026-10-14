@@ -6,6 +6,7 @@ import { apiFetch, expectArray } from "@/lib/api-client";
 import { tokenSubject } from "@/lib/jwt-claims";
 import { usePatientClinical } from "@/lib/use-patient-clinical";
 import { LoadingState, ErrorState, Card } from "@/components/ui/states";
+import { useT } from "@/lib/i18n/context";
 import { Button } from "@/components/ui/button";
 import { ConsultaSidebar } from "../../[appointmentId]/consulta-sidebar";
 import { ConsultaZona3 } from "../../[appointmentId]/consulta-zona3";
@@ -31,6 +32,7 @@ interface EncounterListItem {
 // /consulta/[appointmentId], que nunca dependieron de una cita en sí.
 export function PacienteConsultaScreen({ patientId, accessToken }: { patientId: string; accessToken: string }) {
   const router = useRouter();
+  const t = useT();
   const [phase, setPhase] = useState<Phase>("loading");
   const [error, setError] = useState<unknown>(null);
   const [encounter, setEncounter] = useState<EncounterDetail | null>(null);
@@ -88,7 +90,7 @@ export function PacienteConsultaScreen({ patientId, accessToken }: { patientId: 
   if (phase === "loading" || !patient) {
     return (
       <main className="mx-auto max-w-5xl p-6">
-        <LoadingState label="Preparando la consulta…" />
+        <LoadingState label={t("consulta.preparando")} />
       </main>
     );
   }

@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
 import {
   availabilityRuleCreateSchema,
   availabilityExceptionCreateSchema,
@@ -20,14 +19,31 @@ import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { FieldWrapper, TextInput, SelectInput } from "@/components/ui/field";
 import { Card, LoadingState, EmptyState, ErrorState } from "@/components/ui/states";
+import { useT } from "@/lib/i18n/context";
+import { useZodResolver } from "@/lib/i18n/validation";
+import type { MessageKey } from "@/lib/i18n/dictionaries";
+import { translateKeyed } from "@/lib/i18n/keyed";
 
-const WEEKDAY_LABELS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
-const MODALITY_LABELS: Record<string, string> = { IN_PERSON: "Presencial", ONLINE: "En línea" };
-const SERVICE_TYPE_LABELS: Record<string, string> = {
-  FIRST_VISIT: "Primera vez",
-  FOLLOW_UP: "Seguimiento",
-  TELECONSULTATION: "Teleconsulta",
-  PROCEDURE: "Procedimiento",
+// Índice 0 = domingo, igual que Date.getDay() y que el `weekday` del
+// servidor.
+const WEEKDAY_LABEL_KEYS: MessageKey[] = [
+  "disponibilidad.dias.domingo",
+  "disponibilidad.dias.lunes",
+  "disponibilidad.dias.martes",
+  "disponibilidad.dias.miercoles",
+  "disponibilidad.dias.jueves",
+  "disponibilidad.dias.viernes",
+  "disponibilidad.dias.sabado",
+];
+const MODALITY_LABEL_KEYS: Record<string, MessageKey> = {
+  IN_PERSON: "disponibilidad.modalidad.IN_PERSON",
+  ONLINE: "disponibilidad.modalidad.ONLINE",
+};
+const SERVICE_TYPE_LABEL_KEYS: Record<string, MessageKey> = {
+  FIRST_VISIT: "disponibilidad.tipoServicio.FIRST_VISIT",
+  FOLLOW_UP: "disponibilidad.tipoServicio.FOLLOW_UP",
+  TELECONSULTATION: "disponibilidad.tipoServicio.TELECONSULTATION",
+  PROCEDURE: "disponibilidad.tipoServicio.PROCEDURE",
 };
 
 interface PracticeLocation {
@@ -95,6 +111,7 @@ export default function DisponibilidadPage() {
 // LocationsSection, para que agregar un consultorio nuevo se refleje
 // de inmediato en ese selector sin recargar la página.
 function DisponibilidadContent({ accessToken }: { accessToken: string }) {
+  const t = useT();
   const [locations, setLocations] = useState<PracticeLocation[] | null>(null);
   const [locationsError, setLocationsError] = useState<unknown>(null);
 
@@ -114,10 +131,8 @@ function DisponibilidadContent({ accessToken }: { accessToken: string }) {
   return (
     <main className="mx-auto flex max-w-3xl flex-col gap-8 p-6">
       <div>
-        <h1 className="font-heading text-2xl text-brand-900">Configuración de disponibilidad</h1>
-        <p className="text-base text-gray-500">
-          Qué ofreces, dónde y cuándo — todo lo que se necesita para que un paciente pueda agendar contigo.
-        </p>
+        <h1 className="font-heading text-2xl text-brand-900">{t("disponibilidad.titulo")}</h1>
+        <p className="text-base text-gray-500">{t("disponibilidad.subtitulo")}</p>
       </div>
       <LocationsSection accessToken={accessToken} locations={locations} error={locationsError} onReload={loadLocations} />
       <ServicesSection accessToken={accessToken} locations={locations ?? []} />
@@ -143,10 +158,11 @@ function LocationsSection({
   error: unknown;
   onReload: () => Promise<void>;
 }) {
+  const t = useT();
   const [createError, setCreateError] = useState<unknown>(null);
 
   const form = useForm<PracticeLocationInput>({
-    resolver: zodResolver(practiceLocationSchema),
+    resolver: useZodResolver<PracticeLocationInput>(practiceLocationSchema),
     defaultValues: { isPrimary: true },
   });
 
@@ -173,14 +189,14 @@ function LocationsSection({
 
   return (
     <Card>
-      <h2 className="font-heading text-xl text-brand-900">Consultorios</h2>
-      <p className="text-sm text-gray-500">Necesitas al menos uno activo para recibir citas presenciales.</p>
+      <h2 className="font-heading text-xl text-brand-900">{t("disponibilidad.consultorios.titulo")}</h2>
+      <p className="text-sm text-gray-500">{t("disponibilidad.consultorios.subtitulo")}</p>
 
       <div className="mt-4">
         {locations === null && !error ? <LoadingState /> : null}
         {error ? <ErrorState error={error} onRetry={onReload} /> : null}
         {locations && locations.length === 0 ? (
-          <EmptyState title="Sin consultorios registrados" description="Agrega el primero abajo." />
+          <EmptyState title={t("disponibilidad.consultorios.vacio")} description={t("disponibilidad.consultorios.vacioAyuda")} />
         ) : null}
         {locations && locations.length > 0 ? (
           <ul className="flex flex-col gap-2">
@@ -189,10 +205,10 @@ function LocationsSection({
                 <p className="text-base text-gray-900">
                   <span className="font-medium">{loc.name}</span>
                   {loc.addressMunicipality ? <span className="text-gray-500"> · {loc.addressMunicipality}</span> : null}
-                  {loc.isPrimary ? <span className="ml-2 text-sm text-brand-700">(principal)</span> : null}
+                  {loc.isPrimary ? <span className="ml-2 text-sm text-brand-700">{t("disponibilidad.consultorios.principal")}</span> : null}
                 </p>
                 <button type="button" onClick={() => onDelete(loc.id)} className="min-h-[44px] text-sm font-medium text-danger-600 underline">
-                  Eliminar
+                  {t("disponibilidad.consultorios.eliminar")}
                 </button>
               </li>
             ))}
@@ -201,26 +217,26 @@ function LocationsSection({
       </div>
 
       <form onSubmit={form.handleSubmit(onSubmit)} className="mt-6 flex flex-col gap-4 border-t border-gray-300 pt-6" noValidate>
-        <FieldWrapper label="Nombre del consultorio" htmlFor="loc-name" error={form.formState.errors.name?.message}>
-          <TextInput id="loc-name" placeholder="Consultorio Providencia" error={!!form.formState.errors.name} {...form.register("name")} />
+        <FieldWrapper label={t("disponibilidad.consultorios.nombre")} htmlFor="loc-name" error={form.formState.errors.name?.message}>
+          <TextInput id="loc-name" placeholder={t("disponibilidad.consultorios.nombreEjemplo")} error={!!form.formState.errors.name} {...form.register("name")} />
         </FieldWrapper>
         <div className="grid grid-cols-2 gap-4">
-          <FieldWrapper label="Calle y número (opcional)" htmlFor="loc-street">
+          <FieldWrapper label={t("disponibilidad.consultorios.calle")} htmlFor="loc-street">
             <TextInput id="loc-street" {...form.register("addressStreet")} />
           </FieldWrapper>
-          <FieldWrapper label="Colonia (opcional)" htmlFor="loc-colonia">
+          <FieldWrapper label={t("disponibilidad.consultorios.colonia")} htmlFor="loc-colonia">
             <TextInput id="loc-colonia" {...form.register("addressColonia")} />
           </FieldWrapper>
-          <FieldWrapper label="Municipio (opcional)" htmlFor="loc-municipality">
+          <FieldWrapper label={t("disponibilidad.consultorios.municipio")} htmlFor="loc-municipality">
             <TextInput id="loc-municipality" {...form.register("addressMunicipality")} />
           </FieldWrapper>
-          <FieldWrapper label="Teléfono (opcional)" htmlFor="loc-phone">
+          <FieldWrapper label={t("disponibilidad.consultorios.telefono")} htmlFor="loc-phone">
             <TextInput id="loc-phone" type="tel" {...form.register("phone")} />
           </FieldWrapper>
         </div>
         {createError ? <ErrorState error={createError} /> : null}
         <Button type="submit" isLoading={form.formState.isSubmitting}>
-          Agregar consultorio
+          {t("disponibilidad.consultorios.agregar")}
         </Button>
       </form>
     </Card>
@@ -232,6 +248,7 @@ function LocationsSection({
 // LISTAR servicios — sin esta pantalla no había forma de crear el
 // primero, y sin al menos uno, agendar una cita es imposible.
 function ServicesSection({ accessToken, locations }: { accessToken: string; locations: PracticeLocation[] }) {
+  const t = useT();
   const [services, setServices] = useState<DoctorService[] | null>(null);
   const [listError, setListError] = useState<unknown>(null);
   const [createError, setCreateError] = useState<unknown>(null);
@@ -250,7 +267,7 @@ function ServicesSection({ accessToken, locations }: { accessToken: string; loca
   }, [load]);
 
   const form = useForm<DoctorServiceInput>({
-    resolver: zodResolver(doctorServiceSchema),
+    resolver: useZodResolver<DoctorServiceInput>(doctorServiceSchema),
     defaultValues: { serviceType: "FIRST_VISIT", durationMinutes: 30 },
   });
 
@@ -277,26 +294,26 @@ function ServicesSection({ accessToken, locations }: { accessToken: string; loca
 
   return (
     <Card>
-      <h2 className="font-heading text-xl text-brand-900">Servicios</h2>
-      <p className="text-sm text-gray-500">Lo que ofreces y su precio. Necesitas al menos uno para poder agendar citas.</p>
+      <h2 className="font-heading text-xl text-brand-900">{t("disponibilidad.servicios.titulo")}</h2>
+      <p className="text-sm text-gray-500">{t("disponibilidad.servicios.subtitulo")}</p>
 
       <div className="mt-4">
         {services === null && !listError ? <LoadingState /> : null}
         {listError ? <ErrorState error={listError} onRetry={load} /> : null}
         {services && services.length === 0 ? (
-          <EmptyState title="Sin servicios configurados" description="Agrega el primero abajo — por ejemplo, &quot;Consulta general&quot;." />
+          <EmptyState title={t("disponibilidad.servicios.vacio")} description={t("disponibilidad.servicios.vacioAyuda")} />
         ) : null}
         {services && services.length > 0 ? (
           <ul className="flex flex-col gap-2">
             {services.map((s) => (
               <li key={s.id} className="flex items-center justify-between gap-4 rounded-md border border-gray-300 p-3">
                 <p className="text-base text-gray-900">
-                  <span className="font-medium">{s.name}</span> · {SERVICE_TYPE_LABELS[s.serviceType]} · {s.durationMinutes} min · $
+                  <span className="font-medium">{s.name}</span> · {translateKeyed(t, SERVICE_TYPE_LABEL_KEYS, s.serviceType)} · {s.durationMinutes} min · $
                   {s.priceMxn} MXN
-                  {!s.isActive ? <span className="ml-2 text-sm text-gray-500">(inactivo)</span> : null}
+                  {!s.isActive ? <span className="ml-2 text-sm text-gray-500">{t("disponibilidad.servicios.inactivo")}</span> : null}
                 </p>
                 <button type="button" onClick={() => onDelete(s.id)} className="min-h-[44px] text-sm font-medium text-danger-600 underline">
-                  Eliminar
+                  {t("disponibilidad.consultorios.eliminar")}
                 </button>
               </li>
             ))}
@@ -305,21 +322,21 @@ function ServicesSection({ accessToken, locations }: { accessToken: string; loca
       </div>
 
       <form onSubmit={form.handleSubmit(onSubmit)} className="mt-6 flex flex-col gap-4 border-t border-gray-300 pt-6" noValidate>
-        <FieldWrapper label="Nombre" htmlFor="svc-name" error={form.formState.errors.name?.message}>
-          <TextInput id="svc-name" placeholder="Consulta general" error={!!form.formState.errors.name} {...form.register("name")} />
+        <FieldWrapper label={t("disponibilidad.servicios.nombre")} htmlFor="svc-name" error={form.formState.errors.name?.message}>
+          <TextInput id="svc-name" placeholder={t("disponibilidad.servicios.nombreEjemplo")} error={!!form.formState.errors.name} {...form.register("name")} />
         </FieldWrapper>
         <div className="grid grid-cols-2 gap-4">
-          <FieldWrapper label="Tipo" htmlFor="svc-type" error={form.formState.errors.serviceType?.message}>
+          <FieldWrapper label={t("disponibilidad.servicios.tipo")} htmlFor="svc-type" error={form.formState.errors.serviceType?.message}>
             <SelectInput id="svc-type" error={!!form.formState.errors.serviceType} {...form.register("serviceType")}>
-              <option value="FIRST_VISIT">Primera vez</option>
-              <option value="FOLLOW_UP">Seguimiento</option>
-              <option value="TELECONSULTATION">Teleconsulta</option>
-              <option value="PROCEDURE">Procedimiento</option>
+              <option value="FIRST_VISIT">{t("disponibilidad.tipoServicio.FIRST_VISIT")}</option>
+              <option value="FOLLOW_UP">{t("disponibilidad.tipoServicio.FOLLOW_UP")}</option>
+              <option value="TELECONSULTATION">{t("disponibilidad.tipoServicio.TELECONSULTATION")}</option>
+              <option value="PROCEDURE">{t("disponibilidad.tipoServicio.PROCEDURE")}</option>
             </SelectInput>
           </FieldWrapper>
-          <FieldWrapper label="Consultorio (opcional)" htmlFor="svc-location">
+          <FieldWrapper label={t("disponibilidad.servicios.consultorio")} htmlFor="svc-location">
             <SelectInput id="svc-location" {...form.register("locationId", { setValueAs: (v: string) => (v === "" ? undefined : v) })}>
-              <option value="">Sin asignar</option>
+              <option value="">{t("disponibilidad.servicios.sinAsignar")}</option>
               {locations.map((loc) => (
                 <option key={loc.id} value={loc.id}>
                   {loc.name}
@@ -329,7 +346,7 @@ function ServicesSection({ accessToken, locations }: { accessToken: string; loca
           </FieldWrapper>
         </div>
         <div className="grid grid-cols-2 gap-4">
-          <FieldWrapper label="Duración (min)" htmlFor="svc-duration" error={form.formState.errors.durationMinutes?.message}>
+          <FieldWrapper label={t("disponibilidad.servicios.duracion")} htmlFor="svc-duration" error={form.formState.errors.durationMinutes?.message}>
             <TextInput
               id="svc-duration"
               type="number"
@@ -339,7 +356,7 @@ function ServicesSection({ accessToken, locations }: { accessToken: string; loca
               {...form.register("durationMinutes", { valueAsNumber: true })}
             />
           </FieldWrapper>
-          <FieldWrapper label="Precio (MXN)" htmlFor="svc-price" error={form.formState.errors.priceMxn?.message}>
+          <FieldWrapper label={t("disponibilidad.servicios.precio")} htmlFor="svc-price" error={form.formState.errors.priceMxn?.message}>
             <TextInput
               id="svc-price"
               type="number"
@@ -352,7 +369,7 @@ function ServicesSection({ accessToken, locations }: { accessToken: string; loca
         </div>
         {createError ? <ErrorState error={createError} /> : null}
         <Button type="submit" isLoading={form.formState.isSubmitting}>
-          Agregar servicio
+          {t("disponibilidad.servicios.agregar")}
         </Button>
       </form>
     </Card>
@@ -360,6 +377,7 @@ function ServicesSection({ accessToken, locations }: { accessToken: string; loca
 }
 
 function RulesSection({ accessToken }: { accessToken: string }) {
+  const t = useT();
   const [rules, setRules] = useState<AvailabilityRule[] | null>(null);
   const [listError, setListError] = useState<unknown>(null);
   const [createError, setCreateError] = useState<unknown>(null);
@@ -378,7 +396,7 @@ function RulesSection({ accessToken }: { accessToken: string }) {
   }, [load]);
 
   const form = useForm<AvailabilityRuleCreateInput>({
-    resolver: zodResolver(availabilityRuleCreateSchema),
+    resolver: useZodResolver<AvailabilityRuleCreateInput>(availabilityRuleCreateSchema),
     defaultValues: { modality: "IN_PERSON", weekday: 1, slotDurationMinutes: 30, bufferMinutes: 0 },
   });
 
@@ -405,26 +423,26 @@ function RulesSection({ accessToken }: { accessToken: string }) {
 
   return (
     <Card>
-      <h2 className="font-heading text-xl text-brand-900">Horario recurrente</h2>
+      <h2 className="font-heading text-xl text-brand-900">{t("disponibilidad.horario.titulo")}</h2>
 
       <div className="mt-4">
         {rules === null && !listError ? <LoadingState /> : null}
         {listError ? <ErrorState error={listError} onRetry={load} /> : null}
         {rules && rules.length === 0 ? (
-          <EmptyState title="Sin horario configurado" description="Agrega tu primer bloque recurrente abajo." />
+          <EmptyState title={t("disponibilidad.horario.vacio")} description={t("disponibilidad.horario.vacioAyuda")} />
         ) : null}
         {rules && rules.length > 0 ? (
           <ul className="flex flex-col gap-2">
             {rules.map((rule) => (
               <li key={rule.id} className="flex items-center justify-between gap-4 rounded-md border border-gray-300 p-3">
                 <p className="text-base text-gray-900">
-                  <span className="font-medium">{WEEKDAY_LABELS[rule.weekday]}</span>{" "}
-                  {minutesToTimeOfDay(rule.startMinute)}–{minutesToTimeOfDay(rule.endMinute)} · {MODALITY_LABELS[rule.modality]} · espacios de{" "}
-                  {rule.slotDurationMinutes} min
-                  {!rule.isActive ? <span className="ml-2 text-sm text-gray-500">(inactiva)</span> : null}
+                  <span className="font-medium">{t(WEEKDAY_LABEL_KEYS[rule.weekday] ?? "disponibilidad.dias.domingo")}</span>{" "}
+                  {minutesToTimeOfDay(rule.startMinute)}–{minutesToTimeOfDay(rule.endMinute)} · {translateKeyed(t, MODALITY_LABEL_KEYS, rule.modality)}
+                  {t("disponibilidad.horario.espaciosDe", { min: rule.slotDurationMinutes })}
+                  {!rule.isActive ? <span className="ml-2 text-sm text-gray-500">{t("disponibilidad.horario.inactiva")}</span> : null}
                 </p>
                 <button type="button" onClick={() => onDelete(rule.id)} className="min-h-[44px] text-sm font-medium text-danger-600 underline">
-                  Eliminar
+                  {t("disponibilidad.consultorios.eliminar")}
                 </button>
               </li>
             ))}
@@ -434,35 +452,35 @@ function RulesSection({ accessToken }: { accessToken: string }) {
 
       <form onSubmit={form.handleSubmit(onSubmit)} className="mt-6 flex flex-col gap-4 border-t border-gray-300 pt-6" noValidate>
         <div className="grid grid-cols-2 gap-4">
-          <FieldWrapper label="Día" htmlFor="weekday" error={form.formState.errors.weekday?.message}>
+          <FieldWrapper label={t("disponibilidad.horario.dia")} htmlFor="weekday" error={form.formState.errors.weekday?.message}>
             <SelectInput id="weekday" error={!!form.formState.errors.weekday} {...form.register("weekday", { valueAsNumber: true })}>
-              {WEEKDAY_LABELS.map((label, index) => (
-                <option key={label} value={index}>
-                  {label}
+              {WEEKDAY_LABEL_KEYS.map((labelKey, index) => (
+                <option key={labelKey} value={index}>
+                  {t(labelKey)}
                 </option>
               ))}
             </SelectInput>
           </FieldWrapper>
-          <FieldWrapper label="Modalidad" htmlFor="modality" error={form.formState.errors.modality?.message}>
+          <FieldWrapper label={t("disponibilidad.horario.modalidad")} htmlFor="modality" error={form.formState.errors.modality?.message}>
             <SelectInput id="modality" error={!!form.formState.errors.modality} {...form.register("modality")}>
-              <option value="IN_PERSON">Presencial</option>
-              <option value="ONLINE">En línea</option>
+              <option value="IN_PERSON">{t("disponibilidad.modalidad.IN_PERSON")}</option>
+              <option value="ONLINE">{t("disponibilidad.modalidad.ONLINE")}</option>
             </SelectInput>
           </FieldWrapper>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
-          <FieldWrapper label="Hora de inicio" htmlFor="startTime" error={form.formState.errors.startTime?.message}>
+          <FieldWrapper label={t("disponibilidad.horario.horaInicio")} htmlFor="startTime" error={form.formState.errors.startTime?.message}>
             <TextInput id="startTime" type="time" error={!!form.formState.errors.startTime} {...form.register("startTime")} />
           </FieldWrapper>
-          <FieldWrapper label="Hora de fin" htmlFor="endTime" error={form.formState.errors.endTime?.message}>
+          <FieldWrapper label={t("disponibilidad.horario.horaFin")} htmlFor="endTime" error={form.formState.errors.endTime?.message}>
             <TextInput id="endTime" type="time" error={!!form.formState.errors.endTime} {...form.register("endTime")} />
           </FieldWrapper>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
           <FieldWrapper
-            label="Duración de espacio (min)"
+            label={t("disponibilidad.horario.duracionEspacio")}
             htmlFor="slotDurationMinutes"
             error={form.formState.errors.slotDurationMinutes?.message}
           >
@@ -475,7 +493,7 @@ function RulesSection({ accessToken }: { accessToken: string }) {
               {...form.register("slotDurationMinutes", { valueAsNumber: true })}
             />
           </FieldWrapper>
-          <FieldWrapper label="Buffer entre citas (min)" htmlFor="bufferMinutes" error={form.formState.errors.bufferMinutes?.message}>
+          <FieldWrapper label={t("disponibilidad.horario.buffer")} htmlFor="bufferMinutes" error={form.formState.errors.bufferMinutes?.message}>
             <TextInput
               id="bufferMinutes"
               type="number"
@@ -487,7 +505,7 @@ function RulesSection({ accessToken }: { accessToken: string }) {
           </FieldWrapper>
         </div>
 
-        <FieldWrapper label="Vigente desde" htmlFor="validFrom" error={form.formState.errors.validFrom?.message}>
+        <FieldWrapper label={t("disponibilidad.horario.vigenteDesde")} htmlFor="validFrom" error={form.formState.errors.validFrom?.message}>
           <TextInput id="validFrom" type="date" error={!!form.formState.errors.validFrom} {...form.register("validFrom")} />
         </FieldWrapper>
 
@@ -511,6 +529,7 @@ function RulesSection({ accessToken }: { accessToken: string }) {
 // availabilityRuleCreateSchema con startTime/endTime. No construido
 // esta vuelta; queda anotado como hallazgo, no como bug silencioso.
 function ExceptionsSection({ accessToken }: { accessToken: string }) {
+  const t = useT();
   const [exceptions, setExceptions] = useState<AvailabilityException[] | null>(null);
   const [listError, setListError] = useState<unknown>(null);
   const [createError, setCreateError] = useState<unknown>(null);
@@ -561,14 +580,14 @@ function ExceptionsSection({ accessToken }: { accessToken: string }) {
 
   return (
     <Card>
-      <h2 className="font-heading text-xl text-brand-900">Bloqueos y vacaciones</h2>
-      <p className="text-sm text-gray-500">Bloquea uno o varios días completos. No se agendará ninguna cita en ese rango.</p>
+      <h2 className="font-heading text-xl text-brand-900">{t("disponibilidad.bloqueos.titulo")}</h2>
+      <p className="text-sm text-gray-500">{t("disponibilidad.bloqueos.subtitulo")}</p>
 
       <div className="mt-4">
         {exceptions === null && !listError ? <LoadingState /> : null}
         {listError ? <ErrorState error={listError} onRetry={load} /> : null}
         {exceptions && exceptions.length === 0 ? (
-          <EmptyState title="Sin bloqueos registrados" description="Agrega tu próxima vacación o bloqueo abajo." />
+          <EmptyState title={t("disponibilidad.bloqueos.vacio")} description={t("disponibilidad.bloqueos.vacioAyuda")} />
         ) : null}
         {exceptions && exceptions.length > 0 ? (
           <ul className="flex flex-col gap-2">
@@ -583,7 +602,7 @@ function ExceptionsSection({ accessToken }: { accessToken: string }) {
                   onClick={() => onDelete(exception.id)}
                   className="min-h-[44px] text-sm font-medium text-danger-600 underline"
                 >
-                  Eliminar
+                  {t("disponibilidad.consultorios.eliminar")}
                 </button>
               </li>
             ))}
@@ -593,31 +612,31 @@ function ExceptionsSection({ accessToken }: { accessToken: string }) {
 
       <form onSubmit={form.handleSubmit(onSubmit)} className="mt-6 flex flex-col gap-4 border-t border-gray-300 pt-6" noValidate>
         <div className="grid grid-cols-2 gap-4">
-          <FieldWrapper label="Desde" htmlFor="startDate" error={form.formState.errors.startDate?.message}>
+          <FieldWrapper label={t("disponibilidad.bloqueos.desde")} htmlFor="startDate" error={form.formState.errors.startDate?.message}>
             <TextInput
               id="startDate"
               type="date"
               error={!!form.formState.errors.startDate}
-              {...form.register("startDate", { required: "Selecciona una fecha." })}
+              {...form.register("startDate", { required: t("disponibilidad.bloqueos.seleccionaFecha") })}
             />
           </FieldWrapper>
-          <FieldWrapper label="Hasta" htmlFor="endDate" error={form.formState.errors.endDate?.message}>
+          <FieldWrapper label={t("disponibilidad.bloqueos.hasta")} htmlFor="endDate" error={form.formState.errors.endDate?.message}>
             <TextInput
               id="endDate"
               type="date"
               error={!!form.formState.errors.endDate}
-              {...form.register("endDate", { required: "Selecciona una fecha." })}
+              {...form.register("endDate", { required: t("disponibilidad.bloqueos.seleccionaFecha") })}
             />
           </FieldWrapper>
         </div>
-        <FieldWrapper label="Motivo (opcional)" htmlFor="reason" error={form.formState.errors.reason?.message}>
-          <TextInput id="reason" placeholder="Vacaciones, congreso…" {...form.register("reason")} />
+        <FieldWrapper label={t("disponibilidad.bloqueos.motivo")} htmlFor="reason" error={form.formState.errors.reason?.message}>
+          <TextInput id="reason" placeholder={t("disponibilidad.bloqueos.motivoEjemplo")} {...form.register("reason")} />
         </FieldWrapper>
 
         {createError ? <ErrorState error={createError} /> : null}
 
         <Button type="submit" isLoading={form.formState.isSubmitting}>
-          Agregar bloqueo
+          {t("disponibilidad.bloqueos.agregar")}
         </Button>
       </form>
     </Card>

@@ -1,7 +1,18 @@
 // Sprint 5c: thin fetch wrapper. credentials:"include" always — the
 // refresh token travels as an httpOnly cookie (M1-RN-007), never
 // touched directly by frontend code.
+import { acceptLanguageHeader, getRuntimeLocale } from "./i18n/runtime-locale";
+import { getDictionary } from "./i18n/dictionaries";
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
+
+// Este módulo no es un componente y no puede usar useT(). Solo
+// traduce los mensajes que genera ÉL (fallos de red, respuesta
+// malformada); los del servidor llegan ya traducidos porque cada
+// petición manda Accept-Language.
+function msg(key: "sinConexion" | "formatoInesperado"): string {
+  return getDictionary(getRuntimeLocale()).red[key];
+}
 
 // Pantallas de lista (Auditoría, Publicaciones...) tipan la respuesta
 // como T[] por generics de TypeScript, que no validan nada en runtime.
@@ -13,7 +24,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3
 // se vaya a tratar como lista.
 export function expectArray<T>(value: unknown): T[] {
   if (!Array.isArray(value)) {
-    throw new ApiError("UNEXPECTED_SHAPE", "La respuesta del servidor no tuvo el formato esperado.", 200, value);
+    throw new ApiError("UNEXPECTED_SHAPE", msg("formatoInesperado"), 200, value);
   }
   return value as T[];
 }
@@ -61,7 +72,11 @@ async function refreshAccessToken(): Promise<string | null> {
   if (!refreshPromise) {
     refreshPromise = (async () => {
       try {
-        const res = await fetch(`${API_BASE_URL}/auth/refresh`, { method: "POST", credentials: "include" });
+        const res = await fetch(`${API_BASE_URL}/auth/refresh`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Accept-Language": acceptLanguageHeader() },
+        });
         if (!res.ok) return null;
         const data = (await res.json()) as { accessToken: string };
         return data.accessToken;
@@ -81,6 +96,7 @@ async function doFetch(path: string, options: RequestOptions, token: string | nu
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
+      "Accept-Language": acceptLanguageHeader(),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
@@ -95,7 +111,7 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
     // Network failure (offline, DNS, server down) — distinct from a
     // real HTTP error response, so screens can show "sin conexión"
     // instead of a generic error (CLAUDE.md §5: cuatro estados).
-    throw new ApiError("NETWORK_ERROR", "No se pudo conectar con el servidor. Revisa tu conexión.", 0);
+    throw new ApiError("NETWORK_ERROR", msg("sinConexion"), 0);
   }
 
   let contentType = res.headers.get("content-type");
@@ -109,7 +125,7 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
       try {
         res = await doFetch(path, options, freshToken);
       } catch {
-        throw new ApiError("NETWORK_ERROR", "No se pudo conectar con el servidor. Revisa tu conexión.", 0);
+        throw new ApiError("NETWORK_ERROR", msg("sinConexion"), 0);
       }
       contentType = res.headers.get("content-type");
       data = contentType?.includes("application/json") ? await res.json() : undefined;
@@ -147,7 +163,10 @@ export async function apiUpload<T>(path: string, file: File, options: { accessTo
     return fetch(`${API_BASE_URL}${path}`, {
       method: "POST",
       credentials: "include",
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: {
+        "Accept-Language": acceptLanguageHeader(),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
       body: formData,
     });
   }
@@ -156,7 +175,7 @@ export async function apiUpload<T>(path: string, file: File, options: { accessTo
   try {
     res = await send(options.accessToken);
   } catch {
-    throw new ApiError("NETWORK_ERROR", "No se pudo conectar con el servidor. Revisa tu conexión.", 0);
+    throw new ApiError("NETWORK_ERROR", msg("sinConexion"), 0);
   }
 
   let contentType = res.headers.get("content-type");
@@ -170,7 +189,7 @@ export async function apiUpload<T>(path: string, file: File, options: { accessTo
       try {
         res = await send(freshToken);
       } catch {
-        throw new ApiError("NETWORK_ERROR", "No se pudo conectar con el servidor. Revisa tu conexión.", 0);
+        throw new ApiError("NETWORK_ERROR", msg("sinConexion"), 0);
       }
       contentType = res.headers.get("content-type");
       data = contentType?.includes("application/json") ? await res.json() : undefined;
@@ -195,7 +214,10 @@ export async function apiFetchBlob(path: string, options: { accessToken?: string
     return fetch(`${API_BASE_URL}${path}`, {
       method: "GET",
       credentials: "include",
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: {
+        "Accept-Language": acceptLanguageHeader(),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
     });
   }
 
@@ -203,7 +225,7 @@ export async function apiFetchBlob(path: string, options: { accessToken?: string
   try {
     res = await send(options.accessToken);
   } catch {
-    throw new ApiError("NETWORK_ERROR", "No se pudo conectar con el servidor. Revisa tu conexión.", 0);
+    throw new ApiError("NETWORK_ERROR", msg("sinConexion"), 0);
   }
 
   if (res.status === 401 && options.accessToken) {
@@ -213,7 +235,7 @@ export async function apiFetchBlob(path: string, options: { accessToken?: string
       try {
         res = await send(freshToken);
       } catch {
-        throw new ApiError("NETWORK_ERROR", "No se pudo conectar con el servidor. Revisa tu conexión.", 0);
+        throw new ApiError("NETWORK_ERROR", msg("sinConexion"), 0);
       }
     } else {
       onSessionExpired?.();

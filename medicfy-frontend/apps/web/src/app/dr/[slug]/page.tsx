@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { SiteHeader } from "@/components/site-header";
 import { DoctorPublicProfile } from "./doctor-public-profile";
+import { getTranslator } from "@/lib/i18n/server";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
 
@@ -23,12 +24,13 @@ interface MetadataDoctor {
 // /verificar/[token], la otra página pública de la app.
 export async function generateMetadata({ params }: PageParams): Promise<Metadata> {
   const { slug } = await params;
+  const t = await getTranslator();
   try {
     const res = await fetch(`${API_BASE_URL}/doctors/${slug}/public`, { cache: "no-store" });
     if (!res.ok) return { title: "Medicfy" };
     const doctor = (await res.json()) as MetadataDoctor;
-    const name = doctor.displayName ?? "Médico en Medicfy";
-    const specialty = doctor.primarySpecialtyName ?? "Medicina General";
+    const name = doctor.displayName ?? t("directorio.medicoEnMedicfy");
+    const specialty = doctor.primarySpecialtyName ?? t("catalogos.especialidades.GENERAL");
     const description = doctor.biography ? doctor.biography.slice(0, 160) : `${name} · ${specialty} en Medicfy.`;
     return {
       title: `${name} · ${specialty} — Medicfy`,

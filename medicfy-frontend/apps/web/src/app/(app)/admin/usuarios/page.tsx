@@ -6,6 +6,7 @@ import { apiFetch, expectArray } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
 import { Card, LoadingState, EmptyState, ErrorState } from "@/components/ui/states";
 import { FieldWrapper, TextInput } from "@/components/ui/field";
+import { useT } from "@/lib/i18n/context";
 
 interface AdminDoctorSearchResult {
   id: string;
@@ -59,6 +60,7 @@ export default function AdminUsuariosPage() {
 }
 
 function UsuariosSearch({ accessToken }: { accessToken: string }) {
+  const t = useT();
   const [query, setQuery] = useState("");
   const [result, setResult] = useState<AdminUsersSearchResponse | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -106,26 +108,26 @@ function UsuariosSearch({ accessToken }: { accessToken: string }) {
       </div>
 
       <Card>
-        <FieldWrapper label="Buscar" htmlFor="admin-users-q">
+        <FieldWrapper label={t("admin.usuarios.buscar")} htmlFor="admin-users-q">
           <TextInput
             id="admin-users-q"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Nombre, cédula, Medicfy ID o correo…"
+            placeholder={t("admin.usuarios.buscarPlaceholder")}
           />
         </FieldWrapper>
 
         <div className="mt-6">
-          {!hasSearched ? <EmptyState title="Escribe para buscar" description="Los resultados aparecen mientras escribes." /> : null}
+          {!hasSearched ? <EmptyState title={t("admin.usuarios.escribeParaBuscar")} description={t("admin.usuarios.escribeAyuda")} /> : null}
           {hasSearched && isSearching && !result ? <LoadingState /> : null}
           {error ? <ErrorState error={error} onRetry={() => search(query)} /> : null}
           {hasSearched && result && !error && totalResults === 0 ? (
-            <EmptyState title="Sin resultados" description="Prueba con otro nombre, cédula o correo." />
+            <EmptyState title={t("admin.usuarios.sinResultados")} description={t("admin.usuarios.sinResultadosAyuda")} />
           ) : null}
 
           {result && result.doctors.length > 0 ? (
             <section className="mb-6">
-              <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500">Médicos</h2>
+              <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500">{t("admin.usuarios.medicos")}</h2>
               <ul className="flex flex-col gap-2">
                 {result.doctors.map((doctor) => (
                   <li key={doctor.id} className="rounded-md border border-gray-300 p-3">
@@ -133,7 +135,7 @@ function UsuariosSearch({ accessToken }: { accessToken: string }) {
                       {doctor.legalFirstName} {doctor.legalLastName}
                     </p>
                     <p className="text-sm text-gray-500">
-                      Cédula {doctor.professionalLicense} · {doctor.verificationStatus}
+                      {t("admin.usuarios.cedula", { numero: doctor.professionalLicense })} · {doctor.verificationStatus}
                       {doctor.subscriptionStatus ? ` · ${doctor.subscriptionStatus}` : ""}
                     </p>
                   </li>
@@ -144,7 +146,7 @@ function UsuariosSearch({ accessToken }: { accessToken: string }) {
 
           {result && result.patients.length > 0 ? (
             <section>
-              <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500">Pacientes</h2>
+              <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500">{t("admin.usuarios.pacientes")}</h2>
               <ul className="flex flex-col gap-2">
                 {result.patients.map((patient) => (
                   <li key={patient.id} className="rounded-md border border-gray-300 p-3">
@@ -152,8 +154,14 @@ function UsuariosSearch({ accessToken }: { accessToken: string }) {
                       {patient.firstName} {patient.lastNamePaternal} {patient.lastNameMaternal ?? ""}
                     </p>
                     <p className="text-sm text-gray-500">
-                      {patient.medicfyId} · {patient.appointmentCount} {patient.appointmentCount === 1 ? "consulta" : "consultas"} ·{" "}
-                      {patient.linkedDoctorCount} {patient.linkedDoctorCount === 1 ? "médico vinculado" : "médicos vinculados"}
+                      {patient.medicfyId} ·{" "}
+                      {patient.appointmentCount === 1
+                        ? t("admin.usuarios.consulta", { n: patient.appointmentCount })
+                        : t("admin.usuarios.consultas", { n: patient.appointmentCount })}{" "}
+                      ·{" "}
+                      {patient.linkedDoctorCount === 1
+                        ? t("admin.usuarios.medicoVinculado", { n: patient.linkedDoctorCount })
+                        : t("admin.usuarios.medicosVinculados", { n: patient.linkedDoctorCount })}
                     </p>
                   </li>
                 ))}

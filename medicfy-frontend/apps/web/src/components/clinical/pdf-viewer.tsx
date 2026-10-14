@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useT } from "@/lib/i18n/context";
 
 // El visor de PDF integrado del navegador depende de que el navegador
 // (y hasta la configuración del usuario) lo traiga habilitado — dos
@@ -18,6 +19,7 @@ import { useEffect, useRef, useState } from "react";
 // "ReferenceError: DOMMatrix is not defined". Dentro de useEffect
 // nunca corre en el servidor — React no ejecuta efectos durante SSR.
 export function PdfViewer({ data }: { data: ArrayBuffer }) {
+  const t = useT();
   const containerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<unknown>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -73,9 +75,9 @@ export function PdfViewer({ data }: { data: ArrayBuffer }) {
 
   return (
     <div>
-      {isLoading && !error ? <p className="text-sm text-gray-500">Cargando documento…</p> : null}
+      {isLoading && !error ? <p className="text-sm text-gray-500">{t("clinico.pdf.cargando")}</p> : null}
       {error ? (
-        <p className="text-sm text-danger-600">No se pudo mostrar el PDF en pantalla. Usa &quot;Descargar archivo original&quot;.</p>
+        <p className="text-sm text-danger-600">{t("clinico.pdf.noSePudoMostrar")}</p>
       ) : null}
       <div ref={containerRef} className="flex flex-col items-center" />
     </div>

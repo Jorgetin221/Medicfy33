@@ -8,6 +8,7 @@ import { useAuth } from "@/lib/auth-context";
 import { Card, LoadingState, EmptyState, ErrorState } from "@/components/ui/states";
 import { TextInput } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
+import { useT } from "@/lib/i18n/context";
 import { patientAgeYears, patientFullName } from "../consulta/[appointmentId]/types";
 
 interface PatientListItem {
@@ -47,6 +48,7 @@ export default function PacientesPage() {
 }
 
 function PacientesContent({ accessToken }: { accessToken: string }) {
+  const t = useT();
   const [patients, setPatients] = useState<PatientListItem[] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [query, setQuery] = useState("");
@@ -73,11 +75,11 @@ function PacientesContent({ accessToken }: { accessToken: string }) {
     <main className="mx-auto flex max-w-3xl flex-col gap-6 p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="font-heading text-2xl text-brand-900">Pacientes</h1>
-          <p className="text-base text-gray-500">Todos los pacientes con relación de atención activa contigo.</p>
+          <h1 className="font-heading text-2xl text-brand-900">{t("pacientes.titulo")}</h1>
+          <p className="text-base text-gray-500">{t("pacientes.subtitulo")}</p>
         </div>
         <Link href="/pacientes/nuevo">
-          <Button type="button">Nuevo paciente</Button>
+          <Button type="button">{t("pacientes.nuevoPaciente")}</Button>
         </Link>
       </div>
 
@@ -85,19 +87,19 @@ function PacientesContent({ accessToken }: { accessToken: string }) {
       {!patients && !error ? <LoadingState /> : null}
 
       {patients && patients.length === 0 ? (
-        <EmptyState title="Sin pacientes registrados todavía" description="Registra tu primer paciente para empezar." />
+        <EmptyState title={t("pacientes.sinPacientes")} description={t("pacientes.sinPacientesAyuda")} />
       ) : null}
 
       {patients && patients.length > 0 ? (
         <div className="flex flex-col gap-4">
           <TextInput
-            placeholder="Buscar por nombre o Medicfy ID…"
+            placeholder={t("pacientes.buscarPlaceholder")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            aria-label="Buscar paciente"
+            aria-label={t("pacientes.buscarEtiqueta")}
           />
           {filtered.length === 0 ? (
-            <EmptyState title={`Sin resultados para "${query}"`} />
+            <EmptyState title={t("pacientes.sinResultadosPara", { consulta: query })} />
           ) : (
             <ul className="flex flex-col gap-2">
               {filtered.map((p) => (
@@ -106,7 +108,8 @@ function PacientesContent({ accessToken }: { accessToken: string }) {
                     <Card className="transition hover:border-brand-700">
                       <p className="text-base font-medium text-gray-900">{patientFullName(p)}</p>
                       <p className="text-sm text-gray-500">
-                        {p.medicfyId} · {patientAgeYears(p.birthDate)} años · {p.sexAtBirth === "F" ? "Mujer" : "Hombre"}
+                        {p.medicfyId} · {t("pacientes.anios", { n: patientAgeYears(p.birthDate) })} ·{" "}
+                        {p.sexAtBirth === "F" ? t("pacientes.mujer") : t("pacientes.hombre")}
                       </p>
                     </Card>
                   </Link>

@@ -141,3 +141,25 @@ export function IconLogout(props: IconProps) {
     </svg>
   );
 }
+
+// Selector de idioma (components/ui/language-switcher.tsx). Globo con
+// meridiano y paralelos — el signo convencional de "idioma" sin
+// recurrir a una bandera: ningún país es dueño de un idioma, y una
+// bandera mexicana para "español" excluiría al resto de hispanohablantes.
+export function IconGlobe(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18" />
+      <path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18" />
+    </svg>
+  );
+}
+
+export function IconCheckNav(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <path d="m5 13 4 4 10-11" />
+    </svg>
+  );
+}

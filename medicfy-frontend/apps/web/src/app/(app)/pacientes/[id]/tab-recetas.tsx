@@ -6,16 +6,14 @@ import { apiFetch, apiFetchBlob } from "@/lib/api-client";
 import type { TimelinePrescription } from "@/lib/use-patient-clinical";
 import { Card, EmptyState, ErrorState } from "@/components/ui/states";
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/lib/i18n/context";
+import { formatDateLong } from "@/lib/i18n/format";
+import type { MessageKey } from "@/lib/i18n/dictionaries";
 
-const MX_TIME_ZONE = "America/Mexico_City";
-function formatMxDate(iso: string): string {
-  return new Intl.DateTimeFormat("es-MX", { timeZone: MX_TIME_ZONE, dateStyle: "long" }).format(new Date(iso));
-}
-
-const STATUS_LABEL: Record<TimelinePrescription["status"], string> = {
-  ISSUED: "Vigente",
-  CANCELLED: "Cancelada",
-  PENDING_HANDWRITTEN_SIGNATURE: "Pendiente de firma autógrafa",
+const STATUS_LABEL_KEY: Record<TimelinePrescription["status"], MessageKey> = {
+  ISSUED: "pacientes.recetas.vigente",
+  CANCELLED: "pacientes.recetas.cancelada",
+  PENDING_HANDWRITTEN_SIGNATURE: "pacientes.recetas.pendienteFirma",
 };
 const STATUS_CLASS: Record<TimelinePrescription["status"], string> = {
   ISSUED: "border-success-600 text-success-600",
@@ -37,13 +35,14 @@ export function TabRecetas({
   prescriptions: TimelinePrescription[];
   onChanged: () => void;
 }) {
+  const { t, locale } = useI18n();
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
 
   async function cancelPrescription(id: string) {
-    const reason = window.prompt("Motivo de cancelación:");
+    const reason = window.prompt(t("pacientes.recetas.motivoCancelacion"));
     if (!reason) return;
     setError(null);
     setCancellingId(id);
@@ -62,7 +61,7 @@ export function TabRecetas({
   // automática. Vive aquí (no en el panel de emisión) porque el
   // médico puede cerrar ese panel antes de firmar físicamente.
   async function confirmHandwrittenDelivery(id: string) {
-    if (!window.confirm("¿Confirmas que ya firmaste esta receta a mano y se la entregaste al paciente?")) return;
+    if (!window.confirm(t("pacientes.recetas.confirmarEntrega"))) return;
     setError(null);
     setConfirmingId(id);
     try {
@@ -95,7 +94,7 @@ export function TabRecetas({
   const nuevaRecetaButton = (
     <Link href={`/consulta/paciente/${patientId}`}>
       <Button type="button" variant="secondary" className="min-h-11 px-3 text-sm">
-        + Emitir receta
+        {t("pacientes.recetas.emitirReceta")}
       </Button>
     </Link>
   );
@@ -104,7 +103,7 @@ export function TabRecetas({
     return (
       <div className="flex flex-col gap-3">
         <div>{nuevaRecetaButton}</div>
-        <EmptyState title="Sin recetas emitidas" description="Las recetas que emitas desde una consulta aparecerán aquí." />
+        <EmptyState title={t("pacientes.recetas.sinRecetas")} description={t("pacientes.recetas.sinRecetasAyuda")} />
       </div>
     );
   }
@@ -120,12 +119,12 @@ export function TabRecetas({
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-base font-medium text-gray-900">
-                    Folio {p.folio} — {formatMxDate(p.issuedAt)}
+                    {t("pacientes.recetas.folio", { folio: p.folio, fecha: formatDateLong(locale, p.issuedAt) })}
                   </p>
                   <p className="text-sm text-gray-500">{p.diagnosisSnapshot}</p>
                 </div>
                 <span className={`whitespace-nowrap rounded-full border px-3 py-1 text-sm font-medium ${STATUS_CLASS[p.status]}`}>
-                  {STATUS_LABEL[p.status]}
+                  {t(STATUS_LABEL_KEY[p.status])}
                 </span>
               </div>
               <ul className="mt-2 flex flex-col gap-1">
@@ -137,7 +136,7 @@ export function TabRecetas({
               </ul>
               {p.qrVerificationToken && (
                 <p className="mt-2 break-all text-sm text-gray-500">
-                  Verificación: <span className="font-mono">/verificar/{p.qrVerificationToken}</span>
+                  {t("pacientes.recetas.verificacion")} <span className="font-mono">/verificar/{p.qrVerificationToken}</span>
                 </p>
               )}
               {p.prescriptionType === "ELECTRONIC" && (
@@ -149,7 +148,7 @@ export function TabRecetas({
                     onClick={() => void downloadPdf(p.id)}
                     className="min-h-11 px-3 text-sm"
                   >
-                    Descargar PDF
+                    {t("pacientes.recetas.descargarPdf")}
                   </Button>
                   {p.status === "PENDING_HANDWRITTEN_SIGNATURE" && (
                     <Button
@@ -158,7 +157,7 @@ export function TabRecetas({
                       onClick={() => void confirmHandwrittenDelivery(p.id)}
                       className="min-h-11 px-3 text-sm"
                     >
-                      Marcar como firmada y entregada
+                      {t("pacientes.recetas.marcarFirmada")}
                     </Button>
                   )}
                   {p.status !== "CANCELLED" && (
@@ -169,7 +168,7 @@ export function TabRecetas({
                       onClick={() => void cancelPrescription(p.id)}
                       className="min-h-11 px-3 text-sm"
                     >
-                      Cancelar receta
+                      {t("pacientes.recetas.cancelarReceta")}
                     </Button>
                   )}
                 </div>

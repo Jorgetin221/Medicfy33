@@ -9,6 +9,7 @@ import { FieldWrapper, TextInput, Textarea } from "@/components/ui/field";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Aviso } from "@/components/ui/alert";
 import { MedicationPicker, type MedicationCatalogEntry, type PrescriptionDraftItem } from "@/components/clinical/medication-picker";
+import { useT } from "@/lib/i18n/context";
 
 
 interface TherapeuticClassDuplicate {
@@ -75,6 +76,7 @@ export function PrescriptionPanel({
   defaultDiagnosis: string;
   onIssued: () => void;
 }) {
+  const t = useT();
   const [items, setItems] = useState<PrescriptionDraftItem[]>([]);
   const [diagnosisSnapshot, setDiagnosisSnapshot] = useState(defaultDiagnosis);
   const [generalInstructions, setGeneralInstructions] = useState("");
@@ -217,7 +219,7 @@ export function PrescriptionPanel({
         }[];
       }>(`/prescriptions/patients/${patientId}/last`, { accessToken });
       if (!result.prescription || result.lines.length === 0) {
-        setLastError("No hay una receta anterior tuya con este paciente.");
+        setLastError(t("clinico.receta.sinRecetaAnterior"));
         return;
       }
       setItems([
@@ -240,7 +242,7 @@ export function PrescriptionPanel({
         })),
       ]);
     } catch {
-      setLastError("No se pudo traer la última receta.");
+      setLastError(t("clinico.receta.noSePudoTraer"));
     } finally {
       setIsLoadingLast(false);
     }
@@ -253,7 +255,7 @@ export function PrescriptionPanel({
     try {
       const blob = await apiFetchBlob(`/prescriptions/${issued.id}/pdf`, { accessToken });
       if (!blob) {
-        setPdfError(new Error("No se encontró el PDF de esta receta."));
+        setPdfError(new Error(t("clinico.receta.pdfNoEncontrado")));
         return;
       }
       window.open(URL.createObjectURL(blob), "_blank");
@@ -299,24 +301,23 @@ export function PrescriptionPanel({
     (signatureRoute === "HANDWRITTEN_AFTER_PRINT" || (signatureRoute === "ELECTRONIC" && password.length > 0 && totpCode.length === 6));
 
   return (
-    <Panel open={open} onClose={handleClose} title="Emitir receta">
+    <Panel open={open} onClose={handleClose} title={t("clinico.receta.panelTitulo")}>
       {issued ? (
         <div className="flex flex-col gap-4">
-          <Aviso variant="exito" title={`Receta emitida — folio ${issued.folio}`}>
+          <Aviso variant="exito" title={t("clinico.receta.emitida", { folio: issued.folio })}>
             {issued.qrVerificationToken && (
               <p className="mt-1 break-all">
-                Verificación pública: <span className="font-mono">/verificar/{issued.qrVerificationToken}</span>
+                {t("clinico.receta.verificacionPublica")} <span className="font-mono">/verificar/{issued.qrVerificationToken}</span>
               </p>
             )}
           </Aviso>
           {issued.signatureRoute === "HANDWRITTEN_AFTER_PRINT" && (
-            <Aviso variant="advertencia" title="Firma pendiente">
-              Imprime esta receta y fírmala a mano antes de entregarla al paciente. Cuando la hayas entregado, márcalo en la pestaña de Recetas del
-              expediente.
+            <Aviso variant="advertencia" title={t("clinico.receta.firmaPendiente")}>
+              {t("clinico.receta.firmaPendienteCuerpo")}
             </Aviso>
           )}
           {issued.interactionWarnings.length > 0 && (
-            <Aviso variant="advertencia" title="Interacciones informadas">
+            <Aviso variant="advertencia" title={t("clinico.receta.interaccionesInformadas")}>
               <ul className="list-disc pl-5">
                 {issued.interactionWarnings.map((w, i) => (
                   <li key={i}>
@@ -327,75 +328,79 @@ export function PrescriptionPanel({
             </Aviso>
           )}
           {issued.therapeuticDuplicates.length > 0 && (
-            <Aviso variant="advertencia" title="Posible duplicidad terapéutica">
-              El paciente ya toma: {issued.therapeuticDuplicates.join(", ")}. Revisa antes de continuar.
+            <Aviso variant="advertencia" title={t("clinico.receta.duplicidad")}>
+              {t("clinico.receta.duplicidadCuerpo", { medicamentos: issued.therapeuticDuplicates.join(", ") })}
             </Aviso>
           )}
           {issued.therapeuticClassDuplicates.length > 0 && (
-            <Aviso variant="advertencia" title="Misma clase terapéutica que un medicamento ya activo">
+            <Aviso variant="advertencia" title={t("clinico.receta.mismaClase")}>
               <ul className="list-disc pl-5">
                 {issued.therapeuticClassDuplicates.map((d, i) => (
                   <li key={i}>
-                    {d.prescribedMedication} es de la misma clase que {d.existingMedication}, que el paciente ya toma.
+                    {t("clinico.receta.mismaClaseLinea", { recetado: d.prescribedMedication, existente: d.existingMedication })}
                   </li>
                 ))}
               </ul>
-              Revisa antes de continuar.
+              {t("clinico.receta.revisaAntes")}
             </Aviso>
           )}
           <Button type="button" variant="secondary" isLoading={isDownloadingPdf} onClick={() => void downloadPdf()} className="w-fit">
-            Descargar / imprimir PDF
+            {t("clinico.receta.descargarPdf")}
           </Button>
           {pdfError ? (
-            <Aviso variant="advertencia" title="No se pudo abrir el PDF">
-              {pdfError instanceof ApiError ? pdfError.message : "Intenta de nuevo."}
+            <Aviso variant="advertencia" title={t("clinico.receta.noSePudoAbrirPdf")}>
+              {pdfError instanceof ApiError ? pdfError.message : t("clinico.receta.intentaDeNuevo")}
             </Aviso>
           ) : null}
           <div className="flex gap-3">
             <Button type="button" variant="secondary" onClick={resetAll}>
-              Emitir otra receta
+              {t("clinico.receta.emitirOtra")}
             </Button>
             <Button type="button" onClick={handleClose}>
-              Cerrar
+              {t("common.acciones.cerrar")}
             </Button>
           </div>
         </div>
       ) : blockedMedication ? (
         <div className="flex flex-col gap-4">
-          <Aviso variant="critico" title={`${blockedMedication.genericName} es Grupo ${blockedMedication.controlGroup}`}>
-            COFEPRIS exige recetario físico para medicamentos Grupo I/II. Medicfy no puede emitir esta receta electrónicamente — puedes registrar
-            aquí la receta que ya emitiste en tu recetario físico, para que quede en el expediente.
+          <Aviso
+            variant="critico"
+            title={t("clinico.receta.bloqueadoGrupo", { medicamento: blockedMedication.genericName, grupo: blockedMedication.controlGroup })}
+          >
+            {t("clinico.receta.bloqueadoCuerpo")}
           </Aviso>
           {externalRegistered ? (
             <>
-              <Aviso variant="exito" title="Receta física registrada en el expediente." />
+              <Aviso variant="exito" title={t("clinico.receta.fisicaRegistrada")} />
               <Button type="button" onClick={handleClose}>
-                Cerrar
+                {t("common.acciones.cerrar")}
               </Button>
             </>
           ) : (
             <>
-              <FieldWrapper label="Folio del recetario físico" htmlFor="physical-folio">
+              <FieldWrapper label={t("clinico.receta.folioFisico")} htmlFor="physical-folio">
                 <TextInput id="physical-folio" value={physicalFolio} onChange={(e) => setPhysicalFolio(e.target.value)} />
               </FieldWrapper>
               <div className="grid grid-cols-2 gap-3">
-                <FieldWrapper label="Dosis" htmlFor="ext-dose">
+                <FieldWrapper label={t("clinico.medicamentos.dosis")} htmlFor="ext-dose">
                   <TextInput id="ext-dose" value={extDose} onChange={(e) => setExtDose(e.target.value)} />
                 </FieldWrapper>
-                <FieldWrapper label="Vía" htmlFor="ext-route">
+                <FieldWrapper label={t("clinico.medicamentos.via")} htmlFor="ext-route">
                   <TextInput id="ext-route" value={extRoute} onChange={(e) => setExtRoute(e.target.value)} />
                 </FieldWrapper>
-                <FieldWrapper label="Frecuencia" htmlFor="ext-frequency">
+                <FieldWrapper label={t("clinico.medicamentos.frecuencia")} htmlFor="ext-frequency">
                   <TextInput id="ext-frequency" value={extFrequency} onChange={(e) => setExtFrequency(e.target.value)} />
                 </FieldWrapper>
-                <FieldWrapper label="Duración" htmlFor="ext-duration">
+                <FieldWrapper label={t("clinico.medicamentos.duracion")} htmlFor="ext-duration">
                   <TextInput id="ext-duration" value={extDuration} onChange={(e) => setExtDuration(e.target.value)} />
                 </FieldWrapper>
               </div>
-              {externalError ? <Aviso variant="critico" title="No se pudo registrar">{externalError instanceof ApiError ? externalError.message : "Intenta de nuevo."}</Aviso> : null}
+              {externalError ? <Aviso variant="critico" title={t("clinico.receta.noSePudoRegistrar")}>
+                  {externalError instanceof ApiError ? externalError.message : t("clinico.receta.intentaDeNuevo")}
+                </Aviso> : null}
               <div className="flex gap-3">
                 <Button type="button" variant="secondary" onClick={() => setBlockedMedication(null)}>
-                  Volver a la búsqueda
+                  {t("clinico.receta.volverABusqueda")}
                 </Button>
                 <Button
                   type="button"
@@ -403,7 +408,7 @@ export function PrescriptionPanel({
                   disabled={!physicalFolio || !extDose || !extRoute || !extFrequency || !extDuration}
                   onClick={() => void submitExternalPhysical()}
                 >
-                  Registrar receta física
+                  {t("clinico.receta.registrarFisica")}
                 </Button>
               </div>
             </>
@@ -411,14 +416,14 @@ export function PrescriptionPanel({
         </div>
       ) : (
         <div className="flex flex-col gap-4">
-          <FieldWrapper label="Diagnóstico que motiva la receta" htmlFor="rx-diagnosis">
+          <FieldWrapper label={t("clinico.receta.diagnosticoMotiva")} htmlFor="rx-diagnosis">
             <TextInput id="rx-diagnosis" value={diagnosisSnapshot} onChange={(e) => setDiagnosisSnapshot(e.target.value)} />
           </FieldWrapper>
 
           {patientId ? (
             <div className="flex flex-col gap-1">
               <Button type="button" variant="secondary" isLoading={isLoadingLast} onClick={() => void loadLastPrescription()} className="w-fit">
-                Traer última receta
+                {t("clinico.receta.traerUltima")}
               </Button>
               {lastError ? <p className="text-sm text-gray-500">{lastError}</p> : null}
             </div>
@@ -426,30 +431,28 @@ export function PrescriptionPanel({
 
           <MedicationPicker accessToken={accessToken} items={items} onChange={setItems} onBlockedSelected={setBlockedMedication} />
 
-          <FieldWrapper label="Indicaciones generales (opcional)" htmlFor="rx-instructions">
+          <FieldWrapper label={t("clinico.receta.indicacionesGenerales")} htmlFor="rx-instructions">
             <TextInput id="rx-instructions" value={generalInstructions} onChange={(e) => setGeneralInstructions(e.target.value)} />
           </FieldWrapper>
 
           {allergyConflict && (
-            <Aviso variant="critico" title="Alergia registrada — bloqueado">
-              <p>El paciente tiene alergia a: {allergyConflict.join(", ")}.</p>
-              <p className="mt-1">
-                El bloqueo solo se libera con una justificación clínica, que queda registrada y firmada en el expediente (mínimo 15 caracteres).
-              </p>
-              <FieldWrapper label="Justificación clínica" htmlFor="rx-allergy-justification">
+            <Aviso variant="critico" title={t("clinico.receta.alergiaBloqueado")}>
+              <p>{t("clinico.receta.alergiaCuerpo", { agentes: allergyConflict.join(", ") })}</p>
+              <p className="mt-1">{t("clinico.receta.alergiaDesbloqueo")}</p>
+              <FieldWrapper label={t("clinico.receta.justificacion")} htmlFor="rx-allergy-justification">
                 <Textarea
                   id="rx-allergy-justification"
                   rows={3}
                   value={allergyJustification}
                   onChange={(e) => setAllergyJustification(e.target.value)}
-                  placeholder="p. ej. alergia referida dudosa; sin alternativa terapéutica; bajo vigilancia…"
+                  placeholder={t("clinico.receta.justificacionEjemplo")}
                 />
               </FieldWrapper>
             </Aviso>
           )}
 
           {graveInteractions && (
-            <Aviso variant="critico" title="Interacción GRAVE detectada">
+            <Aviso variant="critico" title={t("clinico.receta.interaccionGrave")}>
               <ul className="list-disc pl-5">
                 {graveInteractions.map((w, i) => (
                   <li key={i}>
@@ -462,7 +465,7 @@ export function PrescriptionPanel({
               </ul>
               <label className="mt-2 flex min-h-11 cursor-pointer items-center gap-2 text-base">
                 <input type="checkbox" checked={interactionConfirmed} onChange={(e) => setInteractionConfirmed(e.target.checked)} className="h-5 w-5" />
-                Revisé la interacción y confirmo que deseo continuar. Mi confirmación queda en bitácora.
+                {t("clinico.receta.confirmoInteraccion")}
               </label>
             </Aviso>
           )}
@@ -471,7 +474,7 @@ export function PrescriptionPanel({
               obligatoria para imprimir — el médico elige entre las
               dos rutas, ninguna es la opción "por defecto". */}
           <fieldset className="flex flex-col gap-2 rounded-md border border-gray-300 p-4">
-            <legend className="px-1 text-sm font-medium text-gray-700">¿Cómo desea firmar esta receta?</legend>
+            <legend className="px-1 text-sm font-medium text-gray-700">{t("clinico.receta.comoFirmar")}</legend>
             <label className="flex min-h-11 cursor-pointer items-start gap-3 rounded-md p-2 hover:bg-gray-100">
               <input
                 type="radio"
@@ -481,8 +484,8 @@ export function PrescriptionPanel({
                 onChange={() => setSignatureRoute("HANDWRITTEN_AFTER_PRINT")}
               />
               <span>
-                <span className="block text-base font-medium text-gray-900">Imprimir y firmar a mano</span>
-                <span className="block text-sm text-gray-500">Genera la receta con un espacio para tu firma autógrafa. No pide contraseña ni código.</span>
+                <span className="block text-base font-medium text-gray-900">{t("clinico.receta.imprimirYFirmar")}</span>
+                <span className="block text-sm text-gray-500">{t("clinico.receta.imprimirYFirmarAyuda")}</span>
               </span>
             </label>
             <label className="flex min-h-11 cursor-pointer items-start gap-3 rounded-md p-2 hover:bg-gray-100">
@@ -494,18 +497,18 @@ export function PrescriptionPanel({
                 onChange={() => setSignatureRoute("ELECTRONIC")}
               />
               <span>
-                <span className="block text-base font-medium text-gray-900">Firma digital o electrónica</span>
-                <span className="block text-sm text-gray-500">Firma dentro de Medicfy confirmando tu contraseña y un código de verificación.</span>
+                <span className="block text-base font-medium text-gray-900">{t("clinico.receta.firmaDigital")}</span>
+                <span className="block text-sm text-gray-500">{t("clinico.receta.firmaDigitalAyuda")}</span>
               </span>
             </label>
           </fieldset>
 
           {signatureRoute === "ELECTRONIC" && (
             <div className="grid grid-cols-2 gap-3">
-              <FieldWrapper label="Confirma tu contraseña" htmlFor="rx-password">
+              <FieldWrapper label={t("clinico.receta.confirmaContrasena")} htmlFor="rx-password">
                 <PasswordInput id="rx-password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
               </FieldWrapper>
-              <FieldWrapper label="Código de verificación (6 dígitos)" htmlFor="rx-totp">
+              <FieldWrapper label={t("clinico.receta.codigoVerificacion")} htmlFor="rx-totp">
                 <TextInput
                   id="rx-totp"
                   inputMode="numeric"
@@ -518,8 +521,8 @@ export function PrescriptionPanel({
           )}
 
           {submitError ? (
-            <Aviso variant="critico" title="No se pudo emitir la receta">
-              {submitError instanceof ApiError ? submitError.message : "Intenta de nuevo."}
+            <Aviso variant="critico" title={t("clinico.receta.noSePudoEmitir")}>
+              {submitError instanceof ApiError ? submitError.message : t("clinico.receta.intentaDeNuevo")}
             </Aviso>
           ) : null}
 
@@ -533,7 +536,7 @@ export function PrescriptionPanel({
             }
             onClick={() => void submitPrescription()}
           >
-            {signatureRoute === "HANDWRITTEN_AFTER_PRINT" ? "Generar receta para firma" : "Firmar y emitir receta"}
+            {signatureRoute === "HANDWRITTEN_AFTER_PRINT" ? t("clinico.receta.generarParaFirma") : t("clinico.receta.firmarYEmitir")}
           </Button>
         </div>
       )}

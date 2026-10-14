@@ -1,0 +1,78 @@
+import type { auth as es } from "../es/auth";
+
+// "Cédula profesional" se conserva junto a su traducción: es el
+// documento oficial que expide la SEP, y un médico que llame a
+// soporte necesita poder nombrarlo como aparece en el papel.
+export const auth: typeof es = {
+  campos: {
+    correo: "Email address",
+    contrasena: "Password",
+    pistaContrasena: "Use at least 8 characters (letters, numbers or symbols).",
+    nombres: "First name(s)",
+    apellidos: "Last name(s)",
+    apellidoPaterno: "Paternal last name",
+    apellidoMaterno: "Maternal last name (optional)",
+    cedula: "Professional license (cédula profesional)",
+    especialidad: "Primary specialty",
+    telefono: "Phone",
+    pistaTelefono: "10 digits.",
+    codigo: "Code",
+    fechaNacimiento: "Date of birth",
+    pistaMayorEdad: "You must be of legal age to register on your own.",
+    sexoAlNacer: "Sex at birth",
+    selecciona: "Select…",
+    seleccionaEspecialidad: "Select a specialty",
+    femenino: "Female",
+    masculino: "Male",
+    catalogoNoCargo: "The catalog couldn't be loaded.",
+  },
+  login: {
+    panelTitulo: "Your practice — no WhatsApp, no spreadsheets, no paper prescription pad",
+    panelCuerpo:
+      "A NOM-004-compliant clinical record, legally valid electronic prescriptions, and your day's schedule, all in one place.",
+    titulo: "Sign in",
+    subtitulo: "For Medicfy physicians, assistants and patients.",
+    entrar: "Sign in",
+    sinCuenta: "Don't have an account?",
+    registrateComoPaciente: "Sign up as a patient",
+    o: "or",
+    comoMedico: "as a physician",
+  },
+  mfa: {
+    panelTitulo: "One more step to protect your records",
+    panelCuerpo:
+      "Two-step verification keeps someone who has your password from seeing your patients' clinical history.",
+    titulo: "Two-step verification",
+    subtitulo: "Enter the 6-digit code from your authenticator app.",
+    verificar: "Verify",
+  },
+  verificarCorreo: {
+    titulo: "Verify your email",
+    subtitulo: "We sent you a 6-digit code.",
+    verificar: "Verify",
+  },
+  registroMedico: {
+    panelTitulo: "We verify your license with the SEP before you see any patients",
+    panelCuerpo:
+      "A verified profile is the kind of trust a generic directory can't offer. No credit card to get started.",
+    titulo: "Create your account",
+    subtitulo: "Sign up as a physician to start using Medicfy.",
+    crearCuenta: "Create account",
+    yaTienesCuenta: "Already have an account?",
+    iniciaSesion: "Sign in",
+    listoTitulo: "Account created",
+    listoAviso: "Email verified",
+    listoCuerpo: "An administrator will review your professional license before you can see patients.",
+    irALogin: "Go to sign in",
+  },
+  registroPaciente: {
+    panelTitulo: "Your records and your appointments, in one place",
+    panelCuerpo: "Book with your physician, review what they share with you, and control who sees your information.",
+    titulo: "Create your account",
+    subtitulo: "Sign up as a patient to book appointments and see your information.",
+    consentimientoPrivacidad: "I accept the privacy notice.",
+    consentimientoDatos: "I consent to the processing of my sensitive health data.",
+    consentimientoDigital: "I agree to receive prescriptions and orders by digital means (optional).",
+    listoCuerpo: "You can now sign in and book with your physician.",
+  },
+};

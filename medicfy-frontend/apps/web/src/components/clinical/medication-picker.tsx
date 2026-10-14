@@ -5,6 +5,9 @@ import { apiFetch, ApiError, expectArray } from "@/lib/api-client";
 import { TextInput, FieldWrapper, SelectInput } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { Aviso } from "@/components/ui/alert";
+import { useI18n } from "@/lib/i18n/context";
+import { formatDateLong } from "@/lib/i18n/format";
+import type { MessageKey } from "@/lib/i18n/dictionaries";
 
 export interface MedicationCatalogEntry {
   id: string;
@@ -43,10 +46,10 @@ function emptyDraftFields() {
   return { dose: "", doseUnit: "", route: "", frequency: "", duration: "", quantity: "", specialInstructions: "", indication: "" };
 }
 
-const ORIGIN_LABEL: Record<PrescriptionLineOrigin, string | null> = {
+const ORIGIN_LABEL_KEY: Record<PrescriptionLineOrigin, MessageKey | null> = {
   NUEVA: null,
-  HEREDADA: "Heredada de receta anterior",
-  HEREDADA_MODIFICADA: "Heredada y modificada",
+  HEREDADA: "clinico.medicamentos.origen.HEREDADA",
+  HEREDADA_MODIFICADA: "clinico.medicamentos.origen.HEREDADA_MODIFICADA",
 };
 
 // Autoservicio de catálogo (decisión explícita del usuario,
@@ -56,13 +59,13 @@ const ORIGIN_LABEL: Record<PrescriptionLineOrigin, string | null> = {
 // (nunca un default silencioso), porque de eso depende que R5 siga
 // bloqueando Grupos I/II exactamente igual que a un medicamento
 // sembrado.
-const CONTROL_GROUP_OPTIONS: { value: "I" | "II" | "III" | "IV" | "V" | "VI"; label: string }[] = [
-  { value: "I", label: "Grupo I — Estupefacientes (no prescribible electrónicamente)" },
-  { value: "II", label: "Grupo II — Psicotrópicos de alto riesgo (no prescribible electrónicamente)" },
-  { value: "III", label: "Grupo III — Psicotrópicos" },
-  { value: "IV", label: "Grupo IV — Psicotrópicos de menor riesgo" },
-  { value: "V", label: "Grupo V — Uso restringido" },
-  { value: "VI", label: "Grupo VI — Sin restricción especial" },
+const CONTROL_GROUP_OPTIONS: { value: "I" | "II" | "III" | "IV" | "V" | "VI"; labelKey: MessageKey }[] = [
+  { value: "I", labelKey: "clinico.medicamentos.grupos.I" },
+  { value: "II", labelKey: "clinico.medicamentos.grupos.II" },
+  { value: "III", labelKey: "clinico.medicamentos.grupos.III" },
+  { value: "IV", labelKey: "clinico.medicamentos.grupos.IV" },
+  { value: "V", labelKey: "clinico.medicamentos.grupos.V" },
+  { value: "VI", labelKey: "clinico.medicamentos.grupos.VI" },
 ];
 const CONTROLLED_GROUPS = new Set(["I", "II"]);
 
@@ -74,6 +77,10 @@ function emptyNewMedicationForm(genericName: string) {
 // el médico llene todo el formulario) y nunca se dejan seleccionar
 // aquí — onBlockedSelected() le pasa la decisión al panel de receta,
 // que ofrece el registro de receta física en su lugar.
+function originKey(origin: PrescriptionLineOrigin): MessageKey | null {
+  return ORIGIN_LABEL_KEY[origin];
+}
+
 export function MedicationPicker({
   accessToken,
   items,
@@ -85,6 +92,7 @@ export function MedicationPicker({
   onChange: (items: PrescriptionDraftItem[]) => void;
   onBlockedSelected: (medication: MedicationCatalogEntry) => void;
 }) {
+  const { t, locale } = useI18n();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<MedicationCatalogEntry[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -163,7 +171,7 @@ export function MedicationPicker({
         const details = error.details as { existingGenericName?: string } | undefined;
         setAddNewError({ message: error.message, ...(details?.existingGenericName ? { existingGenericName: details.existingGenericName } : {}) });
       } else {
-        setAddNewError({ message: "No se pudo agregar el medicamento. Intenta de nuevo." });
+        setAddNewError({ message: t("clinico.medicamentos.noSePudoAgregar") });
       }
     } finally {
       setIsSubmittingNew(false);
@@ -249,12 +257,12 @@ export function MedicationPicker({
                     {item.dose}
                     {item.doseUnit ? ` ${item.doseUnit}` : ""} · {item.route} · {item.frequency} · {item.duration}
                   </p>
-                  {item.indication && <p className="text-sm text-gray-500">Indicación: {item.indication}</p>}
+                  {item.indication && <p className="text-sm text-gray-500">{t("clinico.medicamentos.indicacion", { texto: item.indication })}</p>}
                   {item.specialInstructions && <p className="text-sm text-gray-500">{item.specialInstructions}</p>}
-                  {ORIGIN_LABEL[item.origin] && (
+                  {originKey(item.origin) && (
                     <p className="mt-1 w-fit rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
-                      {ORIGIN_LABEL[item.origin]}
-                      {item.sourceIssuedAt ? ` · ${new Date(item.sourceIssuedAt).toLocaleDateString("es-MX")}` : ""}
+                      {t(originKey(item.origin) ?? "clinico.medicamentos.origen.HEREDADA")}
+                      {item.sourceIssuedAt ? ` · ${formatDateLong(locale, item.sourceIssuedAt)}` : ""}
                     </p>
                   )}
                 </div>
@@ -263,7 +271,7 @@ export function MedicationPicker({
                     Editar
                   </Button>
                   <Button type="button" variant="destructive" onClick={() => removeItem(index)} className="min-h-11 px-3 text-sm">
-                    Quitar
+                    {t("common.acciones.quitar")}
                   </Button>
                 </div>
               </div>
@@ -272,29 +280,29 @@ export function MedicationPicker({
         </ul>
       )}
 
-      {!canAddMore && <Aviso variant="advertencia" title="Máximo 10 medicamentos por receta." />}
+      {!canAddMore && <Aviso variant="advertencia" title={t("clinico.medicamentos.maximo")} />}
 
       {canAddMore && !selected && (
         <div className="relative">
           <TextInput
-            placeholder="Buscar medicamento por nombre genérico o comercial…"
+            placeholder={t("clinico.medicamentos.buscar")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            aria-label="Buscar medicamento"
+            aria-label={t("clinico.medicamentos.buscarEtiqueta")}
           />
           {query.trim().length >= 2 && (
             <div className="absolute z-10 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-gray-300 bg-white shadow-card">
               {isSearching ? (
-                <p className="p-3 text-sm text-gray-500">Buscando…</p>
+                <p className="p-3 text-sm text-gray-500">{t("clinico.medicamentos.buscando")}</p>
               ) : results.length === 0 ? (
                 <div className="p-3">
-                  <p className="text-sm text-gray-500">Sin resultados para &quot;{query}&quot;.</p>
+                  <p className="text-sm text-gray-500">{t("clinico.medicamentos.sinResultadosPara", { consulta: query })}</p>
                   <button
                     type="button"
                     onClick={startAddingNew}
                     className="mt-2 min-h-11 text-sm font-medium text-brand-700 underline"
                   >
-                    No lo encuentro — agregar &quot;{query}&quot; al catálogo
+                    {t("clinico.medicamentos.noLoEncuentro", { consulta: query })}
                   </button>
                 </div>
               ) : (
@@ -325,7 +333,7 @@ export function MedicationPicker({
       {addingNew && (
         <div className="flex flex-col gap-3 rounded-md border border-brand-700 bg-brand-100 p-4">
           <div className="flex items-center justify-between">
-            <p className="text-base font-medium text-brand-900">Agregar medicamento al catálogo</p>
+            <p className="text-base font-medium text-brand-900">{t("clinico.medicamentos.agregarAlCatalogo")}</p>
             <button
               type="button"
               onClick={() => {
@@ -334,37 +342,36 @@ export function MedicationPicker({
               }}
               className="min-h-11 text-sm font-medium text-brand-700 underline"
             >
-              Cancelar
+              {t("common.acciones.cancelar")}
             </button>
           </div>
           <p className="text-sm text-gray-700">
-            Este medicamento se agrega directamente, sin esperar aprobación — declara el grupo de control con cuidado: de eso
-            depende que Medicfy bloquee correctamente la prescripción electrónica si corresponde.
+            {t("clinico.medicamentos.avisoAutoservicio")}
           </p>
           <div className="grid grid-cols-2 gap-3">
-            <FieldWrapper label="Nombre genérico" htmlFor="new-med-name">
+            <FieldWrapper label={t("clinico.medicamentos.nombreGenerico")} htmlFor="new-med-name">
               <TextInput
                 id="new-med-name"
                 value={addingNew.genericName}
                 onChange={(e) => setAddingNew({ ...addingNew, genericName: e.target.value })}
               />
             </FieldWrapper>
-            <FieldWrapper label="Presentación" htmlFor="new-med-presentation" hint="p. ej. Tableta 500 mg">
+            <FieldWrapper label={t("clinico.medicamentos.presentacion")} htmlFor="new-med-presentation" hint={t("clinico.medicamentos.presentacionEjemplo")}>
               <TextInput
                 id="new-med-presentation"
                 value={addingNew.presentation}
                 onChange={(e) => setAddingNew({ ...addingNew, presentation: e.target.value })}
-                placeholder="p. ej. Tableta 500 mg"
+                placeholder={t("clinico.medicamentos.presentacionEjemplo")}
               />
             </FieldWrapper>
-            <FieldWrapper label="Marca (opcional)" htmlFor="new-med-brand">
+            <FieldWrapper label={t("clinico.medicamentos.marca")} htmlFor="new-med-brand">
               <TextInput
                 id="new-med-brand"
                 value={addingNew.brandName}
                 onChange={(e) => setAddingNew({ ...addingNew, brandName: e.target.value })}
               />
             </FieldWrapper>
-            <FieldWrapper label="Código ATC (opcional)" htmlFor="new-med-atc">
+            <FieldWrapper label={t("clinico.medicamentos.atc")} htmlFor="new-med-atc">
               <TextInput
                 id="new-med-atc"
                 value={addingNew.atcCode}
@@ -372,24 +379,23 @@ export function MedicationPicker({
               />
             </FieldWrapper>
           </div>
-          <FieldWrapper label="Grupo de control (Ley General de Salud, art. 226)" htmlFor="new-med-control-group">
+          <FieldWrapper label={t("clinico.medicamentos.grupoControl")} htmlFor="new-med-control-group">
             <SelectInput
               id="new-med-control-group"
               value={addingNew.controlGroup}
               onChange={(e) => setAddingNew({ ...addingNew, controlGroup: e.target.value as typeof addingNew.controlGroup })}
             >
-              <option value="">Selecciona un grupo…</option>
+              <option value="">{t("clinico.medicamentos.seleccionaGrupo")}</option>
               {CONTROL_GROUP_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
-                  {opt.label}
+                  {t(opt.labelKey)}
                 </option>
               ))}
             </SelectInput>
           </FieldWrapper>
           {addingNew.controlGroup && CONTROLLED_GROUPS.has(addingNew.controlGroup) && (
-            <Aviso variant="advertencia" title="Este grupo no se puede prescribir electrónicamente">
-              Medicfy lo agregará al catálogo, pero al recetarlo te ofrecerá registrar receta física en su lugar — igual que con
-              cualquier otro medicamento Grupo I/II.
+            <Aviso variant="advertencia" title={t("clinico.medicamentos.grupoBloqueado")}>
+              {t("clinico.medicamentos.grupoBloqueadoCuerpo")}
             </Aviso>
           )}
           {addNewError && (
@@ -414,7 +420,7 @@ export function MedicationPicker({
             onClick={submitNewMedication}
             disabled={!addingNew.presentation || !addingNew.controlGroup || isSubmittingNew}
           >
-            {isSubmittingNew ? "Agregando…" : "Agregar y usar en esta receta"}
+            {isSubmittingNew ? t("clinico.medicamentos.agregando") : t("clinico.medicamentos.agregarYUsar")}
           </Button>
         </div>
       )}
@@ -433,51 +439,51 @@ export function MedicationPicker({
               }}
               className="min-h-11 text-sm font-medium text-brand-700 underline"
             >
-              {editing ? "Cancelar edición" : "Cambiar"}
+              {editing ? t("clinico.medicamentos.cancelarEdicion") : t("clinico.medicamentos.cambiar")}
             </button>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <FieldWrapper label="Dosis" htmlFor="med-dose">
-              <TextInput id="med-dose" value={fields.dose} onChange={(e) => setFields({ ...fields, dose: e.target.value })} placeholder="p. ej. 500" />
+            <FieldWrapper label={t("clinico.medicamentos.dosis")} htmlFor="med-dose">
+              <TextInput id="med-dose" value={fields.dose} onChange={(e) => setFields({ ...fields, dose: e.target.value })} placeholder={t("clinico.medicamentos.dosisEjemplo")} />
             </FieldWrapper>
-            <FieldWrapper label="Unidad" htmlFor="med-dose-unit">
-              <TextInput id="med-dose-unit" value={fields.doseUnit} onChange={(e) => setFields({ ...fields, doseUnit: e.target.value })} placeholder="p. ej. mg" />
+            <FieldWrapper label={t("clinico.medicamentos.unidad")} htmlFor="med-dose-unit">
+              <TextInput id="med-dose-unit" value={fields.doseUnit} onChange={(e) => setFields({ ...fields, doseUnit: e.target.value })} placeholder={t("clinico.medicamentos.unidadEjemplo")} />
             </FieldWrapper>
-            <FieldWrapper label="Vía" htmlFor="med-route">
-              <TextInput id="med-route" value={fields.route} onChange={(e) => setFields({ ...fields, route: e.target.value })} placeholder="p. ej. oral" />
+            <FieldWrapper label={t("clinico.medicamentos.via")} htmlFor="med-route">
+              <TextInput id="med-route" value={fields.route} onChange={(e) => setFields({ ...fields, route: e.target.value })} placeholder={t("clinico.medicamentos.viaEjemplo")} />
             </FieldWrapper>
-            <FieldWrapper label="Frecuencia" htmlFor="med-frequency">
+            <FieldWrapper label={t("clinico.medicamentos.frecuencia")} htmlFor="med-frequency">
               <TextInput
                 id="med-frequency"
                 value={fields.frequency}
                 onChange={(e) => setFields({ ...fields, frequency: e.target.value })}
-                placeholder="p. ej. cada 8h"
+                placeholder={t("clinico.medicamentos.frecuenciaEjemplo")}
               />
             </FieldWrapper>
-            <FieldWrapper label="Duración" htmlFor="med-duration">
-              <TextInput id="med-duration" value={fields.duration} onChange={(e) => setFields({ ...fields, duration: e.target.value })} placeholder="p. ej. 7 días" />
+            <FieldWrapper label={t("clinico.medicamentos.duracion")} htmlFor="med-duration">
+              <TextInput id="med-duration" value={fields.duration} onChange={(e) => setFields({ ...fields, duration: e.target.value })} placeholder={t("clinico.medicamentos.duracionEjemplo")} />
             </FieldWrapper>
-            <FieldWrapper label="Cantidad a surtir (opcional)" htmlFor="med-quantity">
+            <FieldWrapper label={t("clinico.medicamentos.cantidad")} htmlFor="med-quantity">
               <TextInput id="med-quantity" value={fields.quantity} onChange={(e) => setFields({ ...fields, quantity: e.target.value })} />
             </FieldWrapper>
-            <FieldWrapper label="Instrucciones especiales (opcional)" htmlFor="med-instructions">
+            <FieldWrapper label={t("clinico.medicamentos.instrucciones")} htmlFor="med-instructions">
               <TextInput
                 id="med-instructions"
                 value={fields.specialInstructions}
                 onChange={(e) => setFields({ ...fields, specialInstructions: e.target.value })}
               />
             </FieldWrapper>
-            <FieldWrapper label="Indicación de esta línea (opcional)" htmlFor="med-indication">
+            <FieldWrapper label={t("clinico.medicamentos.indicacionLinea")} htmlFor="med-indication">
               <TextInput
                 id="med-indication"
                 value={fields.indication}
                 onChange={(e) => setFields({ ...fields, indication: e.target.value })}
-                placeholder="p. ej. para el dolor"
+                placeholder={t("clinico.medicamentos.indicacionEjemplo")}
               />
             </FieldWrapper>
           </div>
           <Button type="button" onClick={addToList} disabled={!fields.dose || !fields.route || !fields.frequency || !fields.duration}>
-            {editing ? "Guardar cambios en la línea" : "Agregar a la receta"}
+            {editing ? t("clinico.medicamentos.guardarCambios") : t("clinico.medicamentos.agregarAReceta")}
           </Button>
         </div>
       )}

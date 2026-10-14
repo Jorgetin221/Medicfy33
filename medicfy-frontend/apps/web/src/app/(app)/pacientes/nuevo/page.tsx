@@ -4,13 +4,14 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
 import { patientCreateSchema, isMinor, type PatientCreateInput } from "@medicfy/contracts";
 import { apiFetch } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { FieldWrapper, TextInput, SelectInput } from "@/components/ui/field";
 import { Card, ErrorState, LoadingState } from "@/components/ui/states";
+import { useT } from "@/lib/i18n/context";
+import { useZodResolver } from "@/lib/i18n/validation";
 
 // Alta mínima de paciente (M2-CA-009). Campos opcionales de la
 // especificación (dirección, contacto de emergencia, tipo de sangre,
@@ -18,6 +19,7 @@ import { Card, ErrorState, LoadingState } from "@/components/ui/states";
 // necesita nombre, contacto y, si aplica, tutor.
 export default function NuevoPacientePage() {
   const router = useRouter();
+  const t = useT();
   const { accessToken, isLoading: authLoading } = useAuth();
   const [createdPatientId, setCreatedPatientId] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<unknown>(null);
@@ -29,7 +31,7 @@ export default function NuevoPacientePage() {
   }, [authLoading, accessToken, router]);
 
   const form = useForm<PatientCreateInput>({
-    resolver: zodResolver(patientCreateSchema),
+    resolver: useZodResolver<PatientCreateInput>(patientCreateSchema),
     shouldUnregister: true,
   });
 
@@ -57,16 +59,16 @@ export default function NuevoPacientePage() {
   if (createdPatientId) {
     return (
       <main className="mx-auto flex min-h-screen max-w-xl flex-col items-center justify-center gap-4 p-6 text-center">
-        <h1 className="font-heading text-2xl text-brand-900">Paciente registrado</h1>
-        <p className="text-base text-gray-700">El paciente ya puede recibir citas.</p>
+        <h1 className="font-heading text-2xl text-brand-900">{t("pacientes.alta.registrado")}</h1>
+        <p className="text-base text-gray-700">{t("pacientes.alta.registradoCuerpo")}</p>
         <div className="flex flex-wrap justify-center gap-3">
-          <Button onClick={() => router.push(`/citas/nueva?patientId=${createdPatientId}`)}>Agendar cita</Button>
+          <Button onClick={() => router.push(`/citas/nueva?patientId=${createdPatientId}`)}>{t("pacientes.alta.agendarCita")}</Button>
           <Button variant="secondary" onClick={() => router.push("/agenda")}>
-            Ir a la agenda
+            {t("citaNueva.irALaAgenda")}
           </Button>
         </div>
         <Link href={`/pacientes/${createdPatientId}`} className="text-base font-medium text-brand-700 underline">
-          Ver perfil del paciente
+          {t("citaNueva.verPerfilPaciente")}
         </Link>
       </main>
     );
@@ -75,39 +77,39 @@ export default function NuevoPacientePage() {
   return (
     <main className="mx-auto flex max-w-xl flex-col gap-6 p-6">
       <div>
-        <h1 className="font-heading text-2xl text-brand-900">Nuevo paciente</h1>
-        <p className="text-base text-gray-500">Datos mínimos para poder agendarle una cita.</p>
+        <h1 className="font-heading text-2xl text-brand-900">{t("pacientes.alta.titulo")}</h1>
+        <p className="text-base text-gray-500">{t("pacientes.alta.subtitulo")}</p>
       </div>
 
       <Card>
         <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-4" noValidate>
           <div className="grid grid-cols-2 gap-4">
-            <FieldWrapper label="Nombre(s)" htmlFor="firstName" error={form.formState.errors.firstName?.message}>
+            <FieldWrapper label={t("auth.campos.nombres")} htmlFor="firstName" error={form.formState.errors.firstName?.message}>
               <TextInput id="firstName" error={!!form.formState.errors.firstName} {...form.register("firstName")} />
             </FieldWrapper>
-            <FieldWrapper label="Apellido paterno" htmlFor="lastNamePaternal" error={form.formState.errors.lastNamePaternal?.message}>
+            <FieldWrapper label={t("auth.campos.apellidoPaterno")} htmlFor="lastNamePaternal" error={form.formState.errors.lastNamePaternal?.message}>
               <TextInput id="lastNamePaternal" error={!!form.formState.errors.lastNamePaternal} {...form.register("lastNamePaternal")} />
             </FieldWrapper>
           </div>
-          <FieldWrapper label="Apellido materno (opcional)" htmlFor="lastNameMaternal" error={form.formState.errors.lastNameMaternal?.message}>
+          <FieldWrapper label={t("auth.campos.apellidoMaterno")} htmlFor="lastNameMaternal" error={form.formState.errors.lastNameMaternal?.message}>
             <TextInput id="lastNameMaternal" error={!!form.formState.errors.lastNameMaternal} {...form.register("lastNameMaternal")} />
           </FieldWrapper>
 
           <div className="grid grid-cols-2 gap-4">
-            <FieldWrapper label="Fecha de nacimiento" htmlFor="birthDate" error={form.formState.errors.birthDate?.message}>
+            <FieldWrapper label={t("auth.campos.fechaNacimiento")} htmlFor="birthDate" error={form.formState.errors.birthDate?.message}>
               <TextInput id="birthDate" type="date" error={!!form.formState.errors.birthDate} {...form.register("birthDate")} />
             </FieldWrapper>
-            <FieldWrapper label="Sexo al nacer" htmlFor="sexAtBirth" error={form.formState.errors.sexAtBirth?.message}>
+            <FieldWrapper label={t("auth.campos.sexoAlNacer")} htmlFor="sexAtBirth" error={form.formState.errors.sexAtBirth?.message}>
               <SelectInput id="sexAtBirth" error={!!form.formState.errors.sexAtBirth} {...form.register("sexAtBirth")}>
-                <option value="">Selecciona…</option>
-                <option value="F">Femenino</option>
-                <option value="M">Masculino</option>
+                <option value="">{t("auth.campos.selecciona")}</option>
+                <option value="F">{t("auth.campos.femenino")}</option>
+                <option value="M">{t("auth.campos.masculino")}</option>
               </SelectInput>
             </FieldWrapper>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <FieldWrapper label="Teléfono" htmlFor="phoneE164" error={form.formState.errors.phoneE164?.message} hint="+52 y 10 dígitos.">
+            <FieldWrapper label={t("pacientes.alta.telefono")} htmlFor="phoneE164" error={form.formState.errors.phoneE164?.message} hint={t("pacientes.alta.pistaTelefono")}>
               <TextInput
                 id="phoneE164"
                 type="tel"
@@ -116,18 +118,18 @@ export default function NuevoPacientePage() {
                 {...form.register("phoneE164")}
               />
             </FieldWrapper>
-            <FieldWrapper label="Correo electrónico" htmlFor="email" error={form.formState.errors.email?.message}>
+            <FieldWrapper label={t("pacientes.alta.correo")} htmlFor="email" error={form.formState.errors.email?.message}>
               <TextInput id="email" type="email" error={!!form.formState.errors.email} {...form.register("email")} />
             </FieldWrapper>
           </div>
 
           {minor ? (
             <fieldset className="flex flex-col gap-4 rounded-md border border-warn-600 p-4">
-              <legend className="px-1 text-sm font-medium text-warn-600">Paciente menor de edad — datos del tutor</legend>
+              <legend className="px-1 text-sm font-medium text-warn-600">{t("pacientes.alta.menorTitulo")}</legend>
 
               <div className="grid grid-cols-2 gap-4">
                 <FieldWrapper
-                  label="Nombre del tutor"
+                  label={t("pacientes.alta.nombreTutor")}
                   htmlFor="guardian.guardianName"
                   error={form.formState.errors.guardian?.guardianName?.message}
                 >
@@ -138,7 +140,7 @@ export default function NuevoPacientePage() {
                   />
                 </FieldWrapper>
                 <FieldWrapper
-                  label="Relación"
+                  label={t("pacientes.alta.relacion")}
                   htmlFor="guardian.guardianRelation"
                   error={form.formState.errors.guardian?.guardianRelation?.message}
                 >
@@ -147,18 +149,18 @@ export default function NuevoPacientePage() {
                     error={!!form.formState.errors.guardian?.guardianRelation}
                     {...form.register("guardian.guardianRelation")}
                   >
-                    <option value="">Selecciona…</option>
-                    <option value="MADRE">Madre</option>
-                    <option value="PADRE">Padre</option>
-                    <option value="TUTOR_LEGAL">Tutor legal</option>
-                    <option value="OTRO">Otro</option>
+                    <option value="">{t("auth.campos.selecciona")}</option>
+                    <option value="MADRE">{t("pacientes.alta.madre")}</option>
+                    <option value="PADRE">{t("pacientes.alta.padre")}</option>
+                    <option value="TUTOR_LEGAL">{t("pacientes.alta.tutorLegal")}</option>
+                    <option value="OTRO">{t("pacientes.alta.otro")}</option>
                   </SelectInput>
                 </FieldWrapper>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <FieldWrapper
-                  label="Teléfono del tutor"
+                  label={t("pacientes.alta.telefonoTutor")}
                   htmlFor="guardian.guardianPhoneE164"
                   error={form.formState.errors.guardian?.guardianPhoneE164?.message}
                 >
@@ -171,7 +173,7 @@ export default function NuevoPacientePage() {
                   />
                 </FieldWrapper>
                 <FieldWrapper
-                  label="Correo del tutor"
+                  label={t("pacientes.alta.correoTutor")}
                   htmlFor="guardian.guardianEmail"
                   error={form.formState.errors.guardian?.guardianEmail?.message}
                 >
@@ -185,10 +187,10 @@ export default function NuevoPacientePage() {
               </div>
 
               <FieldWrapper
-                label="Referencia de identificación del tutor (INE)"
+                label={t("pacientes.alta.ineTutor")}
                 htmlFor="guardian.guardianIdDocumentKey"
                 error={form.formState.errors.guardian?.guardianIdDocumentKey?.message}
-                hint="No hay carga de archivo todavía — pide el documento por separado y anota aquí su referencia."
+                hint={t("pacientes.alta.ineAyuda")}
               >
                 <TextInput
                   id="guardian.guardianIdDocumentKey"
@@ -202,13 +204,13 @@ export default function NuevoPacientePage() {
           {submitError ? <ErrorState error={submitError} /> : null}
 
           <Button type="submit" isLoading={form.formState.isSubmitting}>
-            Registrar paciente
+            {t("pacientes.alta.guardar")}
           </Button>
         </form>
       </Card>
 
       <Link href="/agenda" className="text-sm font-medium text-brand-700 underline">
-        Volver a la agenda
+        {t("pacientes.alta.volverAgenda")}
       </Link>
     </main>
   );

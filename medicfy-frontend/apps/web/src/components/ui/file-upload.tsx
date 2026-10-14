@@ -3,6 +3,7 @@
 import { useId, useRef, useState } from "react";
 import { Button } from "./button";
 import { ErrorState } from "./states";
+import { useT } from "@/lib/i18n/context";
 
 // Primer componente de carga de archivos del proyecto (Perfil, Parte B
 // §1.2/§5.1: logo y firma visual). Reemplazar siempre reemplaza — no
@@ -19,6 +20,7 @@ export function FileUpload({
   previewSrc: string | null;
   onUpload: (file: File) => Promise<void>;
 }) {
+  const t = useT();
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -47,17 +49,17 @@ export function FileUpload({
       <div className="flex items-center gap-4">
         <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-md border border-gray-300 bg-gray-100">
           {previewSrc ? (
-            <img src={previewSrc} alt={`Vista previa de ${label.toLowerCase()}`} className="h-full w-full object-contain" />
+            <img src={previewSrc} alt={t("ui.archivo.vistaPrevia", { etiqueta: label.toLowerCase() })} className="h-full w-full object-contain" />
           ) : (
-            <span className="text-xs text-gray-500">Sin archivo</span>
+            <span className="text-xs text-gray-500">{t("ui.archivo.sinArchivo")}</span>
           )}
         </div>
         <div className="flex flex-col gap-2">
           <input ref={inputRef} id={inputId} type="file" accept={accept} onChange={handleChange} className="hidden" />
           <Button type="button" variant="secondary" isLoading={isUploading} onClick={() => inputRef.current?.click()}>
-            {previewSrc ? "Reemplazar" : "Subir imagen"}
+            {previewSrc ? t("ui.archivo.reemplazar") : t("ui.archivo.subirImagen")}
           </Button>
-          <p className="text-sm text-gray-500">JPG o PNG, máximo 5 MB.</p>
+          <p className="text-sm text-gray-500">{t("ui.archivo.restriccion")}</p>
         </div>
       </div>
       {error ? <ErrorState error={error} /> : null}

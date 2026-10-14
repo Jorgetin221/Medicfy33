@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { SelectInput, FieldWrapper } from "@/components/ui/field";
 import { CollapsibleCard } from "@/components/ui/collapsible-card";
 import { useSpecialtyScales, type SpecialtyFieldSchemaOption } from "@/lib/use-specialty-scales";
+import { useT } from "@/lib/i18n/context";
 
 interface ScalePreview {
   value: number;
@@ -44,6 +45,7 @@ export function EscalasSection({
   onChange: (next: Record<string, number>) => void;
   patientAgeYears: number | null;
 }) {
+  const t = useT();
   const { fields, isLoading, error } = useSpecialtyScales(accessToken, "ESCALAS");
   // No toda consulta necesita Glasgow o Apgar — se agregan a
   // propósito por el médico, no se precargan todas ya expandidas
@@ -81,7 +83,7 @@ export function EscalasSection({
   const activeGroups = groups.filter((g) => !pendingGroups.includes(g));
 
   return (
-    <CollapsibleCard title="Escalas" subtitle={activeGroups.length > 0 ? <span className="text-sm text-gray-500">({activeGroups.length})</span> : undefined}>
+    <CollapsibleCard title={t("clinico.escalas.titulo")} subtitle={activeGroups.length > 0 ? <span className="text-sm text-gray-500">({activeGroups.length})</span> : undefined}>
       <div className="flex flex-col gap-4">
         {pendingGroups.length > 0 ? (
           <div className="flex flex-wrap gap-2">
@@ -115,7 +117,7 @@ export function EscalasSection({
                             value={values[field.fieldKey] ?? ""}
                             onChange={(e) => setFieldValue(field.fieldKey, e.target.value)}
                           >
-                            <option value="">Sin capturar</option>
+                            <option value="">{t("clinico.escalas.sinCapturar")}</option>
                             {fieldOptions.map((opt) =>
                               "value" in opt ? (
                                 <option key={opt.value} value={opt.value}>
@@ -134,7 +136,7 @@ export function EscalasSection({
                       {preview.interpretation ? ` — ${preview.interpretation}` : ""}
                     </p>
                   ) : (
-                    <p className="mt-3 text-sm text-gray-500">Completa todos los campos para ver el total.</p>
+                    <p className="mt-3 text-sm text-gray-500">{t("clinico.escalas.completaCampos")}</p>
                   )}
                 </div>
               );

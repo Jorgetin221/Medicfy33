@@ -1,0 +1,43 @@
+// Rail lateral de las pantallas autenticadas + header público.
+export const nav = {
+  rail: {
+    agenda: "Agenda",
+    pacientes: "Pacientes",
+    nuevoPaciente: "Nuevo paciente",
+    disponibilidad: "Disponibilidad",
+    auditoria: "Auditoría",
+    publicaciones: "Publicaciones",
+    administracion: "Administración",
+    perfil: "Perfil",
+    cerrarSesion: "Cerrar sesión",
+    colapsar: "Colapsar",
+    expandir: "Expandir",
+    abrirNavegacion: "Abrir navegación",
+    cerrarNavegacion: "Cerrar navegación",
+    colapsarBarra: "Colapsar barra lateral",
+    expandirBarra: "Expandir barra lateral",
+    navegacionPrincipal: "Navegación principal",
+    irAAgenda: "Medicfy — ir a Agenda",
+  },
+  publico: {
+    principal: "Principal",
+    especialistas: "Especialistas",
+    misCitas: "Mis citas",
+    miCuenta: "Mi cuenta",
+    miAgenda: "Mi agenda",
+    salir: "Salir",
+    iniciarSesion: "Iniciar sesión",
+    registrate: "Regístrate",
+    registroPaciente: "Registrarme como paciente",
+    registroMedico: "Registrarme como médico",
+  },
+  sesion: {
+    avisoInactividad: "Tu sesión se cerrará en unos minutos por inactividad.",
+    seguirConectado: "Seguir conectado",
+  },
+  confianza: {
+    cedula: "Cédula profesional verificada ante la SEP",
+    cifrado: "Datos clínicos cifrados, siempre",
+    bitacora: "Bitácora de cada acceso a un expediente",
+  },
+};

@@ -8,16 +8,14 @@ import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Card, LoadingState, EmptyState, ErrorState } from "@/components/ui/states";
 import { EstadoCita, type AppointmentStatus } from "@/components/ui/status-badge";
+import { useI18n } from "@/lib/i18n/context";
+import { formatTime, formatWeekdayLong } from "@/lib/i18n/format";
+import type { MessageKey } from "@/lib/i18n/dictionaries";
 
-// Formatea un instante UTC ya resuelto por el servidor a la hora del
-// consultorio — presentación con IANA explícito (CLAUDE.md §4), nunca
-// la zona horaria ambiente del navegador. No decide nada: el día que
-// se muestra ya lo decidió GET /appointments en el servidor.
-const MX_TIME_ZONE = "America/Mexico_City";
-
-function formatMxTime(iso: string): string {
-  return new Intl.DateTimeFormat("es-MX", { timeZone: MX_TIME_ZONE, hour: "2-digit", minute: "2-digit", hour12: true }).format(new Date(iso));
-}
+// La hora se pinta en la zona del consultorio con IANA explícito
+// (CLAUDE.md §4, ver lib/i18n/format.ts), nunca en la zona ambiente
+// del navegador ni en función del idioma elegido. No decide nada: el
+// día que se muestra ya lo decidió GET /appointments en el servidor.
 
 interface Appointment {
   id: string;
@@ -53,17 +51,18 @@ export default function AgendaPage() {
   return <AgendaList accessToken={accessToken} />;
 }
 
-const SUMMARY_TILES: { key: AppointmentStatus[]; label: string }[] = [
-  { key: ["COMPLETED"], label: "Atendidas" },
-  { key: ["IN_PROGRESS"], label: "En consulta" },
-  { key: ["SCHEDULED", "CONFIRMED"], label: "Por atender" },
-  { key: ["NO_SHOW"], label: "Ausente" },
+const SUMMARY_TILES: { key: AppointmentStatus[]; labelKey: MessageKey }[] = [
+  { key: ["COMPLETED"], labelKey: "agenda.resumen.atendidas" },
+  { key: ["IN_PROGRESS"], labelKey: "agenda.resumen.enConsulta" },
+  { key: ["SCHEDULED", "CONFIRMED"], labelKey: "agenda.resumen.porAtender" },
+  { key: ["NO_SHOW"], labelKey: "agenda.resumen.ausente" },
 ];
 
 const LEGEND: AppointmentStatus[] = ["SCHEDULED", "CONFIRMED", "IN_PROGRESS", "COMPLETED", "NO_SHOW"];
 
 function AgendaList({ accessToken }: { accessToken: string }) {
   const router = useRouter();
+  const { t, locale } = useI18n();
   const [appointments, setAppointments] = useState<Appointment[] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [actionError, setActionError] = useState<unknown>(null);
@@ -103,11 +102,11 @@ function AgendaList({ accessToken }: { accessToken: string }) {
     router.push(`/consulta/${id}`);
   }
   function cancelAppointment(id: string) {
-    if (!window.confirm("¿Cancelar esta cita?")) return;
+    if (!window.confirm(t("agenda.confirmarCancelar"))) return;
     void runAction(`/appointments/${id}/cancel`, {});
   }
   function markNoShow(id: string) {
-    if (!window.confirm("¿Marcar esta cita como no presentado?")) return;
+    if (!window.confirm(t("agenda.confirmarNoShow"))) return;
     void runAction(`/appointments/${id}/no-show`);
   }
   async function completeAppointment(id: string) {
@@ -117,7 +116,7 @@ function AgendaList({ accessToken }: { accessToken: string }) {
     setJustification("");
   }
 
-  const today = new Intl.DateTimeFormat("es-MX", { timeZone: MX_TIME_ZONE, weekday: "long", day: "numeric", month: "long" }).format(new Date());
+  const today = formatWeekdayLong(locale, new Date());
 
   const summaryCounts = useMemo(() => {
     const list = appointments ?? [];
@@ -139,7 +138,7 @@ function AgendaList({ accessToken }: { accessToken: string }) {
       <div className="flex flex-1 flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="font-heading text-2xl text-gray-900">Agenda</h1>
+            <h1 className="font-heading text-2xl text-gray-900">{t("agenda.titulo")}</h1>
             <p className="text-base capitalize text-gray-500">{today}</p>
           </div>
           <div className="flex items-center gap-3">
@@ -147,10 +146,10 @@ function AgendaList({ accessToken }: { accessToken: string }) {
               href="/disponibilidad"
               className="flex min-h-11 items-center rounded-md border border-gray-300 bg-white px-4 text-base font-medium text-gray-700 hover:bg-gray-100"
             >
-              Bloquear horario
+              {t("agenda.bloquearHorario")}
             </Link>
             <Link href="/citas/nueva">
-              <Button type="button">+ Nueva cita</Button>
+              <Button type="button">{t("agenda.nuevaCita")}</Button>
             </Link>
           </div>
         </div>
@@ -158,7 +157,7 @@ function AgendaList({ accessToken }: { accessToken: string }) {
         {appointments === null && !error ? <LoadingState /> : null}
         {error ? <ErrorState error={error} onRetry={load} /> : null}
         {appointments && appointments.length === 0 ? (
-          <EmptyState title="Sin citas para hoy" description="Las citas que agendes para hoy aparecerán aquí." />
+          <EmptyState title={t("agenda.sinCitasHoy")} description={t("agenda.sinCitasHoyAyuda")} />
         ) : null}
         {actionError ? <ErrorState error={actionError} /> : null}
 
@@ -170,7 +169,7 @@ function AgendaList({ accessToken }: { accessToken: string }) {
                   <div className="flex items-start justify-between gap-4">
                     <div>
                       <p className="text-base font-medium text-gray-900">
-                        {formatMxTime(appt.startsAt)}–{formatMxTime(appt.endsAt)}
+                        {formatTime(locale, appt.startsAt)}–{formatTime(locale, appt.endsAt)}
                       </p>
                       <Link href={`/pacientes/${appt.patientId}`} className="text-base font-medium text-brand-700 underline">
                         {appt.patient.firstName} {appt.patient.lastNamePaternal} {appt.patient.lastNameMaternal ?? ""}
@@ -185,7 +184,7 @@ function AgendaList({ accessToken }: { accessToken: string }) {
                   <div className="mt-3 flex flex-wrap gap-3">
                     {appt.status === "SCHEDULED" ? (
                       <Button type="button" variant="secondary" onClick={() => confirmAppointment(appt.id)}>
-                        Confirmar
+                        {t("agenda.acciones.confirmar")}
                       </Button>
                     ) : null}
                     {/* Iniciar es la acción que esta pantalla existe para provocar:
@@ -194,27 +193,27 @@ function AgendaList({ accessToken }: { accessToken: string }) {
                         al día pesaba menos que el que casi nunca debe pulsar. */}
                     {appt.status === "SCHEDULED" || appt.status === "CONFIRMED" ? (
                       <Button type="button" onClick={() => startAppointment(appt.id)}>
-                        Iniciar
+                        {t("agenda.acciones.iniciar")}
                       </Button>
                     ) : null}
                     {appt.status === "SCHEDULED" || appt.status === "CONFIRMED" ? (
                       <Button type="button" variant="destructive" onClick={() => cancelAppointment(appt.id)}>
-                        Cancelar
+                        {t("agenda.acciones.cancelar")}
                       </Button>
                     ) : null}
                     {appt.status === "SCHEDULED" || appt.status === "CONFIRMED" ? (
                       <Button type="button" variant="secondary" onClick={() => markNoShow(appt.id)}>
-                        No se presentó
+                        {t("agenda.acciones.noSePresento")}
                       </Button>
                     ) : null}
                     {appt.status === "IN_PROGRESS" ? (
                       <Button type="button" onClick={() => router.push(`/consulta/${appt.id}`)}>
-                        Continuar consulta
+                        {t("agenda.acciones.continuarConsulta")}
                       </Button>
                     ) : null}
                     {appt.status === "IN_PROGRESS" && completingId !== appt.id ? (
                       <Button type="button" variant="secondary" onClick={() => setCompletingId(appt.id)}>
-                        Cerrar sin nota clínica
+                        {t("agenda.acciones.cerrarSinNota")}
                       </Button>
                     ) : null}
                   </div>
@@ -222,8 +221,7 @@ function AgendaList({ accessToken }: { accessToken: string }) {
                   {appt.status === "IN_PROGRESS" && completingId === appt.id ? (
                     <div className="mt-3 flex flex-col gap-2 border-t border-gray-300 pt-3">
                       <label htmlFor={`justification-${appt.id}`} className="text-sm font-medium text-gray-700">
-                        Justificación — excepción M5-RN-006: cierra la cita sin nota clínica firmada. La ruta normal es firmar la
-                        consulta desde &quot;Continuar consulta&quot;.
+                        {t("agenda.justificacionCierre")}
                       </label>
                       <textarea
                         id={`justification-${appt.id}`}
@@ -234,7 +232,7 @@ function AgendaList({ accessToken }: { accessToken: string }) {
                       />
                       <div className="flex gap-3">
                         <Button type="button" onClick={() => void completeAppointment(appt.id)} disabled={justification.trim().length < 10}>
-                          Confirmar cierre
+                          {t("agenda.acciones.confirmarCierre")}
                         </Button>
                         <Button
                           type="button"
@@ -244,7 +242,7 @@ function AgendaList({ accessToken }: { accessToken: string }) {
                             setJustification("");
                           }}
                         >
-                          Cancelar
+                          {t("common.acciones.cancelar")}
                         </Button>
                       </div>
                     </div>
@@ -259,19 +257,19 @@ function AgendaList({ accessToken }: { accessToken: string }) {
       {appointments && appointments.length > 0 ? (
         <aside className="flex w-full flex-col gap-4 lg:w-72 lg:shrink-0">
           <div>
-            <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500">Resumen del día</h2>
+            <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500">{t("agenda.resumen.titulo")}</h2>
             <div className="grid grid-cols-2 gap-3">
               {summaryCounts.map((tile) => (
-                <Card key={tile.label} className="p-4">
+                <Card key={tile.labelKey} className="p-4">
                   <p className="font-heading text-2xl text-gray-900">{tile.count}</p>
-                  <p className="text-sm text-gray-500">{tile.label}</p>
+                  <p className="text-sm text-gray-500">{t(tile.labelKey)}</p>
                 </Card>
               ))}
             </div>
           </div>
 
           <div>
-            <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500">Estados de cita</h2>
+            <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500">{t("agenda.leyenda")}</h2>
             <Card className="flex flex-col gap-2 p-4">
               {LEGEND.map((status) => (
                 <EstadoCita key={status} status={status} />
@@ -281,16 +279,16 @@ function AgendaList({ accessToken }: { accessToken: string }) {
 
           {next ? (
             <div>
-              <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500">Siguiente</h2>
+              <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500">{t("agenda.siguiente")}</h2>
               <Card className="flex flex-col gap-2 p-4">
                 <p className="text-base font-medium text-gray-900">
                   {next.patient.firstName} {next.patient.lastNamePaternal} {next.patient.lastNameMaternal ?? ""}
                 </p>
                 <p className="text-sm text-gray-500">
-                  {formatMxTime(next.startsAt)} · {next.service.name}
+                  {formatTime(locale, next.startsAt)} · {next.service.name}
                 </p>
                 <Button type="button" className="mt-1" onClick={() => startAppointment(next.id)}>
-                  Abrir consulta
+                  {t("agenda.acciones.abrirConsulta")}
                 </Button>
               </Card>
             </div>

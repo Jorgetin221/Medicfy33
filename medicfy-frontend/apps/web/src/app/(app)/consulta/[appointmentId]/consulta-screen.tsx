@@ -10,25 +10,30 @@ import { Button } from "@/components/ui/button";
 import { ConsultaSidebar } from "./consulta-sidebar";
 import { ConsultaZona3 } from "./consulta-zona3";
 import { ConsultaForm } from "./consulta-form";
+import { useT } from "@/lib/i18n/context";
+import type { MessageKey } from "@/lib/i18n/dictionaries";
 import { ConsultaReadonly } from "./consulta-readonly";
 import { EmisionDocumentos } from "@/components/clinical/emision-documentos";
 import { patientFullName, type AppointmentDetail, type EncounterDetail } from "./types";
 
 type Phase = "loading" | "ready" | "readonly" | "blocked" | "abandoned" | "error";
 
-const APPOINTMENT_STATUS_LABEL: Record<AppointmentDetail["status"], string> = {
-  PENDING_PAYMENT: "pago pendiente",
-  SCHEDULED: "agendada",
-  CONFIRMED: "confirmada",
-  IN_PROGRESS: "en curso",
-  COMPLETED: "completada",
-  CANCELLED_BY_PATIENT: "cancelada por el paciente",
-  CANCELLED_BY_DOCTOR: "cancelada por el médico",
-  NO_SHOW: "no se presentó",
+// En minúscula a propósito: se inserta a mitad de frase ("Esta cita
+// está cancelada por el médico y…"), no encabeza nada.
+const APPOINTMENT_STATUS_LABEL_KEY: Record<AppointmentDetail["status"], MessageKey> = {
+  PENDING_PAYMENT: "consulta.estadoCita.PENDING_PAYMENT",
+  SCHEDULED: "consulta.estadoCita.SCHEDULED",
+  CONFIRMED: "consulta.estadoCita.CONFIRMED",
+  IN_PROGRESS: "consulta.estadoCita.IN_PROGRESS",
+  COMPLETED: "consulta.estadoCita.COMPLETED",
+  CANCELLED_BY_PATIENT: "consulta.estadoCita.CANCELLED_BY_PATIENT",
+  CANCELLED_BY_DOCTOR: "consulta.estadoCita.CANCELLED_BY_DOCTOR",
+  NO_SHOW: "consulta.estadoCita.NO_SHOW",
 };
 
 export function ConsultaScreen({ appointmentId, accessToken }: { appointmentId: string; accessToken: string }) {
   const router = useRouter();
+  const t = useT();
   const [phase, setPhase] = useState<Phase>("loading");
   const [error, setError] = useState<unknown>(null);
   const [appointment, setAppointment] = useState<AppointmentDetail | null>(null);
@@ -113,7 +118,7 @@ export function ConsultaScreen({ appointmentId, accessToken }: { appointmentId: 
   if (phase === "loading") {
     return (
       <main className="mx-auto max-w-5xl p-6">
-        <LoadingState label="Preparando la consulta…" />
+        <LoadingState label={t("consulta.preparando")} />
       </main>
     );
   }
@@ -131,13 +136,15 @@ export function ConsultaScreen({ appointmentId, accessToken }: { appointmentId: 
       <main className="mx-auto max-w-2xl p-6">
         <Card>
           <p className="text-base text-gray-900">
-            Esta cita está <strong>{APPOINTMENT_STATUS_LABEL[appointment.status]}</strong> y no se puede iniciar una consulta desde aquí.
+            {t("consulta.bloqueada.prefijo")}
+            <strong>{t(APPOINTMENT_STATUS_LABEL_KEY[appointment.status])}</strong>
+            {t("consulta.bloqueada.sufijo")}
           </p>
           {appointment.completedWithoutNoteReason && (
-            <p className="mt-2 text-sm text-gray-500">Se completó sin nota clínica: &quot;{appointment.completedWithoutNoteReason}&quot;</p>
+            <p className="mt-2 text-sm text-gray-500">{t("consulta.bloqueada.sinNota", { motivo: appointment.completedWithoutNoteReason })}</p>
           )}
           <Button type="button" variant="secondary" className="mt-4" onClick={() => router.push("/agenda")}>
-            Volver a la agenda
+            {t("consulta.volverAgenda")}
           </Button>
         </Card>
       </main>
@@ -149,18 +156,19 @@ export function ConsultaScreen({ appointmentId, accessToken }: { appointmentId: 
       <main className="mx-auto max-w-2xl p-6">
         <Card>
           <p className="text-base text-gray-900">
-            Este borrador de <strong>{patientFullName(appointment.patient)}</strong> lleva más de 72 horas sin firmarse y se marcó como
-            abandonado — ya no se puede continuar editando (M8-RN-003).
+            {t("consulta.abandonada.prefijo")}
+            <strong>{patientFullName(appointment.patient)}</strong>
+            {t("consulta.abandonada.sufijo")}
           </p>
           <p className="mt-2 text-sm text-gray-500">
-            Documenta esta consulta como una nota nueva desde el expediente del paciente. La cita queda como estaba.
+            {t("consulta.abandonada.ayuda")}
           </p>
           <div className="mt-4 flex gap-3">
             <Button type="button" variant="secondary" onClick={() => router.push("/agenda")}>
-              Volver a la agenda
+              {t("consulta.volverAgenda")}
             </Button>
             <Button type="button" onClick={() => router.push(`/pacientes/${appointment.patientId}`)}>
-              Ir al expediente
+              {t("consulta.irAlExpediente")}
             </Button>
           </div>
         </Card>

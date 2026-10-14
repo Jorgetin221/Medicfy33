@@ -9,6 +9,9 @@ import { Card, EmptyState, ErrorState } from "@/components/ui/states";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/ui/panel";
 import { PdfViewer } from "@/components/clinical/pdf-viewer";
+import { useI18n } from "@/lib/i18n/context";
+import { formatDateLong } from "@/lib/i18n/format";
+import type { MessageKey } from "@/lib/i18n/dictionaries";
 
 // Un resultado subido — GET /lab-results/patients/:patientId, la
 // misma forma que devuelve el POST de subida. TimelineLabOrder /
@@ -26,20 +29,16 @@ interface LabResultRecord {
   doctorComment: string | null;
 }
 
-const MX_TIME_ZONE = "America/Mexico_City";
-function formatMxDate(iso: string): string {
-  return new Intl.DateTimeFormat("es-MX", { timeZone: MX_TIME_ZONE, dateStyle: "long" }).format(new Date(iso));
-}
 
-const STATUS_LABEL: Record<TimelineLabOrder["status"], string> = {
-  ISSUED: "Pendiente",
-  RESULTS_UPLOADED: "Con resultados",
-  CANCELLED: "Cancelada",
+const STATUS_LABEL_KEYS: Record<TimelineLabOrder["status"], MessageKey> = {
+  ISSUED: "pacientes.ordenes.estado.ISSUED",
+  RESULTS_UPLOADED: "pacientes.ordenes.estado.RESULTS_UPLOADED",
+  CANCELLED: "pacientes.ordenes.estado.CANCELLED",
 };
 
-const STANDALONE_STATUS_LABEL: Record<TimelineStandaloneResult["status"], string> = {
-  PENDING_REVIEW: "Pendiente de revisión",
-  REVIEWED: "Revisado",
+const STANDALONE_STATUS_LABEL_KEYS: Record<TimelineStandaloneResult["status"], MessageKey> = {
+  PENDING_REVIEW: "pacientes.ordenes.estadoResultado.PENDING_REVIEW",
+  REVIEWED: "pacientes.ordenes.estadoResultado.REVIEWED",
 };
 
 // Especificación §14 (M10, casos límite): "Estudios de imagen → se
@@ -49,7 +48,6 @@ const STANDALONE_STATUS_LABEL: Record<TimelineStandaloneResult["status"], string
 // lab-results.controller.ts) es la autoridad real — esto es solo el
 // filtro nativo del selector de archivo y el texto de ayuda.
 const LAB_RESULT_ACCEPT = "application/pdf,image/jpeg,image/png";
-const LAB_RESULT_FORMAT_HINT = "PDF, JPG o PNG · máx. 10 MB";
 
 export function TabOrdenes({
   accessToken,
@@ -64,6 +62,7 @@ export function TabOrdenes({
   standaloneResults: TimelineStandaloneResult[];
   onChanged: () => void;
 }) {
+  const { t, locale } = useI18n();
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
@@ -121,7 +120,7 @@ export function TabOrdenes({
   }
 
   async function markReviewed(resultId: string) {
-    const doctorComment = window.prompt("Comentario de revisión (obligatorio):");
+    const doctorComment = window.prompt(t("pacientes.ordenes.comentarioRevision"));
     if (!doctorComment || !doctorComment.trim()) return;
     setError(null);
     setReviewingId(resultId);
@@ -140,12 +139,15 @@ export function TabOrdenes({
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-gray-300 px-3 py-2">
         <div>
           <p className="text-base text-gray-900">
-            {result.labName || "Resultado"}
-            {result.resultDate ? ` · estudio del ${formatMxDate(result.resultDate)}` : ""}
+            {result.labName || t("pacientes.ordenes.resultado")}
+            {result.resultDate ? t("pacientes.ordenes.estudioDel", { fecha: formatDateLong(locale, result.resultDate) }) : ""}
           </p>
           <p className="text-sm text-gray-500">
-            Subido {formatMxDate(result.uploadedAt)} por {result.uploadedByRole === "DOCTOR" ? "el médico" : "el paciente"}
-            {result.doctorComment ? ` · "${result.doctorComment}"` : ""}
+            {t("pacientes.ordenes.subidoPor", {
+              fecha: formatDateLong(locale, result.uploadedAt),
+              quien: result.uploadedByRole === "DOCTOR" ? t("pacientes.ordenes.elMedico") : t("pacientes.ordenes.elPaciente"),
+            })}
+            {result.doctorComment ? t("pacientes.ordenes.comentario", { texto: result.doctorComment }) : ""}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -154,10 +156,10 @@ export function TabOrdenes({
               result.reviewedAt ? "border-success-600 text-success-600" : "border-warn-600 text-warn-600"
             }`}
           >
-            {result.reviewedAt ? "Revisado" : "Pendiente de revisión"}
+            {result.reviewedAt ? t("pacientes.ordenes.revisado") : t("pacientes.ordenes.pendienteRevision")}
           </span>
           <Button type="button" variant="secondary" isLoading={viewingId === result.id} onClick={() => void viewResult(result.id)} className="min-h-11 px-3 text-sm">
-            Ver resultado
+            {t("pacientes.ordenes.verResultado")}
           </Button>
           {!result.reviewedAt ? (
             <Button
@@ -167,7 +169,7 @@ export function TabOrdenes({
               onClick={() => void markReviewed(result.id)}
               className="min-h-11 px-3 text-sm"
             >
-              Marcar como revisado
+              {t("pacientes.ordenes.marcarRevisado")}
             </Button>
           ) : null}
         </div>
@@ -176,7 +178,7 @@ export function TabOrdenes({
   }
 
   async function cancelOrder(id: string) {
-    const reason = window.prompt("Motivo de cancelación:");
+    const reason = window.prompt(t("pacientes.ordenes.motivoCancelacion"));
     if (!reason) return;
     setError(null);
     setCancellingId(id);
@@ -243,7 +245,7 @@ export function TabOrdenes({
     <div className="flex flex-wrap items-center gap-3">
       <Link href={`/consulta/paciente/${patientId}`}>
         <Button type="button" variant="secondary" className="min-h-11 px-3 text-sm">
-          + Ordenar estudio
+          {t("pacientes.ordenes.ordenarEstudio")}
         </Button>
       </Link>
       <input
@@ -264,15 +266,15 @@ export function TabOrdenes({
         onClick={() => standaloneFileInputRef.current?.click()}
         className="min-h-11 px-3 text-sm"
       >
-        Subir resultado
+        {t("pacientes.ordenes.subirResultado")}
       </Button>
-      <span className="text-sm text-gray-500">{LAB_RESULT_FORMAT_HINT}</span>
+      <span className="text-sm text-gray-500">{t("pacientes.ordenes.formatoPermitido")}</span>
     </div>
   );
 
   const standaloneSection = standaloneResults.length > 0 && (
     <div>
-      <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500">Resultados sin orden</h3>
+      <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500">{t("pacientes.ordenes.sinOrden")}</h3>
       <ul className="flex flex-col gap-2">
         {standaloneResults.map((r) => {
           const loaded = results?.find((full) => full.id === r.id);
@@ -287,10 +289,13 @@ export function TabOrdenes({
                 <Card>
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="text-base font-medium text-gray-900">{r.labName || "Resultado sin nombre de laboratorio"}</p>
+                      <p className="text-base font-medium text-gray-900">{r.labName || t("pacientes.ordenes.sinNombreLab")}</p>
                       <p className="text-sm text-gray-500">
-                        {r.resultDate ? `Fecha del estudio: ${formatMxDate(r.resultDate)} · ` : ""}
-                        Subido {formatMxDate(r.uploadedAt)} por {r.uploadedByRole === "DOCTOR" ? "el médico" : "el paciente"}
+                        {r.resultDate ? t("pacientes.ordenes.fechaEstudio", { fecha: formatDateLong(locale, r.resultDate) }) : ""}
+                        {t("pacientes.ordenes.subidoPor", {
+                          fecha: formatDateLong(locale, r.uploadedAt),
+                          quien: r.uploadedByRole === "DOCTOR" ? t("pacientes.ordenes.elMedico") : t("pacientes.ordenes.elPaciente"),
+                        })}
                       </p>
                     </div>
                     <span
@@ -298,7 +303,7 @@ export function TabOrdenes({
                         r.status === "REVIEWED" ? "border-success-600 text-success-600" : "border-warn-600 text-warn-600"
                       }`}
                     >
-                      {STANDALONE_STATUS_LABEL[r.status]}
+                      {t(STANDALONE_STATUS_LABEL_KEYS[r.status])}
                     </span>
                   </div>
                 </Card>
@@ -311,16 +316,16 @@ export function TabOrdenes({
   );
 
   const previewPanel = (
-    <Panel open={preview !== null} onClose={closePreview} title="Resultado de laboratorio" wide>
+    <Panel open={preview !== null} onClose={closePreview} title={t("pacientes.ordenes.panelTitulo")} wide>
       {preview ? (
         <div className="flex flex-col gap-3">
           <a href={preview.downloadUrl} download className="w-fit text-sm font-medium text-brand-700 underline">
-            Descargar archivo original
+            {t("pacientes.ordenes.descargarOriginal")}
           </a>
           {preview.pdfData ? (
             <PdfViewer data={preview.pdfData} />
           ) : preview.imageUrl ? (
-            <img src={preview.imageUrl} alt="Resultado de laboratorio" className="max-w-full" />
+            <img src={preview.imageUrl} alt={t("pacientes.ordenes.panelTitulo")} className="max-w-full" />
           ) : null}
         </div>
       ) : null}
@@ -334,8 +339,8 @@ export function TabOrdenes({
         {error ? <ErrorState error={error} /> : null}
         {standaloneResults.length === 0 ? (
           <EmptyState
-            title="Sin órdenes de laboratorio"
-            description="Ordena un estudio desde una consulta, o sube directo un resultado que el paciente ya traiga de otro lado."
+            title={t("pacientes.ordenes.vacio")}
+            description={t("pacientes.ordenes.vacioAyuda")}
           />
         ) : (
           standaloneSection
@@ -356,7 +361,7 @@ export function TabOrdenes({
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-base font-medium text-gray-900">
-                    Folio {o.folio} — {formatMxDate(o.issuedAt)}
+                    {t("pacientes.ordenes.folio", { folio: o.folio, fecha: formatDateLong(locale, o.issuedAt) })}
                   </p>
                   <p className="text-sm text-gray-500">{o.clinicalIndication}</p>
                 </div>
@@ -365,7 +370,7 @@ export function TabOrdenes({
                     o.status === "CANCELLED" ? "border-danger-600 text-danger-600" : "border-success-600 text-success-600"
                   }`}
                 >
-                  {STATUS_LABEL[o.status]}
+                  {t(STATUS_LABEL_KEYS[o.status])}
                 </span>
               </div>
               <ul className="mt-2 flex flex-col gap-0.5">
@@ -375,9 +380,9 @@ export function TabOrdenes({
                   </li>
                 ))}
               </ul>
-              {o.fastingRequired && <p className="mt-1 text-sm text-warn-600">Requiere ayuno</p>}
+              {o.fastingRequired && <p className="mt-1 text-sm text-warn-600">{t("pacientes.ordenes.requiereAyuno")}</p>}
               <p className="mt-2 break-all text-sm text-gray-500">
-                Verificación: <span className="font-mono">/verificar/{o.qrVerificationToken}</span>
+                {t("pacientes.ordenes.verificacion")} <span className="font-mono">/verificar/{o.qrVerificationToken}</span>
               </p>
               {results && results.some((r) => r.labOrderId === o.id) ? (
                 <div className="mt-3 flex flex-col gap-2">
@@ -396,7 +401,7 @@ export function TabOrdenes({
                   onClick={() => void downloadPdf(o.id)}
                   className="min-h-11 px-3 text-sm"
                 >
-                  Descargar PDF
+                  {t("pacientes.ordenes.descargarPdf")}
                 </Button>
                 {o.status !== "CANCELLED" && (
                   <>
@@ -420,9 +425,9 @@ export function TabOrdenes({
                       onClick={() => fileInputRefs.current[o.id]?.click()}
                       className="min-h-11 px-3 text-sm"
                     >
-                      Subir resultado
+                      {t("pacientes.ordenes.subirResultado")}
                     </Button>
-                    <span className="text-sm text-gray-500">{LAB_RESULT_FORMAT_HINT}</span>
+                    <span className="text-sm text-gray-500">{t("pacientes.ordenes.formatoPermitido")}</span>
                     <Button
                       type="button"
                       variant="destructive"
@@ -430,7 +435,7 @@ export function TabOrdenes({
                       onClick={() => void cancelOrder(o.id)}
                       className="min-h-11 px-3 text-sm"
                     >
-                      Cancelar orden
+                      {t("pacientes.ordenes.cancelarOrden")}
                     </Button>
                   </>
                 )}

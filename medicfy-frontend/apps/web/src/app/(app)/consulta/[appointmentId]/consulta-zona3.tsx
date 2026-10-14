@@ -11,6 +11,7 @@ import { DocumentosTab } from "@/components/clinical/documentos-tab";
 import { LabAnalytesPanel } from "@/components/clinical/lab-analytes-panel";
 import { LabSheetUpload } from "@/components/clinical/lab-sheet-upload";
 import { AsistenteTab } from "@/components/clinical/asistente-tab";
+import { useT } from "@/lib/i18n/context";
 
 // Prompt 14 — Zona 3, esqueleto: pestañas Hoja frontal / Historia /
 // Notas / Estudios / Resultados, VACÍAS por ahora (el contenido llega
@@ -56,6 +57,7 @@ export function ConsultaZona3({
   // este encuentro.
   encounterId?: string;
 }) {
+  const t = useT();
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<Zona3Tab>("Hoja frontal");
   // Carga diferida real: solo las pestañas que el médico ABRIÓ en esta
@@ -89,7 +91,7 @@ export function ConsultaZona3({
 
   const panel = (
     <div className="flex h-full flex-col" data-testid="zona3-panel">
-      <div role="tablist" aria-label="Panel de consulta" className="flex flex-wrap gap-1 border-b border-gray-300 pb-2">
+      <div role="tablist" aria-label={t("consulta.zona3.panelConsulta")} className="flex flex-wrap gap-1 border-b border-gray-300 pb-2">
         {TABS.map((tab) => (
           <button
             key={tab}
@@ -102,14 +104,14 @@ export function ConsultaZona3({
               activeTab === tab ? "bg-brand-100 text-brand-900" : "text-gray-500 hover:bg-gray-100"
             )}
           >
-            {tab}
+            {t(`consulta.zona3.tabs.${tab}`)}
           </button>
         ))}
       </div>
       <div className="flex-1 overflow-y-auto pt-3">
         {TABS.map((tab) =>
           openedTabs.has(tab) && activeTab === tab ? (
-            <div key={tab} role="tabpanel" aria-label={tab}>
+            <div key={tab} role="tabpanel" aria-label={t(`consulta.zona3.tabs.${tab}`)}>
               {tab === "Hoja frontal" && patientId && accessToken ? (
                 <HojaFrontal patientId={patientId} accessToken={accessToken} />
               ) : tab === "Historia" && patientId && accessToken ? (
@@ -121,7 +123,7 @@ export function ConsultaZona3({
               ) : tab === "Resultados" && patientId && accessToken && birthDate ? (
                 <div className="flex flex-col gap-4">
                   <div>
-                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Signos vitales</h3>
+                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">{t("consulta.zona3.signosVitales")}</h3>
                     <ResultadosCharts
                       patientId={patientId}
                       accessToken={accessToken}
@@ -130,7 +132,7 @@ export function ConsultaZona3({
                     />
                   </div>
                   <div className="flex flex-col gap-3">
-                    <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Laboratorio</h3>
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">{t("consulta.zona3.laboratorio")}</h3>
                     <LabSheetUpload
                       patientId={patientId}
                       accessToken={accessToken}
@@ -148,12 +150,12 @@ export function ConsultaZona3({
               ) : tab === "Asistente" && encounterId && accessToken ? (
                 <AsistenteTab encounterId={encounterId} accessToken={accessToken} />
               ) : (
-                <p className="text-sm text-gray-500">Sin datos suficientes para mostrar esta pestaña.</p>
+                <p className="text-sm text-gray-500">{t("consulta.zona3.sinDatos")}</p>
               )}
             </div>
           ) : null
         )}
-        {openedTabs.size === 0 ? <p className="text-sm text-gray-500">Abre una pestaña para consultar el expediente.</p> : null}
+        {openedTabs.size === 0 ? <p className="text-sm text-gray-500">{t("consulta.zona3.abreUnaPestana")}</p> : null}
       </div>
     </div>
   );
@@ -172,7 +174,7 @@ export function ConsultaZona3({
           justo cuando sirve para contrastar lo que se está escribiendo. */}
       <aside
         className="sticky top-4 hidden h-[calc(100vh-2rem)] shrink-0 overflow-y-auto lg:block lg:w-80 2xl:w-96"
-        aria-label="Zona 3 — consulta del expediente"
+        aria-label={t("consulta.zona3.titulo")}
       >
         {panel}
       </aside>
@@ -187,19 +189,19 @@ export function ConsultaZona3({
           onClick={() => setIsOpen(true)}
           className="fixed bottom-4 right-4 z-20 min-h-11 shadow-card"
         >
-          Expediente
+          {t("consulta.zona3.expediente")}
         </Button>
         {isOpen ? (
-          <div className="fixed inset-0 z-30" role="dialog" aria-label="Panel de consulta (cajón)">
+          <div className="fixed inset-0 z-30" role="dialog" aria-label={t("consulta.zona3.cajon")}>
             <button
               type="button"
-              aria-label="Cerrar panel"
+              aria-label={t("consulta.zona3.cerrarPanel")}
               onClick={() => setIsOpen(false)}
               className="absolute inset-0 bg-overlay"
             />
             <div className="absolute inset-y-0 right-0 flex w-80 max-w-[85vw] flex-col bg-white p-4 shadow-card">
               <Button type="button" variant="secondary" onClick={() => setIsOpen(false)} className="mb-3 min-h-11 self-end">
-                Cerrar ✕
+                {t("consulta.zona3.cerrar")}
               </Button>
               {panel}
             </div>

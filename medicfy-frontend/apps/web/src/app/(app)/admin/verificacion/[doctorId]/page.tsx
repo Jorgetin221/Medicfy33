@@ -11,6 +11,10 @@ import { Card, LoadingState, ErrorState, EmptyState } from "@/components/ui/stat
 import { Aviso } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { FieldWrapper, Textarea } from "@/components/ui/field";
+import { useI18n } from "@/lib/i18n/context";
+import { formatDateTimeMedium } from "@/lib/i18n/format";
+import type { MessageKey } from "@/lib/i18n/dictionaries";
+import { translateKeyed } from "@/lib/i18n/keyed";
 
 interface AdminDoctorDocument {
   id: string;
@@ -30,23 +34,23 @@ interface AdminDoctorDetail {
   documents: AdminDoctorDocument[];
 }
 
-const STATUS_LABELS: Record<DoctorVerificationStatus, string> = {
-  DRAFT: "Borrador",
-  SUBMITTED: "Por revisar",
-  IN_REVIEW: "En revisión",
-  VERIFIED: "Verificado",
-  VERIFIED_SPECIALTY_UNCONFIRMED: "Verificado (especialidad sin confirmar)",
-  REJECTED: "Rechazado",
-  SUSPENDED: "Suspendido",
+const STATUS_LABEL_KEYS: Record<DoctorVerificationStatus, MessageKey> = {
+  DRAFT: "admin.verificacionEstado.DRAFT",
+  SUBMITTED: "admin.verificacionEstado.SUBMITTED",
+  IN_REVIEW: "admin.verificacionEstado.IN_REVIEW",
+  VERIFIED: "admin.verificacionEstado.VERIFIED",
+  VERIFIED_SPECIALTY_UNCONFIRMED: "admin.verificacionEstado.VERIFIED_SPECIALTY_UNCONFIRMED",
+  REJECTED: "admin.verificacionEstado.REJECTED",
+  SUSPENDED: "admin.verificacionEstado.SUSPENDED",
 };
 
-const DOC_TYPE_LABELS: Record<string, string> = {
-  CEDULA_PROFESIONAL: "Cédula profesional",
-  CEDULA_ESPECIALIDAD: "Cédula de especialidad",
-  INE: "Identificación oficial",
-  CV: "Currículum",
-  CERTIFICADO_CONSEJO: "Certificado de consejo",
-  COMPROBANTE_DOMICILIO: "Comprobante de domicilio",
+const DOC_TYPE_LABEL_KEYS: Record<string, MessageKey> = {
+  CEDULA_PROFESIONAL: "perfil.documentos.CEDULA_PROFESIONAL",
+  CEDULA_ESPECIALIDAD: "perfil.documentos.CEDULA_ESPECIALIDAD",
+  INE: "perfil.documentos.INE",
+  CV: "perfil.documentos.CV",
+  CERTIFICADO_CONSEJO: "perfil.documentos.CERTIFICADO_CONSEJO",
+  COMPROBANTE_DOMICILIO: "perfil.documentos.COMPROBANTE_DOMICILIO",
 };
 
 // ADM-02. No sirve el archivo en sí (no existe endpoint para eso hoy
@@ -76,6 +80,7 @@ export default function AdminVerificacionDetailPage() {
 }
 
 function VerificacionDetail({ accessToken, doctorId }: { accessToken: string; doctorId: string }) {
+  const { t, locale } = useI18n();
   const { specialties } = useSpecialties();
   const [doctor, setDoctor] = useState<AdminDoctorDetail | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -111,7 +116,7 @@ function VerificacionDetail({ accessToken, doctorId }: { accessToken: string; do
         body,
         accessToken,
       });
-      setResultMessage(`Estado actualizado a "${STATUS_LABELS[updated.verificationStatus]}".`);
+      setResultMessage(t("admin.detalle.estadoActualizado", { estado: t(STATUS_LABEL_KEYS[updated.verificationStatus]) }));
       load();
     } catch (err) {
       setActionError(err);
@@ -127,7 +132,7 @@ function VerificacionDetail({ accessToken, doctorId }: { accessToken: string; do
     setIsRejecting(true);
     try {
       await apiFetch(`/admin/doctors/${doctorId}/reject`, { method: "POST", body: { reason: rejectReason.trim() }, accessToken });
-      setResultMessage("Médico rechazado.");
+      setResultMessage(t("admin.detalle.rechazado"));
       setRejectReason("");
       load();
     } catch (err) {
@@ -138,7 +143,7 @@ function VerificacionDetail({ accessToken, doctorId }: { accessToken: string; do
   }
 
   async function onSuspend() {
-    if (!window.confirm("¿Suspender a este médico? Sus citas futuras pagadas se cancelarán y sus pacientes serán notificados.")) return;
+    if (!window.confirm(t("admin.detalle.confirmarSuspender"))) return;
     setActionError(null);
     setResultMessage(null);
     setIsSuspending(true);
@@ -184,31 +189,31 @@ function VerificacionDetail({ accessToken, doctorId }: { accessToken: string; do
           {doctor.legalFirstName} {doctor.legalLastName}
         </h1>
         <p className="text-base text-gray-500">
-          Cédula {doctor.professionalLicense} · {specialty?.nameEs ?? "Medicina General"}
+          {t("admin.usuarios.cedula", { numero: doctor.professionalLicense })} · {specialty?.nameEs ?? t("catalogos.especialidades.GENERAL")}
         </p>
       </div>
 
       <Card>
-        <h2 className="font-heading text-xl text-brand-900">Estado actual</h2>
-        <p className="mt-2 text-base font-medium text-gray-900">{STATUS_LABELS[doctor.verificationStatus]}</p>
+        <h2 className="font-heading text-xl text-brand-900">{t("admin.detalle.estadoActual")}</h2>
+        <p className="mt-2 text-base font-medium text-gray-900">{t(STATUS_LABEL_KEYS[doctor.verificationStatus])}</p>
         {doctor.verificationStatus === "REJECTED" && doctor.verificationNotes ? (
-          <p className="mt-1 text-sm text-gray-500">Motivo del rechazo: {doctor.verificationNotes}</p>
+          <p className="mt-1 text-sm text-gray-500">{t("admin.detalle.motivoRechazo", { motivo: doctor.verificationNotes })}</p>
         ) : null}
       </Card>
 
       <Card>
-        <h2 className="font-heading text-xl text-brand-900">Documentos</h2>
+        <h2 className="font-heading text-xl text-brand-900">{t("admin.detalle.documentos")}</h2>
         {doctor.documents.length === 0 ? (
           <div className="mt-4">
-            <EmptyState title="Sin documentos cargados" />
+            <EmptyState title={t("admin.detalle.sinDocumentos")} />
           </div>
         ) : (
           <ul className="mt-4 flex flex-col gap-2">
             {doctor.documents.map((doc) => (
               <li key={doc.id} className="rounded-md border border-gray-300 p-3">
-                <p className="text-base text-gray-900">{DOC_TYPE_LABELS[doc.docType] ?? doc.docType}</p>
-                <p className="mt-1 font-mono text-sm text-gray-500">hash: {doc.fileHashSha256.slice(0, 16)}…</p>
-                <p className="text-sm text-gray-500">Subido {new Date(doc.uploadedAt).toLocaleString("es-MX")}</p>
+                <p className="text-base text-gray-900">{translateKeyed(t, DOC_TYPE_LABEL_KEYS, doc.docType)}</p>
+                <p className="mt-1 font-mono text-sm text-gray-500">{t("admin.detalle.hash", { hash: doc.fileHashSha256.slice(0, 16) })}</p>
+                <p className="text-sm text-gray-500">{t("admin.detalle.subido", { fecha: formatDateTimeMedium(locale, doc.uploadedAt) })}</p>
               </li>
             ))}
           </ul>
@@ -216,7 +221,7 @@ function VerificacionDetail({ accessToken, doctorId }: { accessToken: string; do
       </Card>
 
       <Card>
-        <h2 className="font-heading text-xl text-brand-900">Decisión</h2>
+        <h2 className="font-heading text-xl text-brand-900">{t("admin.detalle.decision")}</h2>
 
         {actionError ? (
           <div className="mt-4">
@@ -239,19 +244,19 @@ function VerificacionDetail({ accessToken, doctorId }: { accessToken: string; do
                   checked={specialtyConfirmed}
                   onChange={(e) => setSpecialtyConfirmed(e.target.checked)}
                 />
-                Confirmo que revisé la cédula de especialidad
+                {t("admin.detalle.confirmoCedula")}
               </label>
             ) : null}
             <Button type="button" isLoading={isVerifying} onClick={() => void onVerify()}>
-              Aprobar
+              {t("admin.detalle.aprobar")}
             </Button>
             {specialty?.requiresSpecialtyLicense && !specialtyConfirmed ? (
-              <p className="mt-1 text-sm text-gray-500">Quedará como &quot;verificado con especialidad no confirmada&quot;.</p>
+              <p className="mt-1 text-sm text-gray-500">{t("admin.detalle.quedaraSinConfirmar")}</p>
             ) : null}
           </div>
 
           <div className="border-t border-gray-300 pt-6">
-            <FieldWrapper label="Motivo del rechazo" htmlFor="reject-reason">
+            <FieldWrapper label={t("admin.detalle.etiquetaMotivoRechazo")} htmlFor="reject-reason">
               <Textarea id="reject-reason" rows={3} value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} />
             </FieldWrapper>
             {/* `danger` (relleno rojo) justificado: revocación administrativa, y
@@ -265,20 +270,19 @@ function VerificacionDetail({ accessToken, doctorId }: { accessToken: string; do
               disabled={!rejectReason.trim()}
               onClick={() => void onReject()}
             >
-              Rechazar
+              {t("admin.detalle.rechazar")}
             </Button>
           </div>
 
           <div className="border-t border-gray-300 pt-6">
             <p className="mb-3 text-sm text-gray-500">
-              Cancela sus citas futuras pagadas, notifica a los pacientes afectados con su derecho a reembolso, y no borra su perfil ni sus
-              expedientes.
+              {t("admin.detalle.suspenderAviso")}
             </p>
             {/* `danger` (relleno rojo) justificado: suspender cancela citas pagadas y
                 notifica a pacientes — revocación administrativa irreversible, y el
                 párrafo de arriba enumera la consecuencia. Ver ui/button.tsx. */}
             <Button type="button" variant="danger" isLoading={isSuspending} onClick={() => void onSuspend()}>
-              Suspender
+              {t("admin.detalle.suspender")}
             </Button>
           </div>
         </div>

@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { ConsultaSidebar } from "./consulta-sidebar";
 import type { ActiveDiagnosis, PatientPregnancy, PatientTimeline } from "@/lib/use-patient-clinical";
+import { I18nProvider } from "@/lib/i18n/context";
 
 // Fase 1 / #20: primeras pruebas de UI del proyecto, sobre la Zona 1 —
 // la columna de contexto que CLAUDE.md §6 exige siempre visible.
@@ -67,8 +68,13 @@ const TIMELINE = {
   standaloneResults: [],
 } as unknown as PatientTimeline;
 
+// La Zona 1 lee sus etiquetas del diccionario, igual que el resto de
+// la app: en producción siempre se monta bajo el I18nProvider del
+// layout raíz. Se fija "es" a propósito — estas pruebas afirman sobre
+// el texto en español.
 function renderSidebar(overrides: Partial<Parameters<typeof ConsultaSidebar>[0]> = {}) {
   return render(
+    <I18nProvider initialLocale="es">
     <ConsultaSidebar
       patientId="p1"
       patient={PATIENT}
@@ -81,6 +87,7 @@ function renderSidebar(overrides: Partial<Parameters<typeof ConsultaSidebar>[0]>
       isLoadingClinical={false}
       {...overrides}
     />
+    </I18nProvider>
   );
 }
 

@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { usePatientClinical } from "@/lib/use-patient-clinical";
 import { LoadingState, ErrorState } from "@/components/ui/states";
 import { Aviso } from "@/components/ui/alert";
+import { useT } from "@/lib/i18n/context";
 import { Button } from "@/components/ui/button";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { AllergySummary } from "@/components/clinical/allergy-summary";
@@ -23,6 +24,7 @@ import { TabProtocolos } from "./tab-protocolos";
 // no tiene backend en este pase — se omite en vez de mostrar una
 // pestaña vacía.
 export function ExpedienteScreen({ patientId, accessToken }: { patientId: string; accessToken: string }) {
+  const t = useT();
   const searchParams = useSearchParams();
   const justSigned = searchParams.get("justSigned") === "1";
   const { patient, allergies, medications, historyItems, timeline, isLoading, error, reload } = usePatientClinical(patientId, accessToken);
@@ -30,7 +32,7 @@ export function ExpedienteScreen({ patientId, accessToken }: { patientId: string
   if (isLoading && !patient) {
     return (
       <main className="mx-auto max-w-4xl p-6">
-        <LoadingState label="Cargando expediente…" />
+        <LoadingState label={t("clinico.cargando.expediente")} />
       </main>
     );
   }
@@ -46,10 +48,10 @@ export function ExpedienteScreen({ patientId, accessToken }: { patientId: string
   const activeAllergyCount = allergies.filter((a) => a.status === "ACTIVE").length;
 
   const tabs: TabItem[] = [
-    { id: "general", label: "Datos generales", content: <TabDatosGenerales patient={patient} /> },
+    { id: "general", label: t("pacientes.expediente.tabs.datosGenerales"), content: <TabDatosGenerales patient={patient} /> },
     {
       id: "antecedentes",
-      label: "Antecedentes",
+      label: t("pacientes.expediente.tabs.antecedentes"),
       content: (
         <TabAntecedentes
           patientId={patientId}
@@ -61,15 +63,15 @@ export function ExpedienteScreen({ patientId, accessToken }: { patientId: string
         />
       ),
     },
-    { id: "notas", label: "Notas", content: <TabNotas accessToken={accessToken} encounters={timeline?.encounters ?? []} /> },
+    { id: "notas", label: t("pacientes.expediente.tabs.notas"), content: <TabNotas accessToken={accessToken} encounters={timeline?.encounters ?? []} /> },
     {
       id: "recetas",
-      label: "Recetas",
+      label: t("pacientes.expediente.tabs.recetas"),
       content: <TabRecetas accessToken={accessToken} patientId={patientId} prescriptions={timeline?.prescriptions ?? []} onChanged={reload} />,
     },
     {
       id: "ordenes",
-      label: "Órdenes y resultados",
+      label: t("pacientes.expediente.tabs.ordenes"),
       content: (
         <TabOrdenes
           accessToken={accessToken}
@@ -82,26 +84,27 @@ export function ExpedienteScreen({ patientId, accessToken }: { patientId: string
     },
     {
       id: "protocolos",
-      label: "Protocolos",
+      label: t("pacientes.expediente.tabs.protocolos"),
       content: <TabProtocolos patientId={patientId} accessToken={accessToken} encounters={timeline?.encounters ?? []} />,
     },
   ];
 
   return (
     <main className="mx-auto flex max-w-4xl flex-col gap-4 p-6">
-      {justSigned && <Aviso variant="exito" title="Consulta firmada correctamente." />}
+      {justSigned && <Aviso variant="exito" title={t("pacientes.expediente.firmada")} />}
 
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="font-heading text-2xl text-brand-900">{patientFullName(patient)}</h1>
           <p className="text-base text-gray-500">
-            {patient.medicfyId} · {patientAgeYears(patient.birthDate)} años · {patient.sexAtBirth === "F" ? "Mujer" : "Hombre"}
+            {patient.medicfyId} · {t("pacientes.anios", { n: patientAgeYears(patient.birthDate) })} ·{" "}
+            {patient.sexAtBirth === "F" ? t("pacientes.mujer") : t("pacientes.hombre")}
           </p>
         </div>
         {/* Pedido explícito: atender a un paciente que ya existe sin
             necesidad de reservarle una cita primero. */}
         <Link href={`/consulta/paciente/${patientId}`}>
-          <Button type="button">Iniciar consulta sin cita</Button>
+          <Button type="button">{t("pacientes.expediente.iniciarSinCita")}</Button>
         </Link>
       </div>
 

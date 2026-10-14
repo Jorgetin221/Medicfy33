@@ -4,38 +4,48 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
 import { registerDoctorSchema, emailVerifySchema, type RegisterDoctorInput, type EmailVerifyInput } from "@medicfy/contracts";
 import { apiFetch } from "@/lib/api-client";
 import { useSpecialties } from "@/lib/use-specialties";
+import { useSpecialtyName } from "@/lib/i18n/catalog";
 import { AuthLayout } from "@/components/auth-layout";
 import { Button } from "@/components/ui/button";
 import { FieldWrapper, TextInput, SelectInput } from "@/components/ui/field";
 import { PasswordInput } from "@/components/ui/password-input";
 import { ErrorState } from "@/components/ui/states";
 import { Aviso } from "@/components/ui/alert";
+import { useT } from "@/lib/i18n/context";
+import { useZodResolver } from "@/lib/i18n/validation";
 
-const PANEL_COPY = {
-  panelTitle: "Verificamos tu cédula ante la SEP antes de que recibas pacientes",
-  panelBody: "Tu perfil verificado es la confianza que un directorio genérico no puede dar. Sin tarjeta de crédito para empezar.",
-  // v2.4: "/" ahora es el marketplace de pacientes — el logo de esta
-  // pantalla debe volver a la página de reclutamiento de médicos, no
-  // ahí.
-  homeHref: "/para-medicos",
-};
+// Hook en vez de constante de módulo: el texto del panel depende del
+// idioma, que solo se conoce ya dentro del árbol de React.
+function usePanelCopy() {
+  const t = useT();
+  return {
+    panelTitle: t("auth.registroMedico.panelTitulo"),
+    panelBody: t("auth.registroMedico.panelCuerpo"),
+    // v2.4: "/" ahora es el marketplace de pacientes — el logo de esta
+    // pantalla debe volver a la página de reclutamiento de médicos, no
+    // ahí.
+    homeHref: "/para-medicos",
+  };
+}
 
 // PUB-03. M1-RN-002: registro de médico, queda en verification_status
 // = SUBMITTED tras verificar su email — la verificación de cédula es
 // manual por admin (M2), no ocurre en esta pantalla.
 export default function RegistroMedicoPage() {
   const router = useRouter();
+  const t = useT();
+  const PANEL_COPY = usePanelCopy();
   const [step, setStep] = useState<"form" | "verify" | "done">("form");
   const [userId, setUserId] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<unknown>(null);
 
   const { specialties, isLoading: specialtiesLoading, error: specialtiesError } = useSpecialties();
+  const specialtyName = useSpecialtyName();
 
-  const form = useForm<RegisterDoctorInput>({ resolver: zodResolver(registerDoctorSchema) });
+  const form = useForm<RegisterDoctorInput>({ resolver: useZodResolver<RegisterDoctorInput>(registerDoctorSchema) });
 
   async function onSubmit(values: RegisterDoctorInput) {
     setSubmitError(null);
@@ -56,12 +66,12 @@ export default function RegistroMedicoPage() {
     return (
       <AuthLayout {...PANEL_COPY}>
         <div className="flex flex-col items-center gap-4 text-center">
-          <h1 className="font-heading text-3xl text-brand-900">Cuenta creada</h1>
-          <Aviso variant="exito" title="Correo verificado">
-            Un administrador revisará tu cédula profesional antes de que puedas recibir pacientes.
+          <h1 className="font-heading text-3xl text-brand-900">{t("auth.registroMedico.listoTitulo")}</h1>
+          <Aviso variant="exito" title={t("auth.registroMedico.listoAviso")}>
+            {t("auth.registroMedico.listoCuerpo")}
           </Aviso>
           <Button onClick={() => router.push("/login")} className="mt-2 w-full">
-            Ir a iniciar sesión
+            {t("auth.registroMedico.irALogin")}
           </Button>
         </div>
       </AuthLayout>
@@ -72,20 +82,20 @@ export default function RegistroMedicoPage() {
     <AuthLayout {...PANEL_COPY}>
       <div className="flex flex-col gap-8">
         <div>
-          <h1 className="font-heading text-3xl text-brand-900">Crea tu cuenta</h1>
-          <p className="mt-2 text-base text-gray-500">Regístrate como médico para empezar a usar Medicfy.</p>
+          <h1 className="font-heading text-3xl text-brand-900">{t("auth.registroMedico.titulo")}</h1>
+          <p className="mt-2 text-base text-gray-500">{t("auth.registroMedico.subtitulo")}</p>
         </div>
 
         <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-5" noValidate>
-          <FieldWrapper label="Correo electrónico" htmlFor="email" error={form.formState.errors.email?.message}>
+          <FieldWrapper label={t("auth.campos.correo")} htmlFor="email" error={form.formState.errors.email?.message}>
             <TextInput id="email" type="email" autoComplete="email" error={!!form.formState.errors.email} {...form.register("email")} />
           </FieldWrapper>
 
           <FieldWrapper
-            label="Contraseña"
+            label={t("auth.campos.contrasena")}
             htmlFor="password"
             error={form.formState.errors.password?.message}
-            hint="Usa al menos 8 caracteres (letras, números o símbolos)."
+            hint={t("auth.campos.pistaContrasena")}
           >
             <PasswordInput
               id="password"
@@ -96,7 +106,7 @@ export default function RegistroMedicoPage() {
           </FieldWrapper>
 
           <div className="grid grid-cols-2 gap-4">
-            <FieldWrapper label="Nombre(s)" htmlFor="legalFirstName" error={form.formState.errors.legalFirstName?.message}>
+            <FieldWrapper label={t("auth.campos.nombres")} htmlFor="legalFirstName" error={form.formState.errors.legalFirstName?.message}>
               <TextInput
                 id="legalFirstName"
                 autoComplete="given-name"
@@ -107,7 +117,7 @@ export default function RegistroMedicoPage() {
                 {...form.register("legalFirstName")}
               />
             </FieldWrapper>
-            <FieldWrapper label="Apellidos" htmlFor="legalLastName" error={form.formState.errors.legalLastName?.message}>
+            <FieldWrapper label={t("auth.campos.apellidos")} htmlFor="legalLastName" error={form.formState.errors.legalLastName?.message}>
               <TextInput
                 id="legalLastName"
                 autoComplete="family-name"
@@ -121,7 +131,7 @@ export default function RegistroMedicoPage() {
           </div>
 
           <FieldWrapper
-            label="Cédula profesional"
+            label={t("auth.campos.cedula")}
             htmlFor="professionalLicense"
             error={form.formState.errors.professionalLicense?.message}
           >
@@ -133,9 +143,9 @@ export default function RegistroMedicoPage() {
           </FieldWrapper>
 
           <FieldWrapper
-            label="Especialidad principal"
+            label={t("auth.campos.especialidad")}
             htmlFor="primarySpecialtyCode"
-            error={form.formState.errors.primarySpecialtyCode?.message ?? (specialtiesError ? "No se pudo cargar el catálogo." : undefined)}
+            error={form.formState.errors.primarySpecialtyCode?.message ?? (specialtiesError ? t("auth.campos.catalogoNoCargo") : undefined)}
           >
             <SelectInput
               id="primarySpecialtyCode"
@@ -143,16 +153,16 @@ export default function RegistroMedicoPage() {
               error={!!form.formState.errors.primarySpecialtyCode}
               {...form.register("primarySpecialtyCode")}
             >
-              <option value="">{specialtiesLoading ? "Cargando…" : "Selecciona una especialidad"}</option>
+              <option value="">{specialtiesLoading ? t("common.estados.cargando") : t("auth.campos.seleccionaEspecialidad")}</option>
               {specialties.map((s) => (
                 <option key={s.code} value={s.code}>
-                  {s.nameEs}
+                  {specialtyName(s.code, s.nameEs)}
                 </option>
               ))}
             </SelectInput>
           </FieldWrapper>
 
-          <FieldWrapper label="Teléfono" htmlFor="phone" error={form.formState.errors.phone?.message} hint="10 dígitos.">
+          <FieldWrapper label={t("auth.campos.telefono")} htmlFor="phone" error={form.formState.errors.phone?.message} hint={t("auth.campos.pistaTelefono")}>
             <TextInput
               id="phone"
               type="tel"
@@ -175,14 +185,14 @@ export default function RegistroMedicoPage() {
           {submitError ? <ErrorState error={submitError} /> : null}
 
           <Button type="submit" isLoading={form.formState.isSubmitting} className="mt-1 w-full">
-            Crear cuenta
+            {t("auth.registroMedico.crearCuenta")}
           </Button>
         </form>
 
         <p className="text-center text-base text-gray-700">
-          ¿Ya tienes cuenta?{" "}
+          {t("auth.registroMedico.yaTienesCuenta")}{" "}
           <Link href="/login" className="font-medium text-brand-700 underline">
-            Inicia sesión
+            {t("auth.registroMedico.iniciaSesion")}
           </Link>
         </p>
       </div>
@@ -191,9 +201,11 @@ export default function RegistroMedicoPage() {
 }
 
 function VerifyEmailStep({ userId, onVerified }: { userId: string; onVerified: () => void }) {
+  const t = useT();
+  const PANEL_COPY = usePanelCopy();
   const [error, setError] = useState<unknown>(null);
   const form = useForm<Omit<EmailVerifyInput, "userId">>({
-    resolver: zodResolver(emailVerifySchema.omit({ userId: true })),
+    resolver: useZodResolver<Omit<EmailVerifyInput, "userId">>(emailVerifySchema.omit({ userId: true })),
     defaultValues: { code: "" },
   });
 
@@ -211,11 +223,11 @@ function VerifyEmailStep({ userId, onVerified }: { userId: string; onVerified: (
     <AuthLayout {...PANEL_COPY}>
       <div className="flex flex-col gap-8">
         <div>
-          <h1 className="font-heading text-3xl text-brand-900">Verifica tu correo</h1>
-          <p className="mt-2 text-base text-gray-500">Te enviamos un código de 6 dígitos.</p>
+          <h1 className="font-heading text-3xl text-brand-900">{t("auth.verificarCorreo.titulo")}</h1>
+          <p className="mt-2 text-base text-gray-500">{t("auth.verificarCorreo.subtitulo")}</p>
         </div>
         <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-5" noValidate>
-          <FieldWrapper label="Código" htmlFor="code" error={form.formState.errors.code?.message}>
+          <FieldWrapper label={t("auth.campos.codigo")} htmlFor="code" error={form.formState.errors.code?.message}>
             <TextInput
               id="code"
               inputMode="numeric"
@@ -228,7 +240,7 @@ function VerifyEmailStep({ userId, onVerified }: { userId: string; onVerified: (
           </FieldWrapper>
           {error ? <ErrorState error={error} /> : null}
           <Button type="submit" isLoading={form.formState.isSubmitting} className="mt-1 w-full">
-            Verificar
+            {t("auth.verificarCorreo.verificar")}
           </Button>
         </form>
       </div>

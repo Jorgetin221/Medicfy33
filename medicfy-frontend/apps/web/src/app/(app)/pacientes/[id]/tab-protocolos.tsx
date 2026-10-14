@@ -6,6 +6,10 @@ import type { TimelineEncounter } from "@/lib/use-patient-clinical";
 import { Card, EmptyState, ErrorState, LoadingState } from "@/components/ui/states";
 import { Button } from "@/components/ui/button";
 import { FieldWrapper, SelectInput, TextInput } from "@/components/ui/field";
+import { useI18n, useT, type TranslateFn } from "@/lib/i18n/context";
+import { formatDateLong } from "@/lib/i18n/format";
+import type { MessageKey } from "@/lib/i18n/dictionaries";
+import { translateKeyed } from "@/lib/i18n/keyed";
 
 interface TreatmentProtocolRecord {
   id: string;
@@ -34,29 +38,33 @@ interface PatientProtocolInstanceRecord {
   sessions: ProtocolSessionRecord[];
 }
 
-const CLOSURE_REASON_LABEL: Record<string, string> = {
-  COMPLETADO: "Completado",
-  ABANDONADO: "Abandonado",
-  CAMBIO_PLAN: "Cambio de plan",
-  REFERIDO: "Referido",
+const CLOSURE_REASON_LABEL_KEYS: Record<string, MessageKey> = {
+  COMPLETADO: "pacientes.protocolos.cierre.COMPLETADO",
+  ABANDONADO: "pacientes.protocolos.cierre.ABANDONADO",
+  CAMBIO_PLAN: "pacientes.protocolos.cierre.CAMBIO_PLAN",
+  REFERIDO: "pacientes.protocolos.cierre.REFERIDO",
 };
 
-const MX_TIME_ZONE = "America/Mexico_City";
-function formatMxDate(iso: string): string {
-  return new Intl.DateTimeFormat("es-MX", { timeZone: MX_TIME_ZONE, dateStyle: "long" }).format(new Date(iso));
-}
 
 // Fase 7 · Prompt 48B — vista de adherencia: qué sesiones se
 // cumplieron dentro de ventana y cuáles no. Color + texto siempre
 // (CLAUDE.md §5) — nunca solo el color.
-function sessionStatusBadge(session: ProtocolSessionRecord) {
+function sessionStatusBadge(t: TranslateFn, session: ProtocolSessionRecord) {
   if (!session.actualDate) {
-    return <span className="rounded-full border border-gray-300 px-2 py-0.5 text-xs font-medium text-gray-500">Pendiente</span>;
+    return <span className="rounded-full border border-gray-300 px-2 py-0.5 text-xs font-medium text-gray-500">{t("pacientes.protocolos.pendiente")}</span>;
   }
   if (session.withinWindow) {
-    return <span className="rounded-full border border-success-600 px-2 py-0.5 text-xs font-medium text-success-600">Cumplida en ventana</span>;
+    return (
+      <span className="rounded-full border border-success-600 px-2 py-0.5 text-xs font-medium text-success-600">
+        {t("pacientes.protocolos.enVentana")}
+      </span>
+    );
   }
-  return <span className="rounded-full border border-warn-600 px-2 py-0.5 text-xs font-medium text-warn-600">Cumplida fuera de ventana</span>;
+  return (
+    <span className="rounded-full border border-warn-600 px-2 py-0.5 text-xs font-medium text-warn-600">
+      {t("pacientes.protocolos.fueraVentana")}
+    </span>
+  );
 }
 
 // Registrar sesión: fecha real + liga opcional a una nota ya firmada
@@ -83,6 +91,7 @@ function RecordSessionForm({
   onRecorded: () => void;
   onCancel: () => void;
 }) {
+  const { t, locale } = useI18n();
   const [actualDate, setActualDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [encounterId, setEncounterId] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -109,25 +118,25 @@ function RecordSessionForm({
   return (
     <form onSubmit={onSubmit} className="mt-2 flex flex-col gap-3 rounded-md border border-gray-300 p-3" noValidate>
       {error ? <ErrorState error={error} /> : null}
-      <FieldWrapper label="Fecha real" htmlFor={`session-date-${sessionId}`}>
+      <FieldWrapper label={t("pacientes.protocolos.fechaReal")} htmlFor={`session-date-${sessionId}`}>
         <TextInput id={`session-date-${sessionId}`} type="date" required value={actualDate} onChange={(e) => setActualDate(e.target.value)} />
       </FieldWrapper>
-      <FieldWrapper label="Ligar a una nota firmada (opcional)" htmlFor={`session-encounter-${sessionId}`}>
+      <FieldWrapper label={t("pacientes.protocolos.ligarNota")} htmlFor={`session-encounter-${sessionId}`}>
         <SelectInput id={`session-encounter-${sessionId}`} value={encounterId} onChange={(e) => setEncounterId(e.target.value)}>
-          <option value="">Sin ligar</option>
+          <option value="">{t("pacientes.protocolos.sinLigar")}</option>
           {signedEncounters.map((e) => (
             <option key={e.id} value={e.id}>
-              {formatMxDate(e.signedAt ?? e.startedAt)}
+              {formatDateLong(locale, e.signedAt ?? e.startedAt)}
             </option>
           ))}
         </SelectInput>
       </FieldWrapper>
       <div className="flex gap-3">
         <Button type="submit" isLoading={isSubmitting}>
-          Registrar
+          {t("pacientes.protocolos.registrar")}
         </Button>
         <Button type="button" variant="secondary" onClick={onCancel}>
-          Cancelar
+          {t("common.acciones.cancelar")}
         </Button>
       </div>
     </form>
@@ -147,6 +156,7 @@ function CloseInstanceForm({
   onClosed: () => void;
   onCancel: () => void;
 }) {
+  const t = useT();
   const [closureReason, setClosureReason] = useState("COMPLETADO");
   const [closureNotes, setClosureNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -173,16 +183,16 @@ function CloseInstanceForm({
   return (
     <form onSubmit={onSubmit} className="mt-3 flex flex-col gap-3 rounded-md border border-gray-300 p-3" noValidate>
       {error ? <ErrorState error={error} /> : null}
-      <FieldWrapper label="Motivo de cierre" htmlFor="closure-reason">
+      <FieldWrapper label={t("pacientes.protocolos.motivoCierre")} htmlFor="closure-reason">
         <SelectInput id="closure-reason" value={closureReason} onChange={(e) => setClosureReason(e.target.value)}>
-          {Object.entries(CLOSURE_REASON_LABEL).map(([value, label]) => (
+          {Object.entries(CLOSURE_REASON_LABEL_KEYS).map(([value, labelKey]) => (
             <option key={value} value={value}>
-              {label}
+              {t(labelKey)}
             </option>
           ))}
         </SelectInput>
       </FieldWrapper>
-      <FieldWrapper label="Notas (opcional)" htmlFor="closure-notes">
+      <FieldWrapper label={t("pacientes.protocolos.notas")} htmlFor="closure-notes">
         <TextInput id="closure-notes" value={closureNotes} onChange={(e) => setClosureNotes(e.target.value)} />
       </FieldWrapper>
       <div className="flex gap-3">
@@ -190,10 +200,10 @@ function CloseInstanceForm({
             formulario de cierre que el usuario ya abrió, con motivo elegido — es el
             paso de confirmación, no una acción en reposo. Ver ui/button.tsx. */}
         <Button type="submit" variant="danger" isLoading={isSubmitting}>
-          Cerrar instancia
+          {t("pacientes.protocolos.cerrarInstancia")}
         </Button>
         <Button type="button" variant="secondary" onClick={onCancel}>
-          Cancelar
+          {t("common.acciones.cancelar")}
         </Button>
       </div>
     </form>
@@ -211,6 +221,7 @@ function StartInstanceForm({
   accessToken: string;
   onStarted: () => void;
 }) {
+  const t = useT();
   const [isOpen, setIsOpen] = useState(false);
   const [protocolId, setProtocolId] = useState(protocols[0]?.id ?? "");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -240,7 +251,7 @@ function StartInstanceForm({
   if (!isOpen) {
     return (
       <Button type="button" variant="secondary" onClick={() => setIsOpen(true)}>
-        + Iniciar protocolo
+        {t("pacientes.protocolos.iniciarProtocolo")}
       </Button>
     );
   }
@@ -248,7 +259,7 @@ function StartInstanceForm({
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-3 rounded-md border border-gray-300 p-4" noValidate>
       {error ? <ErrorState error={error} /> : null}
-      <FieldWrapper label="Protocolo" htmlFor="start-protocol">
+      <FieldWrapper label={t("pacientes.protocolos.protocolo")} htmlFor="start-protocol">
         <SelectInput id="start-protocol" value={protocolId} onChange={(e) => setProtocolId(e.target.value)}>
           {protocols.map((p) => (
             <option key={p.id} value={p.id}>
@@ -258,14 +269,14 @@ function StartInstanceForm({
         </SelectInput>
       </FieldWrapper>
       {!protocols.find((p) => p.id === protocolId)?.sourceCitation ? (
-        <p className="text-sm text-warn-600">Este protocolo no tiene una fuente clínica citada — es de demostración, no para uso clínico real.</p>
+        <p className="text-sm text-warn-600">{t("pacientes.protocolos.sinFuenteAviso")}</p>
       ) : null}
       <div className="flex gap-3">
         <Button type="submit" isLoading={isSubmitting}>
-          Iniciar
+          {t("pacientes.protocolos.iniciar")}
         </Button>
         <Button type="button" variant="secondary" onClick={() => setIsOpen(false)}>
-          Cancelar
+          {t("common.acciones.cancelar")}
         </Button>
       </div>
     </form>
@@ -275,6 +286,7 @@ function StartInstanceForm({
 // Fase 7 · Prompt 47/48 — protocolos longitudinales del paciente:
 // instancias activas/cerradas y su adherencia por sesión.
 export function TabProtocolos({ patientId, accessToken, encounters }: { patientId: string; accessToken: string; encounters: TimelineEncounter[] }) {
+  const { t, locale } = useI18n();
   const [instances, setInstances] = useState<PatientProtocolInstanceRecord[] | null>(null);
   const [protocols, setProtocols] = useState<TreatmentProtocolRecord[] | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -297,13 +309,13 @@ export function TabProtocolos({ patientId, accessToken, encounters }: { patientI
   const signedEncounters = encounters.filter((e) => e.status === "SIGNED");
 
   if (error && !instances) return <ErrorState error={error} onRetry={load} />;
-  if (!instances) return <LoadingState label="Cargando protocolos…" />;
+  if (!instances) return <LoadingState label={t("pacientes.protocolos.cargando")} />;
 
   return (
     <div className="flex flex-col gap-4">
       {error ? <ErrorState error={error} /> : null}
       {instances.length === 0 ? (
-        <EmptyState title="Sin protocolos iniciados" description="Inicia un protocolo de seguimiento longitudinal para este paciente." />
+        <EmptyState title={t("pacientes.protocolos.vacio")} description={t("pacientes.protocolos.vacioAyuda")} />
       ) : (
         <ul className="flex flex-col gap-3">
           {instances.map((instance) => (
@@ -313,13 +325,16 @@ export function TabProtocolos({ patientId, accessToken, encounters }: { patientI
                   <div>
                     <p className="text-base font-medium text-gray-900">{instance.protocol.name}</p>
                     <p className="text-sm text-gray-500">
-                      Iniciado {formatMxDate(instance.startedAt)}
+                      {t("pacientes.protocolos.iniciado", { fecha: formatDateLong(locale, instance.startedAt) })}
                       {instance.status === "CLOSED"
-                        ? ` · Cerrado ${formatMxDate(instance.closedAt as string)} · ${CLOSURE_REASON_LABEL[instance.closureReason as string] ?? instance.closureReason}`
+                        ? t("pacientes.protocolos.cerrado", {
+                            fecha: formatDateLong(locale, instance.closedAt as string),
+                            motivo: translateKeyed(t, CLOSURE_REASON_LABEL_KEYS, instance.closureReason as string),
+                          })
                         : ""}
                     </p>
                     {!instance.protocol.sourceCitation ? (
-                      <p className="text-sm text-warn-600">Sin fuente clínica citada — protocolo de demostración.</p>
+                      <p className="text-sm text-warn-600">{t("pacientes.protocolos.sinFuente")}</p>
                     ) : null}
                   </div>
                   <span
@@ -327,7 +342,7 @@ export function TabProtocolos({ patientId, accessToken, encounters }: { patientI
                       instance.status === "ACTIVE" ? "border-success-600 text-success-600" : "border-gray-300 text-gray-500"
                     }`}
                   >
-                    {instance.status === "ACTIVE" ? "Activo" : "Cerrado"}
+                    {instance.status === "ACTIVE" ? t("pacientes.protocolos.activo") : t("pacientes.protocolos.cerradoEstado")}
                   </span>
                 </div>
 
@@ -338,15 +353,15 @@ export function TabProtocolos({ patientId, accessToken, encounters }: { patientI
                         <div>
                           <p className="text-base text-gray-900">{session.template.label}</p>
                           <p className="text-sm text-gray-500">
-                            Propuesta {formatMxDate(session.proposedDate)}
-                            {session.actualDate ? ` · Real ${formatMxDate(session.actualDate)}` : ""}
+                            {t("pacientes.protocolos.propuesta", { fecha: formatDateLong(locale, session.proposedDate) })}
+                            {session.actualDate ? t("pacientes.protocolos.real", { fecha: formatDateLong(locale, session.actualDate) }) : ""}
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
-                          {sessionStatusBadge(session)}
+                          {sessionStatusBadge(t, session)}
                           {!session.actualDate && instance.status === "ACTIVE" && recordingSessionId !== session.id ? (
                             <Button type="button" variant="secondary" className="min-h-11 px-3 text-sm" onClick={() => setRecordingSessionId(session.id)}>
-                              Registrar sesión
+                              {t("pacientes.protocolos.registrarSesion")}
                             </Button>
                           ) : null}
                         </div>
@@ -383,7 +398,7 @@ export function TabProtocolos({ patientId, accessToken, encounters }: { patientI
                     />
                   ) : (
                     <Button type="button" variant="secondary" className="mt-3 min-h-11 px-3 text-sm" onClick={() => setClosingInstanceId(instance.id)}>
-                      Cerrar instancia
+                      {t("pacientes.protocolos.cerrarInstancia")}
                     </Button>
                   )
                 ) : null}

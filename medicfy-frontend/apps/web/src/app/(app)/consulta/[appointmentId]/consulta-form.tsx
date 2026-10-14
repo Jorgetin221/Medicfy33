@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
 import {
   clinicalNoteSignSchema,
   type ClinicalNoteDraftUpdateInput,
@@ -25,7 +24,9 @@ import { Icd10Picker } from "@/components/clinical/icd10-picker";
 import { NoteTemplateBar } from "@/components/clinical/note-template-bar";
 import { AntecedentesEditor, AntecedentesSummary } from "@/components/clinical/antecedentes-editor";
 import type { PatientHistoryItem } from "@/lib/use-patient-clinical";
-import { ENCOUNTER_TYPE_LABEL, patientAgeYears, type EncounterDetail } from "./types";
+import { ENCOUNTER_TYPE_LABEL_KEY, patientAgeYears, type EncounterDetail } from "./types";
+import { useT } from "@/lib/i18n/context";
+import { useZodResolver } from "@/lib/i18n/validation";
 
 type FreeTextField = "chiefComplaint" | "currentIllness" | "physicalExam" | "assessment" | "plan" | "prognosis";
 
@@ -84,6 +85,7 @@ export function ConsultaForm({
   onSigned: () => void;
   onAbandoned: () => void;
 }) {
+  const t = useT();
   const [isHydrated, setIsHydrated] = useState(false);
   const [showAntecedentesEditor, setShowAntecedentesEditor] = useState(false);
   const [activeField, setActiveField] = useState<FreeTextField>("plan");
@@ -108,7 +110,7 @@ export function ConsultaForm({
   const targetLabel = encounter.encounterType === "FIRST_VISIT" ? "12–15 min" : "3–4 min";
 
   const form = useForm<ClinicalNoteSignInput>({
-    resolver: zodResolver(clinicalNoteSignSchema),
+    resolver: useZodResolver<ClinicalNoteSignInput>(clinicalNoteSignSchema),
     defaultValues: {
       chiefComplaint: "",
       currentIllness: "",
@@ -380,14 +382,14 @@ export function ConsultaForm({
     <div className="flex flex-1 flex-col gap-6 pb-24">
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-gray-300 bg-white p-3">
         <div>
-          <p className="text-base font-medium text-brand-900">{ENCOUNTER_TYPE_LABEL[encounter.encounterType]}</p>
+          <p className="text-base font-medium text-brand-900">{t(ENCOUNTER_TYPE_LABEL_KEY[encounter.encounterType])}</p>
           {/* CLAUDE.md §6: dos modos con tiempo objetivo — Historia
               Clínica 12–15 min, Nota de Evolución 3–4 min. Rebasado el
               objetivo lo dice el TEXTO además del color (el color
               nunca es el único portador de significado). */}
           <p className={`text-sm ${elapsedSeconds > targetSeconds ? "font-medium text-warn-600" : "text-gray-500"}`}>
-            Tiempo transcurrido: {formatElapsed(elapsedSeconds)} · objetivo {targetLabel}
-            {elapsedSeconds > targetSeconds ? " — rebasado" : ""}
+            {t("consulta.tiempo", { transcurrido: formatElapsed(elapsedSeconds), objetivo: targetLabel })}
+            {elapsedSeconds > targetSeconds ? t("consulta.rebasado") : ""}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -395,14 +397,14 @@ export function ConsultaForm({
           {/* Prompt 32 (F4): "la receta pertenece a una nota firmada;
               un borrador no emite recetas" — receta, órdenes e
               indicaciones se emiten AL FIRMAR, en la vista siguiente. */}
-          <p className="text-sm text-gray-500">Receta y órdenes se emiten al firmar la consulta.</p>
+          <p className="text-sm text-gray-500">{t("consulta.emisionAlFirmar")}</p>
         </div>
       </div>
 
       <NoteTemplateBar accessToken={accessToken} onInsert={insertTemplate} pendingContent={form.getValues(activeField) ?? ""} />
 
       <form onSubmit={(e) => e.preventDefault()} className="flex flex-col gap-6" noValidate>
-        <FieldWrapper label="Motivo de consulta" htmlFor="chiefComplaint" error={form.formState.errors.chiefComplaint?.message}>
+        <FieldWrapper label={t("consulta.campos.motivoConsulta")} htmlFor="chiefComplaint" error={form.formState.errors.chiefComplaint?.message}>
           <Textarea
             id="chiefComplaint"
             rows={2}
@@ -416,7 +418,7 @@ export function ConsultaForm({
           />
         </FieldWrapper>
 
-        <FieldWrapper label="Padecimiento actual" htmlFor="currentIllness" error={form.formState.errors.currentIllness?.message}>
+        <FieldWrapper label={t("consulta.campos.padecimientoActual")} htmlFor="currentIllness" error={form.formState.errors.currentIllness?.message}>
           <Textarea
             id="currentIllness"
             rows={4}
@@ -431,7 +433,7 @@ export function ConsultaForm({
         </FieldWrapper>
 
         <section>
-          <h2 className="mb-2 text-base font-semibold text-gray-900">Antecedentes</h2>
+          <h2 className="mb-2 text-base font-semibold text-gray-900">{t("consulta.campos.antecedentes")}</h2>
           {encounter.encounterType === "FIRST_VISIT" ? (
             // M8-RN-012 "Modo Historia Clínica (primera vez)": los
             // antecedentes se capturan aquí — viven en el paciente, no
@@ -446,7 +448,7 @@ export function ConsultaForm({
             <div className="flex flex-col gap-2">
               <AntecedentesSummary historyItems={historyItems} />
               <Button type="button" variant="secondary" className="w-fit" onClick={() => setShowAntecedentesEditor((v) => !v)}>
-                {showAntecedentesEditor ? "Ocultar antecedentes" : "Actualizar antecedentes"}
+                {showAntecedentesEditor ? t("consulta.campos.ocultarAntecedentes") : t("consulta.campos.actualizarAntecedentes")}
               </Button>
               {showAntecedentesEditor && (
                 <AntecedentesEditor patientId={encounter.patientId} accessToken={accessToken} historyItems={historyItems} onChanged={onHistoryChanged} />
@@ -456,7 +458,7 @@ export function ConsultaForm({
         </section>
 
         <section>
-          <h2 className="mb-2 text-base font-semibold text-gray-900">Signos vitales</h2>
+          <h2 className="mb-2 text-base font-semibold text-gray-900">{t("consulta.campos.signosVitales")}</h2>
           <VitalsFields form={form} patientAgeYears={patientBirthDate ? patientAgeYears(patientBirthDate) : null} />
         </section>
 
@@ -467,7 +469,7 @@ export function ConsultaForm({
           patientAgeYears={patientBirthDate ? patientAgeYears(patientBirthDate) : null}
         />
 
-        <FieldWrapper label="Exploración física (opcional)" htmlFor="physicalExam">
+        <FieldWrapper label={t("consulta.campos.exploracionFisica")} htmlFor="physicalExam">
           <Textarea
             id="physicalExam"
             rows={4}
@@ -481,7 +483,7 @@ export function ConsultaForm({
         </FieldWrapper>
 
         <section>
-          <h2 className="mb-2 text-base font-semibold text-gray-900">Diagnósticos</h2>
+          <h2 className="mb-2 text-base font-semibold text-gray-900">{t("consulta.campos.diagnosticos")}</h2>
           <Icd10Picker accessToken={accessToken} selected={diagnoses} onChange={handleDiagnosesChange} />
           {diagnosesErrorMessage ? (
             <p role="alert" className="mt-1 flex items-center gap-1 text-sm text-danger-600">
@@ -490,7 +492,7 @@ export function ConsultaForm({
           ) : null}
         </section>
 
-        <FieldWrapper label="Análisis" htmlFor="assessment" error={form.formState.errors.assessment?.message}>
+        <FieldWrapper label={t("consulta.campos.analisis")} htmlFor="assessment" error={form.formState.errors.assessment?.message}>
           <Textarea
             id="assessment"
             rows={3}
@@ -504,7 +506,7 @@ export function ConsultaForm({
           />
         </FieldWrapper>
 
-        <FieldWrapper label="Plan" htmlFor="plan" error={form.formState.errors.plan?.message}>
+        <FieldWrapper label={t("consulta.campos.plan")} htmlFor="plan" error={form.formState.errors.plan?.message}>
           <Textarea
             id="plan"
             rows={3}
@@ -531,14 +533,14 @@ export function ConsultaForm({
             llano, separado de la nota técnica; se imprime como PDF
             propio desde la nota firmada. */}
         <FieldWrapper
-          label="Indicaciones al paciente (opcional)"
+          label={t("consulta.campos.indicaciones")}
           htmlFor="patientInstructions"
-          hint="Qué hacer, cuidados y signos de alarma, en palabras para el paciente. Se imprime como documento aparte."
+          hint={t("consulta.campos.indicacionesAyuda")}
         >
           <Textarea id="patientInstructions" rows={3} {...form.register("patientInstructions")} />
         </FieldWrapper>
 
-        <FieldWrapper label="Próxima cita sugerida (días, opcional)" htmlFor="suggestedFollowUpDays">
+        <FieldWrapper label={t("consulta.campos.proximaCita")} htmlFor="suggestedFollowUpDays">
           <TextInput
             id="suggestedFollowUpDays"
             type="number"
@@ -552,7 +554,7 @@ export function ConsultaForm({
           />
         </FieldWrapper>
 
-        <FieldWrapper label="Pronóstico (opcional)" htmlFor="prognosis">
+        <FieldWrapper label={t("consulta.campos.pronostico")} htmlFor="prognosis">
           <Textarea
             id="prognosis"
             rows={2}
@@ -572,11 +574,11 @@ export function ConsultaForm({
           <div className="flex items-center gap-3">
             <IndicadorGuardado state={saveState} lastSavedAt={lastSavedAt} />
             {planPanelOpen ? (
-              <span className="text-sm text-warn-600">Cierra el panel de receta/estudios para firmar.</span>
+              <span className="text-sm text-warn-600">{t("consulta.firma.cierraPanel")}</span>
             ) : null}
           </div>
           <Button type="button" isLoading={isSigning} disabled={planPanelOpen} onClick={handleSignClick} className="px-6">
-            Firmar y cerrar consulta <span className="ml-1 opacity-70">⌘/Ctrl+Enter</span>
+            {t("consulta.firma.firmarYCerrar")} <span className="ml-1 opacity-70">⌘/Ctrl+Enter</span>
           </Button>
         </div>
       </div>
@@ -588,7 +590,7 @@ export function ConsultaForm({
           register() no depende de dónde en el DOM se monte el campo,
           así que handleSignSubmit (form.handleSubmit(onSign)) los
           incluye igual que cualquier otro campo de la nota. */}
-      <Panel open={showReauthPanel} onClose={closeReauthPanel} title="Confirma tu identidad para firmar">
+      <Panel open={showReauthPanel} onClose={closeReauthPanel} title={t("consulta.firma.panelTitulo")}>
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -598,12 +600,12 @@ export function ConsultaForm({
           noValidate
         >
           <p className="text-base text-gray-700">
-            Una vez firmada, esta consulta no se puede editar — solo corregir con una nota nueva (adenda).
+            {t("consulta.firma.advertencia")}
           </p>
-          <FieldWrapper label="Contraseña" htmlFor="sign-password" error={form.formState.errors.password?.message}>
+          <FieldWrapper label={t("consulta.firma.contrasena")} htmlFor="sign-password" error={form.formState.errors.password?.message}>
             <PasswordInput id="sign-password" autoComplete="current-password" error={!!form.formState.errors.password} {...form.register("password")} />
           </FieldWrapper>
-          <FieldWrapper label="Código de verificación (TOTP)" htmlFor="sign-totp-code" error={form.formState.errors.totpCode?.message}>
+          <FieldWrapper label={t("consulta.firma.totp")} htmlFor="sign-totp-code" error={form.formState.errors.totpCode?.message}>
             <TextInput
               id="sign-totp-code"
               inputMode="numeric"
@@ -614,16 +616,16 @@ export function ConsultaForm({
             />
           </FieldWrapper>
           {signError ? (
-            <Aviso variant="critico" title="No se pudo firmar la consulta">
-              {signError instanceof ApiError ? signError.message : "Intenta de nuevo."}
+            <Aviso variant="critico" title={t("consulta.firma.errorTitulo")}>
+              {signError instanceof ApiError ? signError.message : t("consulta.firma.intentaDeNuevo")}
             </Aviso>
           ) : null}
           <div className="flex gap-3">
             <Button type="submit" isLoading={isSigning} className="px-6">
-              Firmar
+              {t("consulta.firma.firmar")}
             </Button>
             <Button type="button" variant="secondary" onClick={closeReauthPanel}>
-              Cancelar
+              {t("common.acciones.cancelar")}
             </Button>
           </div>
         </form>

@@ -9,6 +9,8 @@ import { useSpecialties } from "@/lib/use-specialties";
 import type { DoctorVerificationStatus } from "@/lib/use-doctor-profile";
 import { Card, LoadingState, EmptyState, ErrorState } from "@/components/ui/states";
 import { SelectInput, FieldWrapper } from "@/components/ui/field";
+import { useT, type TranslateFn } from "@/lib/i18n/context";
+import type { MessageKey } from "@/lib/i18n/dictionaries";
 
 interface AdminDoctorListItem {
   id: string;
@@ -27,30 +29,30 @@ interface AdminDoctorListItem {
 // el médico sigue en cola, no después de resuelto.
 const PENDING_STATUSES: DoctorVerificationStatus[] = ["SUBMITTED", "IN_REVIEW"];
 
-function formatAntiguedad(hours: number): string {
-  if (hours < 24) return `${hours} h hábiles en cola`;
+function formatAntiguedad(t: TranslateFn, hours: number): string {
+  if (hours < 24) return t("admin.cola.horasEnCola", { h: hours });
   const days = Math.floor(hours / 24);
-  return `${days} ${days === 1 ? "día hábil" : "días hábiles"} en cola`;
+  return days === 1 ? t("admin.cola.diaEnCola", { d: days }) : t("admin.cola.diasEnCola", { d: days });
 }
 
-const STATUS_LABELS: Record<DoctorVerificationStatus, string> = {
-  DRAFT: "Borrador",
-  SUBMITTED: "Por revisar",
-  IN_REVIEW: "En revisión",
-  VERIFIED: "Verificado",
-  VERIFIED_SPECIALTY_UNCONFIRMED: "Verificado (especialidad sin confirmar)",
-  REJECTED: "Rechazado",
-  SUSPENDED: "Suspendido",
+const STATUS_LABEL_KEYS: Record<DoctorVerificationStatus, MessageKey> = {
+  DRAFT: "admin.verificacionEstado.DRAFT",
+  SUBMITTED: "admin.verificacionEstado.SUBMITTED",
+  IN_REVIEW: "admin.verificacionEstado.IN_REVIEW",
+  VERIFIED: "admin.verificacionEstado.VERIFIED",
+  VERIFIED_SPECIALTY_UNCONFIRMED: "admin.verificacionEstado.VERIFIED_SPECIALTY_UNCONFIRMED",
+  REJECTED: "admin.verificacionEstado.REJECTED",
+  SUSPENDED: "admin.verificacionEstado.SUSPENDED",
 };
 
-const FILTER_OPTIONS: { value: DoctorVerificationStatus | ""; label: string }[] = [
-  { value: "SUBMITTED", label: "Por revisar" },
-  { value: "IN_REVIEW", label: "En revisión" },
-  { value: "VERIFIED", label: "Verificado" },
-  { value: "VERIFIED_SPECIALTY_UNCONFIRMED", label: "Verificado (especialidad sin confirmar)" },
-  { value: "REJECTED", label: "Rechazado" },
-  { value: "SUSPENDED", label: "Suspendido" },
-  { value: "", label: "Todos" },
+const FILTER_OPTIONS: { value: DoctorVerificationStatus | ""; labelKey: MessageKey }[] = [
+  { value: "SUBMITTED", labelKey: "admin.verificacionEstado.SUBMITTED" },
+  { value: "IN_REVIEW", labelKey: "admin.verificacionEstado.IN_REVIEW" },
+  { value: "VERIFIED", labelKey: "admin.verificacionEstado.VERIFIED" },
+  { value: "VERIFIED_SPECIALTY_UNCONFIRMED", labelKey: "admin.verificacionEstado.VERIFIED_SPECIALTY_UNCONFIRMED" },
+  { value: "REJECTED", labelKey: "admin.verificacionEstado.REJECTED" },
+  { value: "SUSPENDED", labelKey: "admin.verificacionEstado.SUSPENDED" },
+  { value: "", labelKey: "admin.verificacionEstado.TODOS" },
 ];
 
 // ADM-01. Sin gate de rol en el cliente — si quien llama no es ADMIN,
@@ -79,6 +81,7 @@ export default function AdminVerificacionPage() {
 }
 
 function VerificacionList({ accessToken }: { accessToken: string }) {
+  const t = useT();
   const { specialties } = useSpecialties();
   const [status, setStatus] = useState<DoctorVerificationStatus | "">("SUBMITTED");
   const [doctors, setDoctors] = useState<AdminDoctorListItem[] | null>(null);
@@ -100,17 +103,17 @@ function VerificacionList({ accessToken }: { accessToken: string }) {
   return (
     <main className="mx-auto flex max-w-4xl flex-col gap-6 p-6">
       <div>
-        <h1 className="font-heading text-2xl text-brand-900">Cola de verificación</h1>
-        <p className="text-base text-gray-500">Médicos que han enviado documentos para verificar su cédula.</p>
+        <h1 className="font-heading text-2xl text-brand-900">{t("admin.cola.titulo")}</h1>
+        <p className="text-base text-gray-500">{t("admin.cola.subtitulo")}</p>
       </div>
 
       <Card>
         <div className="max-w-xs">
-          <FieldWrapper label="Estado" htmlFor="status-filter">
+          <FieldWrapper label={t("admin.cola.estado")} htmlFor="status-filter">
             <SelectInput id="status-filter" value={status} onChange={(e) => setStatus(e.target.value as DoctorVerificationStatus | "")}>
               {FILTER_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
-                  {opt.label}
+                  {t(opt.labelKey)}
                 </option>
               ))}
             </SelectInput>
@@ -121,12 +124,12 @@ function VerificacionList({ accessToken }: { accessToken: string }) {
           {doctors === null && !error ? <LoadingState /> : null}
           {error ? <ErrorState error={error} onRetry={load} /> : null}
           {doctors && doctors.length === 0 ? (
-            <EmptyState title="Sin médicos en este estado" description="Cambia el filtro para ver otros estados." />
+            <EmptyState title={t("admin.cola.vacio")} description={t("admin.cola.vacioAyuda")} />
           ) : null}
           {doctors && doctors.length > 0 ? (
             <ul className="flex flex-col gap-2">
               {doctors.map((doctor) => {
-                const specialtyName = specialties.find((s) => s.id === doctor.primarySpecialtyId)?.nameEs ?? "Medicina General";
+                const specialtyName = specialties.find((s) => s.id === doctor.primarySpecialtyId)?.nameEs ?? t("catalogos.especialidades.GENERAL");
                 return (
                   <li key={doctor.id}>
                     <Link
@@ -138,15 +141,15 @@ function VerificacionList({ accessToken }: { accessToken: string }) {
                           {doctor.legalFirstName} {doctor.legalLastName}
                         </p>
                         <p className="text-sm text-gray-500">
-                          Cédula {doctor.professionalLicense} · {specialtyName} · {formatAntiguedad(doctor.businessHoursWaiting)}
+                          {t("admin.usuarios.cedula", { numero: doctor.professionalLicense })} · {specialtyName} · {formatAntiguedad(t, doctor.businessHoursWaiting)}
                         </p>
                         {PENDING_STATUSES.includes(doctor.verificationStatus) && doctor.businessHoursWaiting >= 24 ? (
                           <span className="mt-1 inline-block rounded-full border border-danger-600 px-2 py-0.5 text-xs font-semibold text-danger-600">
-                            ⏱ Más de 24 h hábiles esperando
+                            {t("admin.cola.masDe24hBadge")}
                           </span>
                         ) : null}
                       </div>
-                      <span className="whitespace-nowrap text-sm font-medium text-brand-700">{STATUS_LABELS[doctor.verificationStatus]}</span>
+                      <span className="whitespace-nowrap text-sm font-medium text-brand-700">{t(STATUS_LABEL_KEYS[doctor.verificationStatus])}</span>
                     </Link>
                   </li>
                 );

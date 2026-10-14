@@ -1,0 +1,56 @@
+// DOC-01: agenda del día del médico.
+export const agenda = {
+  titulo: "Agenda",
+  bloquearHorario: "Bloquear horario",
+  nuevaCita: "+ Nueva cita",
+  sinCitasHoy: "Sin citas para hoy",
+  sinCitasHoyAyuda: "Las citas que agendes para hoy aparecerán aquí.",
+  confirmarCancelar: "¿Cancelar esta cita?",
+  confirmarNoShow: "¿Marcar esta cita como no presentado?",
+  acciones: {
+    confirmar: "Confirmar",
+    iniciar: "Iniciar",
+    cancelar: "Cancelar",
+    noSePresento: "No se presentó",
+    continuarConsulta: "Continuar consulta",
+    cerrarSinNota: "Cerrar sin nota clínica",
+    confirmarCierre: "Confirmar cierre",
+    abrirConsulta: "Abrir consulta",
+  },
+  justificacionCierre:
+    'Justificación — excepción M5-RN-006: cierra la cita sin nota clínica firmada. La ruta normal es firmar la consulta desde "Continuar consulta".',
+  resumen: {
+    titulo: "Resumen del día",
+    atendidas: "Atendidas",
+    enConsulta: "En consulta",
+    porAtender: "Por atender",
+    ausente: "Ausente",
+  },
+  leyenda: "Estados de cita",
+  siguiente: "Siguiente",
+};
+
+// Agendar una cita nueva desde el lado del médico.
+export const citaNueva = {
+  titulo: "Nueva cita",
+  subtitulo: "Elige paciente, servicio y un espacio disponible.",
+  agendada: "Cita agendada",
+  verPerfilPaciente: "Ver perfil del paciente",
+  atenderAhora: "¿No necesitas agendar? Puedes atenderlo ahora mismo, sin reservar un horario.",
+  espaciosDisponibles: "Espacios disponibles",
+  sinEspacios: "Sin espacios disponibles",
+  sinEspaciosAyuda: "Prueba con otro servicio o configura más horario.",
+  elPaciente: "El paciente",
+  agendadaCuerpo: "{paciente} — {fecha} a las {hora}.",
+  irALaAgenda: "Ir a la agenda",
+  paciente: "Paciente",
+  sinPacientes: "Sin pacientes registrados.",
+  registraUno: "Registra uno primero.",
+  servicio: "Servicio",
+  sinServicios: "Sin servicios configurados.",
+  configuraAgenda: "Configura tu agenda primero.",
+  atenderAhoraBoton: "Atender ahora sin cita",
+  irADisponibilidad: "Ir a Disponibilidad",
+  agendando: "Agendando…",
+  seleccionaPaciente: "Selecciona un paciente para poder agendar.",
+};

@@ -6,17 +6,15 @@ import { LoadingState, ErrorState } from "@/components/ui/states";
 import { FieldWrapper, SelectInput, TextInput } from "@/components/ui/field";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Button } from "@/components/ui/button";
+import { useI18n, useT, type TranslateFn } from "@/lib/i18n/context";
+import { formatDateTimeMedium } from "@/lib/i18n/format";
+import type { MessageKey } from "@/lib/i18n/dictionaries";
 
-const MX_TIME_ZONE = "America/Mexico_City";
-function formatMxDateTime(iso: string): string {
-  return new Intl.DateTimeFormat("es-MX", { timeZone: MX_TIME_ZONE, dateStyle: "medium", timeStyle: "short" }).format(new Date(iso));
-}
-
-const ENCOUNTER_TYPE_LABEL: Record<string, string> = {
-  FIRST_VISIT: "Primera vez",
-  FOLLOW_UP: "Seguimiento",
-  TELECONSULTATION: "Teleconsulta",
-  URGENT: "Urgencia",
+const ENCOUNTER_TYPE_LABEL_KEY: Record<string, MessageKey> = {
+  FIRST_VISIT: "consulta.sidebar.primeraVez",
+  FOLLOW_UP: "consulta.sidebar.seguimiento",
+  TELECONSULTATION: "tipoEncuentro.TELECONSULTATION",
+  URGENT: "tipoEncuentro.URGENT",
 };
 
 interface NoteCancellation {
@@ -46,46 +44,68 @@ interface NoteThread {
   corrections: NoteBodyFields[];
 }
 
+// Un tipo de encuentro que el servidor mande y no esté en el catálogo
+// del cliente se muestra tal cual, no deja un hueco.
+function encounterTypeLabel(t: TranslateFn, encounterType: string): string {
+  const key = ENCOUNTER_TYPE_LABEL_KEY[encounterType];
+  return key ? t(key) : encounterType;
+}
+
 function CancelledBadge({ cancellation }: { cancellation: NoteCancellation }) {
+  const { t, locale } = useI18n();
+  const params = {
+    fecha: formatDateTimeMedium(locale, cancellation.cancelledAt),
+    motivo: cancellation.reasonTerm.preferredTerm,
+    texto: cancellation.reasonFreeText ?? "",
+  };
   return (
     <span
       className="ml-2 inline-flex items-center gap-1 rounded-full border border-danger-600 px-2 py-0.5 text-xs font-medium text-danger-600"
-      title={`Cancelada ${formatMxDateTime(cancellation.cancelledAt)} · ${cancellation.reasonTerm.preferredTerm}${cancellation.reasonFreeText ? `: ${cancellation.reasonFreeText}` : ""}`}
+      title={cancellation.reasonFreeText ? t("clinico.notasTimeline.canceladaDetalleTexto", params) : t("clinico.notasTimeline.canceladaDetalle", params)}
     >
-      CANCELADA
+      {t("clinico.notasTimeline.canceladaBadge")}
     </span>
   );
 }
 
 function NoteBody({ note }: { note: NoteBodyFields }) {
+  const { t, locale } = useI18n();
   return (
     <div className="flex flex-col gap-1 text-sm text-gray-700">
       {note.cancellation ? (
         <p className="rounded-md border border-danger-600 bg-danger-50 p-2 text-sm text-danger-600">
-          Cancelada {formatMxDateTime(note.cancellation.cancelledAt)} · {note.cancellation.reasonTerm.preferredTerm}
-          {note.cancellation.reasonFreeText ? `: ${note.cancellation.reasonFreeText}` : ""}
+          {note.cancellation.reasonFreeText
+            ? t("clinico.notasTimeline.canceladaDetalleTexto", {
+                fecha: formatDateTimeMedium(locale, note.cancellation.cancelledAt),
+                motivo: note.cancellation.reasonTerm.preferredTerm,
+                texto: note.cancellation.reasonFreeText,
+              })
+            : t("clinico.notasTimeline.canceladaDetalle", {
+                fecha: formatDateTimeMedium(locale, note.cancellation.cancelledAt),
+                motivo: note.cancellation.reasonTerm.preferredTerm,
+              })}
         </p>
       ) : null}
       <p>
-        <span className="font-medium text-gray-900">Motivo:</span> {note.chiefComplaint}
+        <span className="font-medium text-gray-900">{t("clinico.notasTimeline.motivo")}</span> {note.chiefComplaint}
       </p>
       <p>
-        <span className="font-medium text-gray-900">Padecimiento actual:</span> {note.currentIllness}
+        <span className="font-medium text-gray-900">{t("clinico.notasTimeline.padecimientoActual")}</span> {note.currentIllness}
       </p>
       {note.physicalExam ? (
         <p>
-          <span className="font-medium text-gray-900">Exploración física:</span> {note.physicalExam}
+          <span className="font-medium text-gray-900">{t("clinico.notasTimeline.exploracionFisica")}</span> {note.physicalExam}
         </p>
       ) : null}
       <p>
-        <span className="font-medium text-gray-900">Análisis:</span> {note.assessment}
+        <span className="font-medium text-gray-900">{t("clinico.notasTimeline.analisis")}</span> {note.assessment}
       </p>
       <p>
-        <span className="font-medium text-gray-900">Plan:</span> {note.plan}
+        <span className="font-medium text-gray-900">{t("clinico.notasTimeline.plan")}</span> {note.plan}
       </p>
       {note.prognosis ? (
         <p>
-          <span className="font-medium text-gray-900">Pronóstico:</span> {note.prognosis}
+          <span className="font-medium text-gray-900">{t("clinico.notasTimeline.pronostico")}</span> {note.prognosis}
         </p>
       ) : null}
     </div>
@@ -109,6 +129,7 @@ function CancelNoteForm({
   onCancelled: () => void;
   onClose: () => void;
 }) {
+  const t = useT();
   const [reasonOptions, setReasonOptions] = useState<{ id: string; key: string; preferredTerm: string }[] | null>(null);
   const [reasonTermId, setReasonTermId] = useState("");
   const [reasonFreeText, setReasonFreeText] = useState("");
@@ -149,12 +170,12 @@ function CancelNoteForm({
     }
   }
 
-  if (!reasonOptions) return <LoadingState label="Cargando motivos…" />;
+  if (!reasonOptions) return <LoadingState label={t("clinico.notasTimeline.cargandoMotivos")} />;
 
   return (
     <form onSubmit={onSubmit} className="mt-2 flex flex-col gap-3 rounded-md border border-danger-600 bg-danger-50 p-3" noValidate>
-      <p className="text-sm font-medium text-danger-600">Cancelar esta nota — no se elimina, queda marcada como cancelada.</p>
-      <FieldWrapper label="Motivo" htmlFor={`cancel-reason-${noteId}`}>
+      <p className="text-sm font-medium text-danger-600">{t("clinico.notasTimeline.cancelarNota")}</p>
+      <FieldWrapper label={t("clinico.notasTimeline.etiquetaMotivo")} htmlFor={`cancel-reason-${noteId}`}>
         <SelectInput id={`cancel-reason-${noteId}`} value={reasonTermId} onChange={(e) => setReasonTermId(e.target.value)}>
           {reasonOptions.map((r) => (
             <option key={r.id} value={r.id}>
@@ -164,14 +185,14 @@ function CancelNoteForm({
         </SelectInput>
       </FieldWrapper>
       {requiresFreeText ? (
-        <FieldWrapper label="Especifica el motivo" htmlFor={`cancel-reason-text-${noteId}`}>
+        <FieldWrapper label={t("clinico.notasTimeline.especificaMotivo")} htmlFor={`cancel-reason-text-${noteId}`}>
           <TextInput id={`cancel-reason-text-${noteId}`} required value={reasonFreeText} onChange={(e) => setReasonFreeText(e.target.value)} />
         </FieldWrapper>
       ) : null}
-      <FieldWrapper label="Contraseña" htmlFor={`cancel-password-${noteId}`}>
+      <FieldWrapper label={t("clinico.notasTimeline.contrasena")} htmlFor={`cancel-password-${noteId}`}>
         <PasswordInput id={`cancel-password-${noteId}`} autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
       </FieldWrapper>
-      <FieldWrapper label="Código de verificación (TOTP)" htmlFor={`cancel-totp-${noteId}`}>
+      <FieldWrapper label={t("clinico.notasTimeline.totp")} htmlFor={`cancel-totp-${noteId}`}>
         <TextInput
           id={`cancel-totp-${noteId}`}
           inputMode="numeric"
@@ -188,10 +209,10 @@ function CancelNoteForm({
             cancelación de nota firmada, tras contraseña y TOTP — la intención ya
             está expresada dos veces. Ver ui/button.tsx. */}
         <Button type="submit" variant="danger" isLoading={isSubmitting}>
-          Confirmar cancelación
+          {t("clinico.notasTimeline.confirmarCancelacion")}
         </Button>
         <Button type="button" variant="secondary" onClick={onClose}>
-          Cerrar
+          {t("common.acciones.cerrar")}
         </Button>
       </div>
     </form>
@@ -205,6 +226,7 @@ function CancelNoteForm({
 // reemplazan ni aparecen sueltas. Fase 6 · Prompt 44B: una nota
 // cancelada se MUESTRA marcada, nunca se oculta.
 export function NotasTimeline({ patientId, accessToken }: { patientId: string; accessToken: string }) {
+  const { t, locale } = useI18n();
   const [threads, setThreads] = useState<NoteThread[] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [type, setType] = useState("");
@@ -258,22 +280,22 @@ export function NotasTimeline({ patientId, accessToken }: { patientId: string; a
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-2">
-        <SelectInput aria-label="Filtrar por tipo de nota" value={type} onChange={(e) => setType(e.target.value)}>
-          <option value="">Todos los tipos</option>
-          {Object.entries(ENCOUNTER_TYPE_LABEL).map(([value, label]) => (
+        <SelectInput aria-label={t("clinico.notasTimeline.filtrarPorTipo")} value={type} onChange={(e) => setType(e.target.value)}>
+          <option value="">{t("clinico.notasTimeline.todosLosTipos")}</option>
+          {Object.entries(ENCOUNTER_TYPE_LABEL_KEY).map(([value, labelKey]) => (
             <option key={value} value={value}>
-              {label}
+              {t(labelKey)}
             </option>
           ))}
         </SelectInput>
         <div className="flex gap-2">
-          <TextInput aria-label="Desde" type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="text-sm" />
-          <TextInput aria-label="Hasta" type="date" value={to} onChange={(e) => setTo(e.target.value)} className="text-sm" />
+          <TextInput aria-label={t("clinico.notasTimeline.desde")} type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="text-sm" />
+          <TextInput aria-label={t("clinico.notasTimeline.hasta")} type="date" value={to} onChange={(e) => setTo(e.target.value)} className="text-sm" />
         </div>
         <TextInput
-          aria-label="Buscar en las notas"
+          aria-label={t("clinico.notasTimeline.buscarEtiqueta")}
           type="search"
-          placeholder="Buscar en las notas…"
+          placeholder={t("clinico.notasTimeline.buscarPlaceholder")}
           value={q}
           onChange={(e) => setQ(e.target.value)}
           className="text-sm"
@@ -282,9 +304,9 @@ export function NotasTimeline({ patientId, accessToken }: { patientId: string; a
 
       {error ? <ErrorState error={error} /> : null}
       {!threads ? (
-        <LoadingState label="Cargando notas…" />
+        <LoadingState label={t("clinico.notasTimeline.cargandoNotas")} />
       ) : threads.length === 0 ? (
-        <p className="text-sm text-gray-500">Sin notas que coincidan.</p>
+        <p className="text-sm text-gray-500">{t("clinico.notasTimeline.sinCoincidencias")}</p>
       ) : (
         <ul className="flex flex-col gap-2">
           {threads.map((thread) => (
@@ -295,16 +317,19 @@ export function NotasTimeline({ patientId, accessToken }: { patientId: string; a
                 onClick={() => setExpandedNoteId((id) => (id === thread.note.id ? null : thread.note.id))}
               >
                 <p className="text-base font-medium text-gray-900">
-                  {ENCOUNTER_TYPE_LABEL[thread.encounterType] ?? thread.encounterType} · {formatMxDateTime(thread.signedAt)}
+                  {encounterTypeLabel(t, thread.encounterType)} ·{" "}
+                  {formatDateTimeMedium(locale, thread.signedAt)}
                   {thread.corrections.length > 0 ? (
                     <span className="ml-2 rounded-full border border-warn-600 px-2 py-0.5 text-xs font-medium text-warn-600">
-                      {thread.corrections.length} adenda{thread.corrections.length > 1 ? "s" : ""}
+                      {thread.corrections.length > 1
+                        ? t("clinico.notasTimeline.adendas", { n: thread.corrections.length })
+                        : t("clinico.notasTimeline.adenda", { n: thread.corrections.length })}
                     </span>
                   ) : null}
                   {thread.note.cancellation ? <CancelledBadge cancellation={thread.note.cancellation} /> : null}
                 </p>
                 <p className="text-sm text-gray-500">
-                  Dr(a). {thread.doctor.legalFirstName} {thread.doctor.legalLastName}
+                  {t("clinico.notasTimeline.doctorPrefijo")} {thread.doctor.legalFirstName} {thread.doctor.legalLastName}
                   {thread.doctor.primarySpecialty ? ` (${thread.doctor.primarySpecialty.nameEs})` : ""}
                 </p>
                 <p className="text-sm text-gray-700">{thread.note.chiefComplaint}</p>
@@ -315,7 +340,7 @@ export function NotasTimeline({ patientId, accessToken }: { patientId: string; a
                   {thread.corrections.map((c) => (
                     <div key={c.id} className="rounded-md border border-warn-600 bg-warn-50 p-2">
                       <p className="mb-1 flex items-center text-xs font-semibold uppercase tracking-wide text-warn-600">
-                        Adenda · {formatMxDateTime(c.createdAt)}
+                        {t("clinico.notasTimeline.adendaTitulo", { fecha: formatDateTimeMedium(locale, c.createdAt) })}
                         {c.cancellation ? <CancelledBadge cancellation={c.cancellation} /> : null}
                       </p>
                       {noteAndButton(thread.encounterId, c)}

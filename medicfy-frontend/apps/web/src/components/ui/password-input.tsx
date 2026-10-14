@@ -3,6 +3,7 @@
 import { forwardRef, useState, type InputHTMLAttributes, type SVGProps } from "react";
 import { cn } from "@/lib/utils";
 import { TextInput } from "./field";
+import { useT } from "@/lib/i18n/context";
 
 function IconEye(props: SVGProps<SVGSVGElement>) {
   return (
@@ -30,6 +31,7 @@ function IconEyeOff(props: SVGProps<SVGSVGElement>) {
 // envía el formulario (type="button").
 export const PasswordInput = forwardRef<HTMLInputElement, Omit<InputHTMLAttributes<HTMLInputElement>, "type"> & { error?: boolean }>(
   ({ className, ...props }, ref) => {
+    const t = useT();
     const [visible, setVisible] = useState(false);
     return (
       <div className="relative">
@@ -37,7 +39,7 @@ export const PasswordInput = forwardRef<HTMLInputElement, Omit<InputHTMLAttribut
         <button
           type="button"
           onClick={() => setVisible((v) => !v)}
-          aria-label={visible ? "Ocultar contraseña" : "Mostrar contraseña"}
+          aria-label={visible ? t("ui.password.ocultar") : t("ui.password.mostrar")}
           aria-pressed={visible}
           className="absolute inset-y-0 right-0 flex min-h-[44px] min-w-[44px] items-center justify-center text-gray-500 hover:text-gray-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-700"
         >

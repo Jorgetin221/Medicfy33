@@ -2,6 +2,7 @@
 
 import { useId, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { useT } from "@/lib/i18n/context";
 
 // Tabs (§3.5 del doc de UX): patrón de pestañas accesible (APG tabs),
 // para Expediente (Datos generales · Antecedentes · Notas · Recetas ·
@@ -14,6 +15,7 @@ export interface TabItem {
 }
 
 export function Tabs({ items, defaultTabId }: { items: TabItem[]; defaultTabId?: string }) {
+  const t = useT();
   const [activeId, setActiveId] = useState(defaultTabId ?? items[0]?.id);
   const baseId = useId();
 
@@ -44,7 +46,7 @@ export function Tabs({ items, defaultTabId }: { items: TabItem[]; defaultTabId?:
 
   return (
     <div>
-      <div role="tablist" aria-label="Secciones" className="flex gap-1 border-b border-gray-300">
+      <div role="tablist" aria-label={t("common.secciones")} className="flex gap-1 border-b border-gray-300">
         {items.map((item, index) => {
           const selected = item.id === activeItem?.id;
           return (
