@@ -1,7 +1,9 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus, Logger } from "@nestjs/common";
-import type { Response } from "express";
+import type { Request, Response } from "express";
 import { randomUUID } from "node:crypto";
 import { ApiException } from "./api-exception";
+import { parseAcceptLanguage } from "./i18n/locale";
+import { translateMessage } from "./i18n/translate";
 
 @Catch()
 export class ApiExceptionFilter implements ExceptionFilter {
@@ -10,13 +12,20 @@ export class ApiExceptionFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
+    const request = ctx.getRequest<Request>();
     const requestId = randomUUID();
+
+    // El idioma de la RESPUESTA sale del Accept-Language de esta
+    // petición. Solo afecta el `message` que ve el cliente: nada de lo
+    // que se persiste o se imprime cambia de idioma (R6, ver
+    // i18n/locale.ts).
+    const locale = parseAcceptLanguage(request.headers["accept-language"]);
 
     if (exception instanceof ApiException) {
       response.status(exception.getStatus()).json({
         error: {
           code: exception.code,
-          message: exception.message,
+          message: translateMessage(exception.message, locale),
           details: exception.details,
           request_id: requestId,
         },
@@ -30,7 +39,10 @@ export class ApiExceptionFilter implements ExceptionFilter {
       response.status(status).json({
         error: {
           code: httpStatusToGenericCode(status),
-          message: typeof body === "string" ? body : (body as { message?: string }).message ?? exception.message,
+          message: translateMessage(
+            typeof body === "string" ? body : ((body as { message?: string }).message ?? exception.message),
+            locale
+          ),
           details: typeof body === "object" ? body : undefined,
           request_id: requestId,
         },
@@ -47,7 +59,7 @@ export class ApiExceptionFilter implements ExceptionFilter {
     response.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
       error: {
         code: "INTERNAL_ERROR",
-        message: "Ocurrió un error inesperado.",
+        message: translateMessage("Ocurrió un error inesperado.", locale),
         request_id: requestId,
       },
     });
