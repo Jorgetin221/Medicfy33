@@ -38,6 +38,33 @@ const NAV_LINKS: { href: string; labelKey: MessageKey; Icon: IconComponent }[] =
   { href: "/publicaciones", labelKey: "nav.rail.publicaciones", Icon: IconMegaphone },
 ];
 
+export const ALL_NAV_HREFS = [
+  ...NAV_LINKS.map((link) => link.href),
+  "/admin",
+  "/perfil",
+];
+
+export function isNavLinkActive(
+  pathname: string,
+  href: string,
+  allHrefs: readonly string[] = ALL_NAV_HREFS
+): boolean {
+  const matches = pathname === href || pathname.startsWith(`${href}/`);
+  if (!matches) return false;
+
+  // Si hay otro enlace del nav que también coincida con la ruta actual pero sea
+  // más específico (ruta más larga, ej. /pacientes/nuevo vs /pacientes), el
+  // enlace padre no se activa.
+  const hasMoreSpecificMatch = allHrefs.some(
+    (other) =>
+      other !== href &&
+      other.length > href.length &&
+      (pathname === other || pathname.startsWith(`${other}/`))
+  );
+
+  return !hasMoreSpecificMatch;
+}
+
 // Preferencia de UI (qué tan ancho se ve el rail), no dato clínico —
 // localStorage es el mismo mecanismo ya usado para recordar la
 // pestaña abierta del panel de consulta (consulta-zona3.tsx).
@@ -115,7 +142,7 @@ export function AppNav() {
   }
 
   function isActive(href: string) {
-    return pathname === href || pathname.startsWith(`${href}/`);
+    return isNavLinkActive(pathname, href, ALL_NAV_HREFS);
   }
 
   // `collapsed` es preferencia del rail de escritorio: dentro del panel
