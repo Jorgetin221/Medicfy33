@@ -1,5 +1,6 @@
 ﻿import http from 'node:http';
 import url from 'node:url';
+import fs from 'node:fs';
 
 const PORT = 3001;
 
@@ -366,6 +367,62 @@ const sampleMedications = [
   { genericName: "Losartán", brandNames: ["Cozaar"], presentations: [{ label: "Tableta 50 mg" }], atcCode: "C09CA01", controlGroup: "VI", isElectronicallyPrescribable: true },
   { genericName: "Omeprazol", brandNames: ["Losec"], presentations: [{ label: "Cápsula 20 mg" }], atcCode: "A02BC01", controlGroup: "VI", isElectronicallyPrescribable: true }
 ];
+
+// ── Atlas Anatómico 3D (port mínimo de AtlasHttpAdapter) ──
+// .env de este repo, si existe: ahí van ATLAS_API_URL, ATLAS_VIEWER_URL,
+// ATLAS_CLIENT_ID y ATLAS_CLIENT_SECRET (ver .env.example).
+const envFile = new URL('./.env', import.meta.url);
+if (fs.existsSync(envFile)) process.loadEnvFile(url.fileURLToPath(envFile));
+
+const atlasSessionOwners = new Map();
+let atlasToken = null;
+
+function atlasConfigured() {
+  return Boolean(process.env.ATLAS_API_URL && process.env.ATLAS_VIEWER_URL && process.env.ATLAS_CLIENT_ID && process.env.ATLAS_CLIENT_SECRET);
+}
+
+// El atlas exige identificadores opacos de 8+ caracteres; los del mock
+// ("pat-1", "doc-1") son más cortos. El backend real manda UUIDs tal cual.
+const atlasOpaqueId = (id) => `medicfy-mock-${id}`;
+
+async function atlasCall(path, body) {
+  const base = process.env.ATLAS_API_URL.replace(/\/+$/, '');
+  if (!atlasToken || atlasToken.expiresAt - 30_000 < Date.now()) {
+    const r = await fetch(`${base}/api/v1/oauth/token`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ grant_type: 'client_credentials', client_id: process.env.ATLAS_CLIENT_ID, client_secret: process.env.ATLAS_CLIENT_SECRET }),
+    });
+    if (!r.ok) throw new Error(`atlas token ${r.status}`);
+    const t = await r.json();
+    atlasToken = { value: t.access_token, expiresAt: Date.now() + t.expires_in * 1000 };
+  }
+  const r = await fetch(`${base}${path}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${atlasToken.value}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+  if (!r.ok) throw new Error(`atlas ${path} ${r.status}`);
+  return r.json();
+}
+
+async function openAtlasSession(patientId, user) {
+  if (!atlasConfigured()) return { kind: 'unavailable', reason: 'NOT_CONFIGURED' };
+  try {
+    const link = await atlasCall('/api/v1/patient-links', { externalSystem: 'medicfy', externalPatientId: atlasOpaqueId(patientId) });
+    const s = await atlasCall('/api/v1/viewer-sessions', {
+      patientId: link.id,
+      practitionerRef: atlasOpaqueId(user.doctor?.id ?? user.id),
+      mode: 'clinician',
+      permissions: ['findings:read', 'annotations:read', 'annotations:write'],
+      origin: new URL(process.env.WEB_ORIGIN || 'http://localhost:3000').origin,
+    });
+    atlasSessionOwners.set(s.id, { patientId, userId: user.id });
+    return { kind: 'ok', session: { id: s.id, launchCode: s.launchCode, launchCodeExpiresAt: s.launchCodeExpiresAt, expiresAt: s.expiresAt, mode: s.mode, viewerUrl: process.env.ATLAS_VIEWER_URL } };
+  } catch (e) {
+    console.warn(`atlas.create falló: ${e.message}`);
+    return { kind: 'unavailable', reason: 'ATLAS_ERROR' };
+  }
+}
 
 const server = http.createServer(async (req, res) => {
   const parsedUrl = url.parse(req.url, true);
@@ -1071,6 +1128,29 @@ const server = http.createServer(async (req, res) => {
 
   if (pathname === '/specialty-field-schemas' && method === 'GET') {
     return sendJson([]);
+  }
+
+  // Atlas Anatómico 3D — mismo contrato que AtlasController
+  // (atlasSessionOutcomeSchema). Habla con la API REAL del atlas si
+  // ATLAS_* está en .env; si no, responde "no disponible" igual que el
+  // backend real sin credenciales.
+  const atlasOpen = pathname.match(/^\/records\/patients\/([^/]+)\/atlas-sessions$/);
+  if (atlasOpen && method === 'POST') {
+    const patientId = atlasOpen[1];
+    // Paso 0 de la guía (CareRelationshipGuard en el backend real): en
+    // el mock, solo el médico y solo pacientes que existen.
+    if (getCurrentUser(req).primaryRole !== 'DOCTOR') return sendError('CARE_RELATIONSHIP_REQUIRED', 'Solo un médico con vínculo activo puede acceder a este expediente.', 403);
+    if (!patients.some(p => p.id === patientId)) return sendError('NOT_FOUND', 'Paciente no encontrado.', 404);
+    return sendJson(await openAtlasSession(patientId, getCurrentUser(req)));
+  }
+
+  const atlasRevoke = pathname.match(/^\/records\/patients\/([^/]+)\/atlas-sessions\/([^/]+)\/revoke$/);
+  if (atlasRevoke && method === 'POST') {
+    const owner = atlasSessionOwners.get(atlasRevoke[2]);
+    if (!owner || owner.patientId !== atlasRevoke[1] || owner.userId !== getCurrentUser(req).id) return sendError('NOT_FOUND', 'Sesión del atlas no encontrada.', 404);
+    atlasSessionOwners.delete(atlasRevoke[2]);
+    await atlasCall(`/api/v1/viewer-sessions/${encodeURIComponent(atlasRevoke[2])}/revoke`).catch(() => {});
+    return sendJson({ revoked: true });
   }
 
   // Fallback 200 OK

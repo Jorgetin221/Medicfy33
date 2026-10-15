@@ -46,6 +46,14 @@ export const envSchema = z.object({
   // credencial propia. Solo el tope de tiempo es específico de esta
   // llamada (visión + potencialmente muchos analitos).
   ASSISTANT_LAB_OCR_TIMEOUT_MS: z.coerce.number().int().positive().optional(),
+  // Atlas Anatómico 3D (INTEGRATION_GUIDE.md del atlas). Mismo patrón
+  // que ANTHROPIC_API_KEY: opcionales a propósito, AtlasHttpAdapter las
+  // lee de forma perezosa y sin ellas solo el atlas se degrada a "no
+  // disponible". ATLAS_CLIENT_SECRET nunca llega al navegador.
+  ATLAS_API_URL: z.string().url().optional(),
+  ATLAS_VIEWER_URL: z.string().url().optional(),
+  ATLAS_CLIENT_ID: z.string().min(1).optional(),
+  ATLAS_CLIENT_SECRET: z.string().min(1).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

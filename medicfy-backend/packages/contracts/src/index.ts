@@ -17,6 +17,7 @@ export * from "./schemas/catalog.schema";
 export * from "./schemas/protocol.schema";
 export * from "./schemas/doctor-post.schema";
 export * from "./schemas/assistant.schema";
+export * from "./schemas/atlas.schema";
 export * from "./errors/identity.errors";
 export * from "./validators/time-of-day";
 export * from "./validators/age";

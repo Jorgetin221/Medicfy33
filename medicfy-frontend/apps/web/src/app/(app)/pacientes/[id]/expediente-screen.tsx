@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { usePatientClinical } from "@/lib/use-patient-clinical";
@@ -9,6 +10,7 @@ import { useT } from "@/lib/i18n/context";
 import { Button } from "@/components/ui/button";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { AllergySummary } from "@/components/clinical/allergy-summary";
+import { AtlasModal } from "@/components/clinical/atlas-modal";
 import { patientAgeYears, patientFullName } from "../../consulta/[appointmentId]/types";
 import { TabDatosGenerales } from "./tab-datos-generales";
 import { TabAntecedentes } from "./tab-antecedentes";
@@ -28,6 +30,7 @@ export function ExpedienteScreen({ patientId, accessToken }: { patientId: string
   const searchParams = useSearchParams();
   const justSigned = searchParams.get("justSigned") === "1";
   const { patient, allergies, medications, historyItems, timeline, isLoading, error, reload } = usePatientClinical(patientId, accessToken);
+  const [isAtlasOpen, setIsAtlasOpen] = useState(false);
 
   if (isLoading && !patient) {
     return (
@@ -101,16 +104,24 @@ export function ExpedienteScreen({ patientId, accessToken }: { patientId: string
             {patient.sexAtBirth === "F" ? t("pacientes.mujer") : t("pacientes.hombre")}
           </p>
         </div>
-        {/* Pedido explícito: atender a un paciente que ya existe sin
-            necesidad de reservarle una cita primero. */}
-        <Link href={`/consulta/paciente/${patientId}`}>
-          <Button type="button">{t("pacientes.expediente.iniciarSinCita")}</Button>
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          {/* Ventana emergente, no panel lateral: pedido explícito. */}
+          <Button type="button" variant="secondary" onClick={() => setIsAtlasOpen(true)}>
+            {t("pacientes.atlas.abrir")}
+          </Button>
+          {/* Pedido explícito: atender a un paciente que ya existe sin
+              necesidad de reservarle una cita primero. */}
+          <Link href={`/consulta/paciente/${patientId}`}>
+            <Button type="button">{t("pacientes.expediente.iniciarSinCita")}</Button>
+          </Link>
+        </div>
       </div>
 
       {activeAllergyCount > 0 && <AllergySummary allergies={allergies} />}
 
       <Tabs items={tabs} />
+
+      <AtlasModal open={isAtlasOpen} onClose={() => setIsAtlasOpen(false)} patientId={patientId} accessToken={accessToken} />
     </main>
   );
 }

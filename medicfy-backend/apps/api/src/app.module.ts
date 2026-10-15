@@ -18,6 +18,7 @@ import { AuditModule } from "./modules/audit/audit.module";
 import { CatalogModule } from "./modules/catalog/catalog.module";
 import { ProtocolsModule } from "./modules/protocols/protocols.module";
 import { AssistantModule } from "./modules/assistant/assistant.module";
+import { AtlasModule } from "./modules/atlas/atlas.module";
 
 // M15-RN-010: "por IP y por usuario". ThrottlerGuard está registrado
 // como guard GLOBAL (APP_GUARD), y en Nest los guards globales corren
@@ -79,6 +80,7 @@ function getTrackerByIpAndUser(req: Record<string, unknown>): string {
     CatalogModule,
     ProtocolsModule,
     AssistantModule,
+    AtlasModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

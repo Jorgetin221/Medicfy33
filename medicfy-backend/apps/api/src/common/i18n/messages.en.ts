@@ -152,6 +152,7 @@ export const MESSAGES_EN: Record<string, string> = {
   "Resultado no encontrado.": "Result not found.",
   "Servicio no encontrado para este médico.": "Service not found for this physician.",
   "Servicio no encontrado.": "Service not found.",
+  "Sesión del atlas no encontrada.": "Atlas session not found.",
   "Sesión no encontrada en esta instancia.": "Session not found in this instance.",
   "Solicitud de término no encontrada.": "Term request not found.",
   "Solo se puede corregir un encuentro ya firmado. Un borrador se edita directamente.":

@@ -48,6 +48,22 @@ export const pacientes = {
       protocolos: "Protocolos",
     },
   },
+  // Atlas Anatómico 3D en ventana emergente (INTEGRATION_GUIDE del atlas).
+  atlas: {
+    abrir: "Atlas Anatómico 3D BETA",
+    titulo: "Atlas Anatómico 3D BETA",
+    cargando: "Abriendo el atlas…",
+    cargandoVisor: "Cargando el modelo 3D…",
+    noConfigurado: "El atlas anatómico no está configurado",
+    noConfiguradoAyuda: "Falta conectar este Medicfy con el servidor del atlas. El resto del expediente funciona con normalidad.",
+    errorAtlas: "El atlas anatómico no respondió",
+    errorAtlasAyuda: "El servidor del atlas no está disponible en este momento. Inténtalo de nuevo en unos minutos.",
+    errorVisor: "El visor 3D no pudo abrir la sesión de este paciente.",
+    sinConexion: "Sin conexión",
+    sinConexionAyuda: "El atlas necesita conexión a internet. Se abrirá cuando vuelva la red.",
+    reintentar: "Reintentar",
+    avisoEducativo: "Representación anatómica educativa: no sustituye estudios de imagen del paciente.",
+  },
   datosGenerales: {
     nombreCompleto: "Nombre completo",
     medicfyId: "Medicfy ID",
