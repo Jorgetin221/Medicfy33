@@ -62,7 +62,7 @@ export default function MiCuentaPage() {
       <header className="flex items-center justify-between border-b border-gray-300 bg-white px-6 py-4">
         <span className="flex items-center gap-2 font-heading text-lg text-brand-900">
           <IconPulse className="h-6 w-6 text-brand-700" />
-          Medicfy
+          Medicfy BETA
         </span>
         <button type="button" onClick={() => void handleLogout()} className="flex items-center gap-2 text-sm font-medium text-gray-700">
           <IconLogout className="h-5 w-5" />

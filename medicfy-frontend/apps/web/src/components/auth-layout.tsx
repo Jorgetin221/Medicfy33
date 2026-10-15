@@ -45,7 +45,7 @@ export function AuthLayout({
     <div className="grid min-h-screen lg:grid-cols-2">
       <div className="flex flex-col gap-8 px-6 py-8 sm:px-10 sm:py-10 lg:justify-center lg:px-16 lg:py-16">
         <Link href={homeHref} className="font-brand w-fit text-xl font-bold text-brand-900">
-          Medicfy
+          Medicfy BETA
         </Link>
         <div className="mx-auto w-full max-w-md">{children}</div>
       </div>

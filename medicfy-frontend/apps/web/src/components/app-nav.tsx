@@ -191,7 +191,7 @@ export function AppNav() {
         </button>
         <Link href="/agenda" aria-label={t("nav.rail.irAAgenda")} className="flex min-h-11 items-center gap-2 rounded-md px-2 text-rail-icon-active">
           <IconPulse className="h-6 w-6 shrink-0" />
-          <span className="font-heading text-base">Medicfy</span>
+          <span className="font-heading text-base">Medicfy BETA</span>
         </Link>
       </header>
 
@@ -207,7 +207,7 @@ export function AppNav() {
             className={`flex min-h-11 flex-1 items-center gap-2 rounded-md bg-rail-icon-active-bg px-3 text-rail-icon-active ${collapsed ? "md:w-11 md:flex-none md:justify-center md:px-0" : ""}`}
           >
             <IconPulse className="h-6 w-6 shrink-0" />
-            {!collapsed ? <span className="font-heading text-base">Medicfy</span> : <span className="font-heading text-base md:hidden">Medicfy</span>}
+            {!collapsed ? <span className="font-heading text-base">Medicfy BETA</span> : <span className="font-heading text-base md:hidden">Medicfy BETA</span>}
           </Link>
           {/* Cerrar alcanzable sin depender del velo (táctil y teclado). */}
           <button

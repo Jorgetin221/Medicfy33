@@ -27,13 +27,13 @@ export async function generateMetadata({ params }: PageParams): Promise<Metadata
   const t = await getTranslator();
   try {
     const res = await fetch(`${API_BASE_URL}/doctors/${slug}/public`, { cache: "no-store" });
-    if (!res.ok) return { title: "Medicfy" };
+    if (!res.ok) return { title: "Medicfy BETA" };
     const doctor = (await res.json()) as MetadataDoctor;
     const name = doctor.displayName ?? t("directorio.medicoEnMedicfy");
     const specialty = doctor.primarySpecialtyName ?? t("catalogos.especialidades.GENERAL");
     const description = doctor.biography ? doctor.biography.slice(0, 160) : `${name} · ${specialty} en Medicfy.`;
     return {
-      title: `${name} · ${specialty} — Medicfy`,
+      title: `${name} · ${specialty} — Medicfy BETA`,
       description,
       openGraph: {
         title: name,
@@ -42,7 +42,7 @@ export async function generateMetadata({ params }: PageParams): Promise<Metadata
       },
     };
   } catch {
-    return { title: "Medicfy" };
+    return { title: "Medicfy BETA" };
   }
 }
 

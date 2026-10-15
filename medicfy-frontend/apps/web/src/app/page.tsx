@@ -110,7 +110,7 @@ export default function HomePage() {
 
       <footer className="border-t border-gray-300 bg-white px-6 py-10">
         <div className="mx-auto max-w-6xl text-center sm:text-left">
-          <p className="font-brand text-base text-brand-900">Medicfy</p>
+          <p className="font-brand text-base text-brand-900">Medicfy BETA</p>
           <p className="text-sm text-gray-500">{t("landing.footer.lema")}</p>
         </div>
       </footer>

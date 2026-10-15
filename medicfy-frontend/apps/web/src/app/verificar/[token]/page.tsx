@@ -51,7 +51,7 @@ export default function VerificarPage() {
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-6 p-6">
       <div>
-        <p className="font-brand text-lg text-brand-900">Medicfy</p>
+        <p className="font-brand text-lg text-brand-900">Medicfy BETA</p>
         <h1 className="font-heading text-2xl text-brand-900">{t("verificacionPublica.titulo")}</h1>
       </div>
 

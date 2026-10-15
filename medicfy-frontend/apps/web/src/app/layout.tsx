@@ -20,7 +20,7 @@ const montserrat = Montserrat({ subsets: ["latin"], weight: ["700"], variable: "
 export async function generateMetadata(): Promise<Metadata> {
   const t = createTranslator(await getLocale());
   return {
-    title: "Medicfy",
+    title: "Medicfy BETA",
     description: t("landing.meta.descripcion"),
   };
 }

@@ -45,7 +45,7 @@ export default async function ParaMedicosPage() {
       <header className="sticky top-0 z-40 border-b border-gray-300 bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
           <Link href="/" className="font-brand text-xl font-bold text-brand-900">
-            Medicfy
+            Medicfy BETA
           </Link>
           <nav className="flex items-center gap-1 sm:gap-4" aria-label={t("nav.publico.principal")}>
             <LanguageSwitcher showLabel={false} />
@@ -173,7 +173,7 @@ export default async function ParaMedicosPage() {
       <footer className="px-6 py-10">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 text-center sm:flex-row sm:text-left">
           <div>
-            <p className="font-brand text-base text-brand-900">Medicfy</p>
+            <p className="font-brand text-base text-brand-900">Medicfy BETA</p>
             <p className="text-sm text-gray-500">{t("paraMedicos.footer.lema")}</p>
           </div>
           <p className="text-sm text-gray-500">© {new Date().getFullYear()} Medicfy · {t("paraMedicos.footer.ciudad")}</p>

@@ -28,7 +28,7 @@ export function SiteHeader() {
     <header className="sticky top-0 z-40 border-b border-gray-300 bg-white/95 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-3">
         <Link href="/" className="font-brand text-xl font-bold text-brand-900">
-          Medicfy
+          Medicfy BETA
         </Link>
         <nav className="hidden items-center gap-4 sm:flex" aria-label={t("nav.publico.principal")}>
           <Link href="/doctores" className="text-base font-medium text-gray-700 hover:text-brand-700">
