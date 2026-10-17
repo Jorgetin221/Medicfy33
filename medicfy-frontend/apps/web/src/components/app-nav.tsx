@@ -74,7 +74,7 @@ const COLLAPSE_STORAGE_KEY = "medicfy:nav-collapsed";
 // variable CSS para que lo fijo a la pantalla (la barra de firma de la
 // consulta) empiece donde termina el rail en vez de taparle la parte
 // de abajo. Bajo `md` el rail no ocupa espacio: la variable no aplica.
-export const RAIL_WIDTH_CSS_VAR = "--app-rail-width";
+const RAIL_WIDTH_CSS_VAR = "--app-rail-width";
 const RAIL_WIDTH = { expanded: "14rem", collapsed: "4rem" } as const;
 
 type IconComponent = (props: { className?: string }) => ReactNode;

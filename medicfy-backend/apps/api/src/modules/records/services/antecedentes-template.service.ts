@@ -1,5 +1,4 @@
 import { HttpStatus, Injectable } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
 import type { AntecedentesTemplateCreateInput } from "@medicfy/contracts";
 import { ApiException } from "../../../common/api-exception";
 import { PrismaService } from "../../../prisma/prisma.service";
@@ -56,7 +55,7 @@ export class AntecedentesTemplateService {
       data: {
         doctorId: doctor.id,
         name: input.name,
-        items: input.items as unknown as Prisma.InputJsonValue,
+        items: input.items,
         ...omitUndefined({ specialtyId }),
       },
     });

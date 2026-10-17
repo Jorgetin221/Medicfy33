@@ -32,7 +32,7 @@ export function PdfViewer({ data }: { data: ArrayBuffer }) {
     setError(null);
     setIsLoading(true);
 
-    (async () => {
+    void (async () => {
       try {
         const pdfjsLib = await import("pdfjs-dist");
         pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();

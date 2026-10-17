@@ -5,7 +5,7 @@
 // vía Intl (el tzdata IANA que Node trae incluido), nunca hardcodeado
 // como "-6". Sin dependencia nueva: Intl.DateTimeFormat con
 // timeZone ya cubre esto.
-export const PRACTICE_TIME_ZONE = "America/Mexico_City";
+const PRACTICE_TIME_ZONE = "America/Mexico_City";
 
 // Offset (en minutos, positivo = al este de UTC) de timeZone respecto
 // a UTC, en el instante `at`.

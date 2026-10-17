@@ -1,5 +1,4 @@
 import { Inject, Injectable } from "@nestjs/common";
-import type { Prisma } from "@prisma/client";
 import type { AssistantPass, AssistantReading } from "@medicfy/contracts";
 import type { Locale } from "../../../common/i18n/locale";
 import { PrismaService } from "../../../prisma/prisma.service";
@@ -102,7 +101,7 @@ export class AssistantPassOrchestratorService {
         encounterId,
         pase,
         contextHashSha256: hashContexto,
-        readingJson: outcome.result.reading as unknown as Prisma.InputJsonValue,
+        readingJson: outcome.result.reading,
         modelVersion: outcome.result.modelVersion,
         promptVersion: outcome.result.promptVersion,
         inputTokens: outcome.result.inputTokens,

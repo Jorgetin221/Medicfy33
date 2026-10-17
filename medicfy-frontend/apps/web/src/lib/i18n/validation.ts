@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useMemo } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import type { Resolver, FieldValues, FieldErrors } from "react-hook-form";
 import type { ZodType } from "zod";
@@ -13,15 +13,10 @@ import type { Locale } from "./config";
 // se sigue comunicando, solo que en español. Preferible a una cadena
 // vacía — un campo marcado en rojo sin decir por qué es peor que un
 // campo marcado en rojo en el idioma equivocado.
-export function translateValidationMessage(locale: Locale, message: string | undefined): string | undefined {
+function translateValidationMessage(locale: Locale, message: string | undefined): string | undefined {
   if (!message) return message;
   const table = getDictionary(locale).validacion as Record<string, string | undefined>;
   return table[message] ?? message;
-}
-
-export function useValidationMessage(): (message: string | undefined) => string | undefined {
-  const { locale } = useI18n();
-  return useCallback((message) => translateValidationMessage(locale, message), [locale]);
 }
 
 // Reemplazo directo de zodResolver(schema) en useForm(). Traduce los

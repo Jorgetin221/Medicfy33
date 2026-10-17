@@ -1,7 +1,6 @@
 import { Controller, Get, HttpStatus, Param, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from "@nestjs/swagger";
-import type { Express } from "express";
 import { clinicalAttachmentUploadMetadataSchema } from "@medicfy/contracts";
 import { ApiException } from "../../common/api-exception";
 import { JwtAuthGuard } from "../identity/guards/jwt-auth.guard";

@@ -292,7 +292,7 @@ export class PatientClinicalService {
             comment: existing.comment,
             packYears: existing.packYears,
             stdDrinksPerWeek: existing.stdDrinksPerWeek,
-          } as Prisma.InputJsonValue,
+          },
           changedByUserId: userId,
         },
       });

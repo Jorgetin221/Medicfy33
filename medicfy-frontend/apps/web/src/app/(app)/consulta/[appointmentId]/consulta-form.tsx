@@ -70,7 +70,7 @@ function stripComputedVitals(vitals: Record<string, unknown>): Record<string, nu
 function unwrapSpecialtyData(specialtyData: Record<string, unknown>): Record<string, number> {
   const raw: Record<string, number> = {};
   for (const [key, entry] of Object.entries(specialtyData)) {
-    if (entry && typeof entry === "object" && "value" in entry && typeof (entry as { value: unknown }).value === "number") {
+    if (entry && typeof entry === "object" && "value" in entry && typeof entry.value === "number") {
       raw[key] = (entry as { value: number }).value;
     }
   }
@@ -184,7 +184,7 @@ export function ConsultaForm({
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    void (async () => {
       const local = await loadDraftLocally(encounter.id);
       const base = (local ?? encounter.draftContent ?? {}) as ClinicalNoteDraftUpdateInput;
       if (cancelled) return;
@@ -205,7 +205,7 @@ export function ConsultaForm({
         // hay, los ya guardados del encuentro.
         diagnoses:
           base.diagnoses && base.diagnoses.length > 0
-            ? (base.diagnoses as EncounterDiagnosisInput[])
+            ? base.diagnoses
             : encounter.diagnoses.map((d) => ({
                 description: d.description,
                 diagnosisType: d.diagnosisType,
@@ -590,7 +590,7 @@ export function ConsultaForm({
             inputMode="numeric"
             className="max-w-40"
             {...form.register("suggestedFollowUpDays", {
-              setValueAs: (v: string) => (v === "" || v === null ? undefined : Number(v)),
+              setValueAs: (v: string) => (v === "" ? undefined : Number(v)),
             })}
           />
         </FieldWrapper>

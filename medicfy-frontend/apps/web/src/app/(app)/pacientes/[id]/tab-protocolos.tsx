@@ -6,6 +6,7 @@ import type { TimelineEncounter } from "@/lib/use-patient-clinical";
 import { Card, EmptyState, ErrorState, LoadingState } from "@/components/ui/states";
 import { Button } from "@/components/ui/button";
 import { FieldWrapper, SelectInput, TextInput } from "@/components/ui/field";
+import { DateInput } from "@/components/ui/date-input";
 import { useI18n, useT, type TranslateFn } from "@/lib/i18n/context";
 import { formatDateLong } from "@/lib/i18n/format";
 import type { MessageKey } from "@/lib/i18n/dictionaries";
@@ -119,7 +120,7 @@ function RecordSessionForm({
     <form onSubmit={onSubmit} className="mt-2 flex flex-col gap-3 rounded-md border border-gray-300 p-3" noValidate>
       {error ? <ErrorState error={error} /> : null}
       <FieldWrapper label={t("pacientes.protocolos.fechaReal")} htmlFor={`session-date-${sessionId}`}>
-        <TextInput id={`session-date-${sessionId}`} type="date" required value={actualDate} onChange={(e) => setActualDate(e.target.value)} />
+        <DateInput id={`session-date-${sessionId}`} required value={actualDate} onChange={setActualDate} />
       </FieldWrapper>
       <FieldWrapper label={t("pacientes.protocolos.ligarNota")} htmlFor={`session-encounter-${sessionId}`}>
         <SelectInput id={`session-encounter-${sessionId}`} value={encounterId} onChange={(e) => setEncounterId(e.target.value)}>

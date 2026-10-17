@@ -44,16 +44,6 @@ export function IconFolderNav(props: IconProps) {
   );
 }
 
-export function IconPersonPlus(props: IconProps) {
-  return (
-    <svg {...base} {...props}>
-      <circle cx="10" cy="8" r="3.5" />
-      <path d="M3.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6" />
-      <path d="M18.5 8v5M16 10.5h5" />
-    </svg>
-  );
-}
-
 export function IconClockNav(props: IconProps) {
   return (
     <svg {...base} {...props}>

@@ -3,13 +3,13 @@ import { INTL_LOCALE, type Locale } from "./config";
 // La zona horaria NO depende del idioma. Un médico en Guadalajara
 // atiende en horario de la Ciudad de México aunque lea la interfaz en
 // inglés: cambiar el idioma nunca debe mover la hora de una cita.
-export const MX_TIME_ZONE = "America/Mexico_City";
+const MX_TIME_ZONE = "America/Mexico_City";
 
 function fmt(locale: Locale, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
   return new Intl.DateTimeFormat(INTL_LOCALE[locale], { timeZone: MX_TIME_ZONE, ...options });
 }
 
-export function formatDate(locale: Locale, value: string | Date, options: Intl.DateTimeFormatOptions): string {
+function formatDate(locale: Locale, value: string | Date, options: Intl.DateTimeFormatOptions): string {
   return fmt(locale, options).format(typeof value === "string" ? new Date(value) : value);
 }
 
@@ -39,11 +39,7 @@ export function formatWeekdayLong(locale: Locale, value: string | Date): string 
   return formatDate(locale, value, { weekday: "long", day: "numeric", month: "long" });
 }
 
-export function formatNumber(locale: Locale, value: number, options?: Intl.NumberFormatOptions): string {
-  return new Intl.NumberFormat(INTL_LOCALE[locale], options).format(value);
-}
-
-// Clave de día en formato ISO (YYYY-MM-DD) para <input type="date"> y
+// Clave de día en formato ISO (YYYY-MM-DD) para DateInput y
 // para las llamadas a la API. Deliberadamente NO usa el idioma de la
 // interfaz: es un valor de máquina, no texto para leer. Sigue en
 // "en-CA" porque es la etiqueta que produce ese formato con la zona

@@ -1,6 +1,5 @@
 import { HttpStatus, Inject, Injectable } from "@nestjs/common";
 import { createHash, randomUUID } from "node:crypto";
-import type { Express } from "express";
 import type { LabSheetExtraction, LabSheetExtractionCandidate } from "@prisma/client";
 import type { LabSheetExtractionReviewInput } from "@medicfy/contracts";
 import { PrismaService } from "../../../prisma/prisma.service";

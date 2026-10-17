@@ -11,7 +11,8 @@ import {
   type DoctorPostCreateInput,
   type PostCategory,
 } from "@medicfy/contracts";
-import { apiFetch, apiFetchBlob, apiUpload, expectArray } from "@/lib/api-client";
+import { apiFetch, apiUpload, expectArray } from "@/lib/api-client";
+import { useRemoteBlobUrl } from "@/lib/use-remote-blob-url";
 import { useAuth } from "@/lib/auth-context";
 import { useDoctorProfile } from "@/lib/use-doctor-profile";
 import { Button } from "@/components/ui/button";
@@ -450,17 +451,7 @@ function PostCard({
 }
 
 function PostMediaThumbnail({ accessToken, postId, mediaId }: { accessToken: string; postId: string; mediaId: string }) {
-  const [src, setSrc] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    apiFetchBlob(`/doctors/me/posts/${postId}/media/${mediaId}`, { accessToken }).then((blob) => {
-      if (!cancelled && blob) setSrc(URL.createObjectURL(blob));
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [accessToken, postId, mediaId]);
+  const { url: src } = useRemoteBlobUrl(`/doctors/me/posts/${postId}/media/${mediaId}`, accessToken);
 
   if (!src) {
     return <div className="h-20 w-20 animate-pulse rounded-md bg-gray-100" />;

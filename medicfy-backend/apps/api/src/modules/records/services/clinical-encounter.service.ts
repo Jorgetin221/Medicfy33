@@ -522,7 +522,7 @@ export class ClinicalEncounterService {
   // no noteId — los diagnósticos de una corrección se suman a los
   // del encounter, no reemplazan a los de la nota original en la
   // base de datos (la interfaz decide cómo mostrarlo).
-  async correctNote(encounterId: string, doctorUserId: string, input: ClinicalNoteCorrectionInput) {
+  async correctNote(encounterId: string, input: ClinicalNoteCorrectionInput) {
     // Prompt 44A: "su propia firma" — una adenda se firma igual que la
     // nota original (clinicalNoteCorrectionSchema extiende
     // clinicalNoteSignSchema), hoy sin contraseña (ver sign()).

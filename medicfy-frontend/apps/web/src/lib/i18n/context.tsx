@@ -2,7 +2,6 @@
 
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import {
-  DEFAULT_LOCALE,
   LOCALE_COOKIE,
   LOCALE_COOKIE_MAX_AGE,
   HTML_LANG,
@@ -79,5 +78,3 @@ export function useT(): TranslateFn {
   return useI18n().t;
 }
 
-export { DEFAULT_LOCALE };
-export type { Locale };

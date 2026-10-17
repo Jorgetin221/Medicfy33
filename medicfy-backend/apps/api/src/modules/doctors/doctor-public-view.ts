@@ -113,10 +113,10 @@ export function toPublicDoctorView(
 // M2-RN-002: claiming a specialty requires the doctor to be VERIFIED
 // and hold a specialty license — there's no separate "specialty
 // verified" column in the spec's schema (§6.3), so this is derived.
-export function isSpecialtyVerified(doctor: Doctor): boolean {
+function isSpecialtyVerified(doctor: Doctor): boolean {
   return doctor.verificationStatus === "VERIFIED" && doctor.specialtyLicense !== null && doctor.primarySpecialtyId !== null;
 }
 
-export function isSpecialtyLicenseExpired(doctor: Doctor): boolean {
+function isSpecialtyLicenseExpired(doctor: Doctor): boolean {
   return doctor.specialtyLicenseExpiresAt !== null && doctor.specialtyLicenseExpiresAt.getTime() < Date.now();
 }

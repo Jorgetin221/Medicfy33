@@ -15,7 +15,6 @@ import {
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiQuery, ApiTags } from "@nestjs/swagger";
-import type { Express } from "express";
 import { createHash } from "node:crypto";
 import {
   MEDICAL_FILE_MAX_BYTES,

@@ -77,6 +77,8 @@
   --radius-full: 9999px;
 
   --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+  /* Capas flotantes (calendario de DateInput): sombra amplia y suave. */
+  --shadow-popover: 0 12px 32px -8px rgba(16, 22, 35, 0.22), 0 4px 10px -4px rgba(16, 22, 35, 0.12);
 }
 
 body {
@@ -97,6 +99,19 @@ body {
   from {
     opacity: 0;
     transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Calendario de DateInput — aparece con un leve zoom desde el campo.
+   Solo con motion-safe: en el markup. */
+@keyframes date-popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.97);
   }
   to {
     opacity: 1;

@@ -46,13 +46,13 @@ export class LabReferenceRangeService {
         ageMaxYears: { gte: ageYears },
       },
     });
-    if (candidates.length === 0) return null;
-    return [...candidates].sort((a, b) => {
+    const [mostSpecific] = [...candidates].sort((a, b) => {
       if (a.sex !== b.sex) return a.sex === sex ? -1 : 1;
       const widthA = Number(a.ageMaxYears) - Number(a.ageMinYears);
       const widthB = Number(b.ageMaxYears) - Number(b.ageMinYears);
       return widthA - widthB;
-    })[0]!;
+    });
+    return mostSpecific ?? null;
   }
 
   // Orquesta la Capa 2 completa para un analito: normaliza el nombre,

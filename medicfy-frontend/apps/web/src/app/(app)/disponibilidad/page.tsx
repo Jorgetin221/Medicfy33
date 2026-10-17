@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import {
   availabilityRuleCreateSchema,
   availabilityExceptionCreateSchema,
@@ -18,6 +18,7 @@ import { apiFetch, expectArray } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { FieldWrapper, TextInput, SelectInput } from "@/components/ui/field";
+import { DateInput } from "@/components/ui/date-input";
 import { Card, LoadingState, EmptyState, ErrorState } from "@/components/ui/states";
 import { useT } from "@/lib/i18n/context";
 import { useZodResolver } from "@/lib/i18n/validation";
@@ -125,7 +126,7 @@ function DisponibilidadContent({ accessToken }: { accessToken: string }) {
   }, [accessToken]);
 
   useEffect(() => {
-    loadLocations();
+    void loadLocations();
   }, [loadLocations]);
 
   return (
@@ -263,7 +264,7 @@ function ServicesSection({ accessToken, locations }: { accessToken: string; loca
   }, [accessToken]);
 
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
 
   const form = useForm<DoctorServiceInput>({
@@ -392,7 +393,7 @@ function RulesSection({ accessToken }: { accessToken: string }) {
   }, [accessToken]);
 
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
 
   const form = useForm<AvailabilityRuleCreateInput>({
@@ -506,7 +507,21 @@ function RulesSection({ accessToken }: { accessToken: string }) {
         </div>
 
         <FieldWrapper label={t("disponibilidad.horario.vigenteDesde")} htmlFor="validFrom" error={form.formState.errors.validFrom?.message}>
-          <TextInput id="validFrom" type="date" error={!!form.formState.errors.validFrom} {...form.register("validFrom")} />
+          <Controller
+            control={form.control}
+            name="validFrom"
+            render={({ field }) => (
+              <DateInput
+                ref={field.ref}
+                id="validFrom"
+                name={field.name}
+                value={field.value ?? ""}
+                onChange={field.onChange}
+                onBlur={field.onBlur}
+                error={!!form.formState.errors.validFrom}
+              />
+            )}
+          />
         </FieldWrapper>
 
         {createError ? <ErrorState error={createError} /> : null}
@@ -544,7 +559,7 @@ function ExceptionsSection({ accessToken }: { accessToken: string }) {
   }, [accessToken]);
 
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
 
   const form = useForm<{ startDate: string; endDate: string; reason?: string }>({
@@ -613,19 +628,40 @@ function ExceptionsSection({ accessToken }: { accessToken: string }) {
       <form onSubmit={form.handleSubmit(onSubmit)} className="mt-6 flex flex-col gap-4 border-t border-gray-300 pt-6" noValidate>
         <div className="grid grid-cols-2 gap-4">
           <FieldWrapper label={t("disponibilidad.bloqueos.desde")} htmlFor="startDate" error={form.formState.errors.startDate?.message}>
-            <TextInput
-              id="startDate"
-              type="date"
-              error={!!form.formState.errors.startDate}
-              {...form.register("startDate", { required: t("disponibilidad.bloqueos.seleccionaFecha") })}
+            <Controller
+              control={form.control}
+              name="startDate"
+              rules={{ required: t("disponibilidad.bloqueos.seleccionaFecha") }}
+              render={({ field }) => (
+                <DateInput
+                  ref={field.ref}
+                  id="startDate"
+                  name={field.name}
+                  value={field.value ?? ""}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                  error={!!form.formState.errors.startDate}
+                />
+              )}
             />
           </FieldWrapper>
           <FieldWrapper label={t("disponibilidad.bloqueos.hasta")} htmlFor="endDate" error={form.formState.errors.endDate?.message}>
-            <TextInput
-              id="endDate"
-              type="date"
-              error={!!form.formState.errors.endDate}
-              {...form.register("endDate", { required: t("disponibilidad.bloqueos.seleccionaFecha") })}
+            <Controller
+              control={form.control}
+              name="endDate"
+              rules={{ required: t("disponibilidad.bloqueos.seleccionaFecha") }}
+              render={({ field }) => (
+                <DateInput
+                  ref={field.ref}
+                  id="endDate"
+                  name={field.name}
+                  min={form.watch("startDate") || undefined}
+                  value={field.value ?? ""}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                  error={!!form.formState.errors.endDate}
+                />
+              )}
             />
           </FieldWrapper>
         </div>

@@ -9,6 +9,8 @@ import { PrescriptionPanel } from "@/components/clinical/prescription-panel";
 import { LabOrderPanel } from "@/components/clinical/lab-order-panel";
 import { useT } from "@/lib/i18n/context";
 
+const OBJECT_URL_TTL_MS = 60_000;
+
 // Fase 4 / prompts 32-38A — el PLAN DEL PACIENTE: receta, órdenes de
 // estudio e indicaciones son documentos independientes ("el paciente
 // recibe solo lo que le corresponde"), cada uno con su PDF y su
@@ -56,7 +58,11 @@ export function EmisionDocumentos({
         setIndicacionesError(new Error(t("clinico.emision.pdfNoEncontrado")));
         return;
       }
-      window.open(URL.createObjectURL(blob), "_blank");
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      // La pestaña nueva ya tiene el PDF cargado; liberar el blob
+      // enseguida podría cortar la carga, así que se le da margen.
+      setTimeout(() => URL.revokeObjectURL(url), OBJECT_URL_TTL_MS);
     } catch (error) {
       setIndicacionesError(error);
     } finally {

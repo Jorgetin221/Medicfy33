@@ -6,6 +6,7 @@ import type { PatientHistoryItem } from "@/lib/use-patient-clinical";
 import { Card, ErrorState } from "@/components/ui/states";
 import { Button } from "@/components/ui/button";
 import { SelectInput, TextInput } from "@/components/ui/field";
+import { DateInput } from "@/components/ui/date-input";
 import { CollapsibleCard } from "@/components/ui/collapsible-card";
 import { useT } from "@/lib/i18n/context";
 import type { MessageKey } from "@/lib/i18n/dictionaries";
@@ -343,7 +344,7 @@ function SubstanceRow({
           </SelectInput>
           <TextInput aria-label={t("clinico.historiaFase2.edadInicio")} placeholder={t("clinico.historiaFase2.edadInicioCorto")} inputMode="numeric" value={ageOfOnset} onChange={(e) => setAgeOfOnset(e.target.value)} className="w-28" />
           {status === "SUSPENDIDO" ? (
-            <TextInput aria-label={t("clinico.historiaFase2.fechaSuspension")} type="date" value={suspendedAt} onChange={(e) => setSuspendedAt(e.target.value)} className="w-40" />
+            <DateInput aria-label={t("clinico.historiaFase2.fechaSuspension")} value={suspendedAt} onChange={setSuspendedAt} className="w-44" />
           ) : null}
           <Button
             type="button"

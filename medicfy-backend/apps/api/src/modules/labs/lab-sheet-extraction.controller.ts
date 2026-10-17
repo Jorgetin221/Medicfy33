@@ -1,7 +1,6 @@
 import { Body, Controller, Get, HttpStatus, Param, Post, Req, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from "@nestjs/swagger";
-import type { Express } from "express";
 import { labSheetExtractionReviewSchema, type LabSheetExtractionReviewInput } from "@medicfy/contracts";
 import { ApiException } from "../../common/api-exception";
 import { JwtAuthGuard } from "../identity/guards/jwt-auth.guard";
@@ -112,7 +111,8 @@ export class LabSheetExtractionController {
 }
 
 function lowestConfidence(candidates: { confidence: string }[]): string | null {
-  if (candidates.length === 0) return null;
+  const [first, ...rest] = candidates;
+  if (!first) return null;
   const order = { LOW: 0, MEDIUM: 1, HIGH: 2 };
-  return candidates.reduce((lowest, c) => (order[c.confidence as keyof typeof order] < order[lowest as keyof typeof order] ? c.confidence : lowest), candidates[0]!.confidence);
+  return rest.reduce((lowest, c) => (order[c.confidence as keyof typeof order] < order[lowest as keyof typeof order] ? c.confidence : lowest), first.confidence);
 }

@@ -17,6 +17,18 @@ export const ui = {
     restriccion: "JPG o PNG, máximo 5 MB.",
     vistaPrevia: "Vista previa de {etiqueta}",
   },
+  fecha: {
+    formato: "dd/mm/aaaa",
+    abrirCalendario: "Abrir calendario",
+    mesAnterior: "Mes anterior",
+    mesSiguiente: "Mes siguiente",
+    elegirMesAnio: "elegir mes y año",
+    mes: "Mes",
+    anio: "Año",
+    hoy: "Hoy",
+    borrar: "Borrar",
+    listo: "Listo",
+  },
   guardado: {
     guardado: "Guardado",
     guardando: "Guardando…",

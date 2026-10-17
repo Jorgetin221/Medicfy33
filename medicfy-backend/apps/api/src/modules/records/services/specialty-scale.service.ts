@@ -66,7 +66,7 @@ export class SpecialtyScaleService {
 }
 
 function isOptionValue(opt: unknown, value: number): boolean {
-  return typeof opt === "object" && opt !== null && "value" in opt && (opt as { value: unknown }).value === value;
+  return typeof opt === "object" && opt !== null && "value" in opt && opt.value === value;
 }
 
 function resolveInterpretationBucket(options: unknown, total: number): string | undefined {

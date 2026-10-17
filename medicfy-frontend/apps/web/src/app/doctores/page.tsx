@@ -89,7 +89,7 @@ function DoctoresContent() {
   }, [buildQuery]);
 
   useEffect(() => {
-    runSearch();
+    void runSearch();
   }, [runSearch]);
 
   function onSubmit(e: React.FormEvent) {
@@ -97,7 +97,7 @@ function DoctoresContent() {
     // URL compartible: los filtros activos viven en la query string.
     const params = buildQuery();
     router.push(`/doctores${params.toString() ? `?${params.toString()}` : ""}`);
-    runSearch();
+    void runSearch();
   }
 
   async function loadMore() {

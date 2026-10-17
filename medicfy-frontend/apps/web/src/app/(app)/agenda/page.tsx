@@ -79,7 +79,7 @@ function AgendaList({ accessToken }: { accessToken: string }) {
   }, [accessToken]);
 
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
 
   async function runAction(path: string, body?: unknown) {

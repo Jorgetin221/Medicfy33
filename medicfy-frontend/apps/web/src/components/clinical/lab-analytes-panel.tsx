@@ -5,6 +5,7 @@ import { apiFetch, expectArray } from "@/lib/api-client";
 import { Card, EmptyState, ErrorState, LoadingState } from "@/components/ui/states";
 import { Button } from "@/components/ui/button";
 import { FieldWrapper, TextInput } from "@/components/ui/field";
+import { DateInput } from "@/components/ui/date-input";
 import { VitalLineChart } from "@/components/clinical/resultados-charts";
 import { VITAL_RANGE_LABEL_KEY, VITAL_RANGE_TILE_CLASS, type VitalRangeStatus } from "@/lib/vital-ranges";
 import { useI18n } from "@/lib/i18n/context";
@@ -102,7 +103,7 @@ function AddAnalyteForm({ patientId, accessToken, onCreated }: { patientId: stri
           <TextInput id="analyte-loinc" value={loincCode} onChange={(e) => setLoincCode(e.target.value)} />
         </FieldWrapper>
         <FieldWrapper label={t("clinico.analitos.fechaMedicion")} htmlFor="analyte-measured-at">
-          <TextInput id="analyte-measured-at" type="date" required value={measuredAt} onChange={(e) => setMeasuredAt(e.target.value)} />
+          <DateInput id="analyte-measured-at" required value={measuredAt} onChange={setMeasuredAt} />
         </FieldWrapper>
         <FieldWrapper label={t("clinico.analitos.valor")} htmlFor="analyte-value">
           <TextInput id="analyte-value" type="number" step="any" required value={value} onChange={(e) => setValue(e.target.value)} />

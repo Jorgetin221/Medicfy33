@@ -4,6 +4,7 @@ import { useState, type ChangeEvent, type FormEvent } from "react";
 import { apiFetch, apiUpload } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { FieldWrapper, TextInput } from "@/components/ui/field";
+import { DateInput } from "@/components/ui/date-input";
 import { ErrorState } from "@/components/ui/states";
 import { FileFormatNotice, useAcceptedFile } from "@/components/ui/accepted-file";
 
@@ -216,7 +217,7 @@ export function LabSheetUpload({
 
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             <FieldWrapper label={t("clinico.hojaLab.fechaEstudio")} htmlFor="sheet-measured-at">
-              <TextInput id="sheet-measured-at" type="date" required value={measuredAt} onChange={(e) => setMeasuredAt(e.target.value)} />
+              <DateInput id="sheet-measured-at" required value={measuredAt} onChange={setMeasuredAt} />
             </FieldWrapper>
             <FieldWrapper label={t("clinico.hojaLab.laboratorio")} htmlFor="sheet-lab-name">
               <TextInput id="sheet-lab-name" value={labName} onChange={(e) => setLabName(e.target.value)} />

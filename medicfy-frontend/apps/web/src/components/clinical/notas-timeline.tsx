@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { apiFetch, ApiError, expectArray } from "@/lib/api-client";
 import { LoadingState, ErrorState } from "@/components/ui/states";
 import { FieldWrapper, SelectInput, TextInput } from "@/components/ui/field";
+import { DateInput } from "@/components/ui/date-input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Button } from "@/components/ui/button";
 import { useI18n, useT, type TranslateFn } from "@/lib/i18n/context";
@@ -277,8 +278,8 @@ export function NotasTimeline({ patientId, accessToken }: { patientId: string; a
           ))}
         </SelectInput>
         <div className="flex gap-2">
-          <TextInput aria-label={t("clinico.notasTimeline.desde")} type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="text-sm" />
-          <TextInput aria-label={t("clinico.notasTimeline.hasta")} type="date" value={to} onChange={(e) => setTo(e.target.value)} className="text-sm" />
+          <DateInput aria-label={t("clinico.notasTimeline.desde")} value={from} onChange={setFrom} max={to || undefined} className="min-w-0 flex-1" />
+          <DateInput aria-label={t("clinico.notasTimeline.hasta")} value={to} onChange={setTo} min={from || undefined} className="min-w-0 flex-1" />
         </div>
         <TextInput
           aria-label={t("clinico.notasTimeline.buscarEtiqueta")}

@@ -1,6 +1,5 @@
 import { HttpStatus } from "@nestjs/common";
 import type { Request } from "express";
-import type { Express } from "express";
 import { MEDICAL_FILE_FORMATS, resolveMedicalFileFormat } from "@medicfy/contracts";
 import { ApiException } from "./api-exception";
 
@@ -14,8 +13,7 @@ import { ApiException } from "./api-exception";
 // especificación lo prohíbe explícitamente aquí ("sin visor DICOM"),
 // a diferencia de los adjuntos clínicos generales de M8 (línea 887)
 // que sí lo permiten — son dos superficies distintas.
-export const LAB_RESULT_ALLOWED_MIME_TYPES = ["application/pdf", "image/jpeg", "image/png"] as const;
-export const LAB_RESULT_ALLOWED_EXTENSIONS = [".pdf", ".jpg", ".jpeg", ".png"];
+const LAB_RESULT_ALLOWED_MIME_TYPES = ["application/pdf", "image/jpeg", "image/png"] as const;
 // Mismo límite que documentos de perfil (línea 701) — no hay uno
 // propio para resultados de laboratorio en la especificación.
 export const LAB_RESULT_MAX_FILE_BYTES = 10 * 1024 * 1024;

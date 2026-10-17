@@ -264,7 +264,7 @@ function MyDoctorsSection({ accessToken }: { accessToken: string }) {
       return;
     }
     let cancelled = false;
-    Promise.all(
+    void Promise.all(
       doctors.slice(0, 5).map((doc) =>
         apiFetch<Omit<FeedPost, "doctor">[]>(`/doctors/${doc.slug}/public/posts`)
           .then((posts) => posts.slice(0, 2).map((p) => ({ ...p, doctor: doc })))

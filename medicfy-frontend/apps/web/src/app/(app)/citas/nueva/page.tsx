@@ -105,7 +105,7 @@ function NuevaCitaForm() {
   }, [accessToken]);
 
   useEffect(() => {
-    loadBase();
+    void loadBase();
   }, [loadBase]);
 
   const loadSlots = useCallback(async () => {
@@ -120,7 +120,7 @@ function NuevaCitaForm() {
   }, [doctorId, serviceId]);
 
   useEffect(() => {
-    loadSlots();
+    void loadSlots();
   }, [loadSlots]);
 
   async function book(slot: Slot) {

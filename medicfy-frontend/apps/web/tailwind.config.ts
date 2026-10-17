@@ -56,6 +56,7 @@ export default {
       },
       boxShadow: {
         card: "var(--shadow-card)",
+        popover: "var(--shadow-popover)",
       },
     },
   },

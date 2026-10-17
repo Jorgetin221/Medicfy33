@@ -18,6 +18,18 @@ export const ui: typeof es = {
     restriccion: "JPG or PNG, 5 MB maximum.",
     vistaPrevia: "Preview of {etiqueta}",
   },
+  fecha: {
+    formato: "mm/dd/yyyy",
+    abrirCalendario: "Open calendar",
+    mesAnterior: "Previous month",
+    mesSiguiente: "Next month",
+    elegirMesAnio: "choose month and year",
+    mes: "Month",
+    anio: "Year",
+    hoy: "Today",
+    borrar: "Clear",
+    listo: "Done",
+  },
   guardado: {
     guardado: "Saved",
     guardando: "Saving…",

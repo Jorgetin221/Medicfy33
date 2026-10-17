@@ -65,7 +65,7 @@ export function DocumentPreview({
     let createdUrl: string | null = null;
     setLoadedDocument(null);
     setError(null);
-    (async () => {
+    void (async () => {
       try {
         const blob = await apiFetchBlob(path, { accessToken });
         if (cancelled) return;

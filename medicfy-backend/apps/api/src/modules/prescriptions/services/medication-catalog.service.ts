@@ -1,5 +1,5 @@
 import { HttpStatus, Injectable } from "@nestjs/common";
-import type { MedicationCatalog, Prisma } from "@prisma/client";
+import type { MedicationCatalog } from "@prisma/client";
 import type { MedicationCatalogSelfServiceCreateInput } from "@medicfy/contracts";
 import { ApiException } from "../../../common/api-exception";
 import { PrismaService } from "../../../prisma/prisma.service";
@@ -44,7 +44,7 @@ export class MedicationCatalogService {
     return this.prisma.medicationCatalog.create({
       data: {
         genericName: input.genericName,
-        presentations: input.presentations as unknown as Prisma.InputJsonValue,
+        presentations: input.presentations,
         controlGroup: input.controlGroup,
         isElectronicallyPrescribable: !CONTROLLED_GROUPS.has(input.controlGroup),
         addedByDoctorId: doctorId,

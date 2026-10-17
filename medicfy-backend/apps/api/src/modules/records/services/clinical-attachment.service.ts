@@ -1,6 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { createHash, randomUUID } from "node:crypto";
-import type { Express } from "express";
 import type { ClinicalAttachment } from "@prisma/client";
 import type { ClinicalAttachmentUploadMetadataInput } from "@medicfy/contracts";
 import { PrismaService } from "../../../prisma/prisma.service";

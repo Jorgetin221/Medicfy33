@@ -396,7 +396,7 @@ function AvailabilitySection({ doctor }: { doctor: PublicDoctor }) {
   }, [doctor.id, serviceId]);
 
   useEffect(() => {
-    loadSlots();
+    void loadSlots();
   }, [loadSlots]);
 
   async function book(slot: AvailableSlot) {

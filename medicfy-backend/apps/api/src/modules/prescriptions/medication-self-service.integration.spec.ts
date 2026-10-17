@@ -41,13 +41,6 @@ function totpFromUri(otpauthUri: string): string {
 }
 
 const STRONG_PASSWORD = "Correcto-Caballo-Bateria-47!Grafito";
-const VALID_NOTE = {
-  chiefComplaint: "Control de seguimiento",
-  currentIllness: "Paciente en control.",
-  vitals: {},
-  assessment: "Evolución estable.",
-  plan: "Continuar manejo actual.",
-};
 
 // Autoservicio de catálogo de medicamentos — el médico agrega un
 // medicamento que no encontró, sin aprobación de admin (decisión

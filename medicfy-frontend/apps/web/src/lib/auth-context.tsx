@@ -116,7 +116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // cumplió mientras estaba cerrada/inactiva cierra la sesión de
     // inmediato, sin esperar al primer tick del intervalo.
     if (Date.now() - readLastActivity() >= limitMs) {
-      logout();
+      void logout();
       return;
     }
 
@@ -126,7 +126,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const interval = setInterval(() => {
       const idleMs = Date.now() - readLastActivity();
       if (idleMs >= limitMs) {
-        logout();
+        void logout();
       } else if (!isPatient && idleMs >= limitMs - DOCTOR_WARNING_LEAD_MS) {
         setInactivityWarning(true);
       }

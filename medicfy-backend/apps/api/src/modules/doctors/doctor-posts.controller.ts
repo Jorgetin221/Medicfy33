@@ -17,7 +17,6 @@ import {
 import { FileInterceptor } from "@nestjs/platform-express";
 import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiQuery, ApiTags } from "@nestjs/swagger";
 import type { Request } from "express";
-import type { Express } from "express";
 import { doctorPostCreateSchema, doctorPostMediaUploadMetadataSchema, doctorPostUpdateSchema } from "@medicfy/contracts";
 import { ApiException } from "../../common/api-exception";
 import { JwtAuthGuard } from "../identity/guards/jwt-auth.guard";

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 import QRCode from "qrcode";
 import {
@@ -14,12 +14,14 @@ import {
   containsContactInfo,
   type PracticeLocationInput,
 } from "@medicfy/contracts";
-import { apiFetch, apiUpload, apiFetchBlob, expectArray } from "@/lib/api-client";
+import { apiFetch, apiUpload, expectArray } from "@/lib/api-client";
+import { useRemoteBlobUrl } from "@/lib/use-remote-blob-url";
 import { useAuth } from "@/lib/auth-context";
 import { useDoctorProfile, type DoctorProfile, type DoctorVerificationStatus } from "@/lib/use-doctor-profile";
 import { useSpecialties } from "@/lib/use-specialties";
 import { Button } from "@/components/ui/button";
 import { FieldWrapper, TextInput, Textarea } from "@/components/ui/field";
+import { DateInput } from "@/components/ui/date-input";
 import { Card, LoadingState, EmptyState, ErrorState } from "@/components/ui/states";
 import { Aviso } from "@/components/ui/alert";
 import { FileUpload } from "@/components/ui/file-upload";
@@ -94,7 +96,7 @@ function PerfilContent({ accessToken }: { accessToken: string }) {
   }, [accessToken]);
 
   useEffect(() => {
-    loadLocations();
+    void loadLocations();
   }, [loadLocations]);
 
   if (isLoading || !doctor) {
@@ -296,9 +298,12 @@ function MfaSection({ accessToken }: { accessToken: string }) {
       return undefined;
     }
     let cancelled = false;
-    QRCode.toDataURL(enrollment.otpauthUri).then((url) => {
-      if (!cancelled) setQrDataUrl(url);
-    });
+    QRCode.toDataURL(enrollment.otpauthUri)
+      .then((url) => {
+        if (!cancelled) setQrDataUrl(url);
+      })
+      // Sin QR queda la clave manual (manualSecret), que se muestra siempre.
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -567,11 +572,20 @@ function SpecialtyLicenseSection({
               htmlFor="specialtyLicenseExpiresAt"
               error={form.formState.errors.specialtyLicenseExpiresAt?.message}
             >
-              <TextInput
-                id="specialtyLicenseExpiresAt"
-                type="date"
-                error={!!form.formState.errors.specialtyLicenseExpiresAt}
-                {...form.register("specialtyLicenseExpiresAt")}
+              <Controller
+                control={form.control}
+                name="specialtyLicenseExpiresAt"
+                render={({ field }) => (
+                  <DateInput
+                    ref={field.ref}
+                    id="specialtyLicenseExpiresAt"
+                    name={field.name}
+                    value={field.value ?? ""}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                    error={!!form.formState.errors.specialtyLicenseExpiresAt}
+                  />
+                )}
               />
             </FieldWrapper>
           </div>
@@ -927,26 +941,16 @@ function BrandingSection({
 }) {
   const t = useT();
   const [error, setError] = useState<unknown>(null);
-  const [logoSrc, setLogoSrc] = useState<string | null>(null);
-  const [signatureSrc, setSignatureSrc] = useState<string | null>(null);
+  const { url: logoSrc, show: showLogo } = useRemoteBlobUrl(doctor.logoUrl ? "/doctors/me/branding-assets/logo" : null, accessToken);
+  const { url: signatureSrc, show: showSignature } = useRemoteBlobUrl(
+    doctor.signatureImageUrl ? "/doctors/me/branding-assets/signature" : null,
+    accessToken
+  );
 
   const form = useForm<HeaderInput>({
     resolver: useZodResolver<HeaderInput>(headerSchema),
     defaultValues: { letterheadPhrase: doctor.letterheadPhrase ?? "" },
   });
-
-  useEffect(() => {
-    if (doctor.logoUrl) {
-      apiFetchBlob("/doctors/me/branding-assets/logo", { accessToken }).then((blob) => {
-        if (blob) setLogoSrc(URL.createObjectURL(blob));
-      });
-    }
-    if (doctor.signatureImageUrl) {
-      apiFetchBlob("/doctors/me/branding-assets/signature", { accessToken }).then((blob) => {
-        if (blob) setSignatureSrc(URL.createObjectURL(blob));
-      });
-    }
-  }, [doctor.logoUrl, doctor.signatureImageUrl, accessToken]);
 
   async function onSubmit(values: HeaderInput) {
     setError(null);
@@ -960,13 +964,13 @@ function BrandingSection({
 
   async function uploadLogo(file: File) {
     await apiUpload("/doctors/me/branding-assets?kind=logo", file, { accessToken });
-    setLogoSrc(URL.createObjectURL(file));
+    showLogo(file);
     onSaved();
   }
 
   async function uploadSignature(file: File) {
     await apiUpload("/doctors/me/branding-assets?kind=signature", file, { accessToken });
-    setSignatureSrc(URL.createObjectURL(file));
+    showSignature(file);
     onSaved();
   }
 

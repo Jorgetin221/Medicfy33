@@ -839,8 +839,6 @@ const server = http.createServer(async (req, res) => {
     return sendFile(pdf, 'application/pdf');
   };
 
-  console.log(`[${method}] ${pathname}`);
-
   // Routes
   if (pathname === '/health') {
     return sendJson({ status: "ok" });

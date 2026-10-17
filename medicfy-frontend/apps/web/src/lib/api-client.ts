@@ -90,156 +90,105 @@ async function refreshAccessToken(): Promise<string | null> {
   return refreshPromise;
 }
 
-async function doFetch(path: string, options: RequestOptions, token: string | null | undefined): Promise<Response> {
-  return fetch(`${API_BASE_URL}${path}`, {
-    method: options.method ?? "GET",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "Accept-Language": acceptLanguageHeader(),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
-  });
+type ApiErrorBody = { error?: { code?: string; message?: string; details?: unknown } };
+
+// Cómo se manda UNA petición con un token dado: cada función pública
+// (JSON, subida, archivo) arma la suya; el reintento es común.
+type SendWithToken = (token: string | null | undefined) => Promise<Response>;
+
+function authHeaders(token: string | null | undefined): Record<string, string> {
+  return {
+    "Accept-Language": acceptLanguageHeader(),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
 }
 
-export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  let res: Response;
+async function sendOrNetworkError(send: SendWithToken, token: string | null | undefined): Promise<Response> {
   try {
-    res = await doFetch(path, options, options.accessToken);
+    return await send(token);
   } catch {
     // Network failure (offline, DNS, server down) — distinct from a
     // real HTTP error response, so screens can show "sin conexión"
     // instead of a generic error (CLAUDE.md §5: cuatro estados).
     throw new ApiError("NETWORK_ERROR", msg("sinConexion"), 0);
   }
+}
 
-  let contentType = res.headers.get("content-type");
-  let data: unknown = contentType?.includes("application/json") ? await res.json() : undefined;
+// Un solo reintento con un access token renovado. null = no hay
+// sesión que renovar: el refresh token (cookie httpOnly, 30 días)
+// también expiró. AuthProvider limpia accessToken a null, y cada
+// pantalla ya redirige sola a /login cuando eso pasa.
+async function resendWithFreshToken(send: SendWithToken): Promise<Response | null> {
+  const freshToken = await refreshAccessToken();
+  if (!freshToken) {
+    onSessionExpired?.();
+    return null;
+  }
+  onTokenRefreshed?.(freshToken);
+  return sendOrNetworkError(send, freshToken);
+}
 
-  const errorBody = data as { error?: { code?: string; message?: string; details?: unknown } } | undefined;
-  if (res.status === 401 && errorBody?.error?.code === "AUTH_INVALID_CREDENTIALS" && options.accessToken) {
-    const freshToken = await refreshAccessToken();
-    if (freshToken) {
-      onTokenRefreshed?.(freshToken);
-      try {
-        res = await doFetch(path, options, freshToken);
-      } catch {
-        throw new ApiError("NETWORK_ERROR", msg("sinConexion"), 0);
-      }
-      contentType = res.headers.get("content-type");
-      data = contentType?.includes("application/json") ? await res.json() : undefined;
-    } else {
-      // El refresh token (cookie httpOnly, 30 días) también expiró o
-      // ya no es válido — no hay nada que reintentar. AuthProvider
-      // limpia accessToken a null, y cada pantalla ya redirige sola a
-      // /login cuando eso pasa (mismo guard que usan todas).
-      onSessionExpired?.();
+async function readJsonBody(res: Response): Promise<unknown> {
+  return res.headers.get("content-type")?.includes("application/json") ? res.json() : undefined;
+}
+
+// apiFetch y apiUpload: respuesta JSON, errores con el formato
+// uniforme { error: { code, message, details } } del servidor.
+async function requestJson<T>(send: SendWithToken, accessToken: string | null | undefined): Promise<T> {
+  let res = await sendOrNetworkError(send, accessToken);
+  let data = await readJsonBody(res);
+
+  if (res.status === 401 && (data as ApiErrorBody | undefined)?.error?.code === "AUTH_INVALID_CREDENTIALS" && accessToken) {
+    const retried = await resendWithFreshToken(send);
+    if (retried) {
+      res = retried;
+      data = await readJsonBody(res);
     }
   }
 
   if (!res.ok) {
-    const body = data as { error?: { code?: string; message?: string; details?: unknown } } | undefined;
-    throw new ApiError(
-      body?.error?.code ?? "UNKNOWN_ERROR",
-      body?.error?.message ?? res.statusText,
-      res.status,
-      body?.error?.details
-    );
+    const body = data as ApiErrorBody | undefined;
+    throw new ApiError(body?.error?.code ?? "UNKNOWN_ERROR", body?.error?.message ?? res.statusText, res.status, body?.error?.details);
   }
-
   return data as T;
+}
+
+export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  return requestJson<T>(
+    (token) =>
+      fetch(`${API_BASE_URL}${path}`, {
+        method: options.method ?? "GET",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...authHeaders(token) },
+        ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
+      }),
+    options.accessToken
+  );
 }
 
 // Perfil (Parte B §1.2/§5.1): subida de logo/firma visual. Sin
 // Content-Type manual — el navegador arma el boundary de multipart.
-// Mismo reintento-por-token-vencido que apiFetch — ver el comentario
-// junto a setAuthRefreshHandlers.
 export async function apiUpload<T>(path: string, file: File, options: { accessToken?: string | null } = {}): Promise<T> {
   const formData = new FormData();
   formData.append("file", file);
-
-  async function send(token: string | null | undefined): Promise<Response> {
-    return fetch(`${API_BASE_URL}${path}`, {
-      method: "POST",
-      credentials: "include",
-      headers: {
-        "Accept-Language": acceptLanguageHeader(),
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: formData,
-    });
-  }
-
-  let res: Response;
-  try {
-    res = await send(options.accessToken);
-  } catch {
-    throw new ApiError("NETWORK_ERROR", msg("sinConexion"), 0);
-  }
-
-  let contentType = res.headers.get("content-type");
-  let data: unknown = contentType?.includes("application/json") ? await res.json() : undefined;
-
-  const errorBody = data as { error?: { code?: string } } | undefined;
-  if (res.status === 401 && errorBody?.error?.code === "AUTH_INVALID_CREDENTIALS" && options.accessToken) {
-    const freshToken = await refreshAccessToken();
-    if (freshToken) {
-      onTokenRefreshed?.(freshToken);
-      try {
-        res = await send(freshToken);
-      } catch {
-        throw new ApiError("NETWORK_ERROR", msg("sinConexion"), 0);
-      }
-      contentType = res.headers.get("content-type");
-      data = contentType?.includes("application/json") ? await res.json() : undefined;
-    } else {
-      onSessionExpired?.();
-    }
-  }
-
-  if (!res.ok) {
-    const body = data as { error?: { code?: string; message?: string; details?: unknown } } | undefined;
-    throw new ApiError(body?.error?.code ?? "UNKNOWN_ERROR", body?.error?.message ?? res.statusText, res.status, body?.error?.details);
-  }
-
-  return data as T;
+  return requestJson<T>(
+    (token) => fetch(`${API_BASE_URL}${path}`, { method: "POST", credentials: "include", headers: authHeaders(token), body: formData }),
+    options.accessToken
+  );
 }
 
 // Perfil: pide un archivo ya subido (logo/firma) como Blob. Un
 // <img src> no puede mandar el header Authorization, así que la
 // pantalla que lo use hace fetch autenticado → Blob → object URL.
+// null = el archivo no existe (404).
 export async function apiFetchBlob(path: string, options: { accessToken?: string | null } = {}): Promise<Blob | null> {
-  async function send(token: string | null | undefined): Promise<Response> {
-    return fetch(`${API_BASE_URL}${path}`, {
-      method: "GET",
-      credentials: "include",
-      headers: {
-        "Accept-Language": acceptLanguageHeader(),
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-    });
-  }
+  const send: SendWithToken = (token) => fetch(`${API_BASE_URL}${path}`, { method: "GET", credentials: "include", headers: authHeaders(token) });
 
-  let res: Response;
-  try {
-    res = await send(options.accessToken);
-  } catch {
-    throw new ApiError("NETWORK_ERROR", msg("sinConexion"), 0);
-  }
-
+  let res = await sendOrNetworkError(send, options.accessToken);
+  // Un archivo no trae cuerpo JSON con el código de error: cualquier
+  // 401 con token se trata como token vencido.
   if (res.status === 401 && options.accessToken) {
-    const freshToken = await refreshAccessToken();
-    if (freshToken) {
-      onTokenRefreshed?.(freshToken);
-      try {
-        res = await send(freshToken);
-      } catch {
-        throw new ApiError("NETWORK_ERROR", msg("sinConexion"), 0);
-      }
-    } else {
-      onSessionExpired?.();
-    }
+    res = (await resendWithFreshToken(send)) ?? res;
   }
 
   if (res.status === 404) return null;

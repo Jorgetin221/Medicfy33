@@ -48,7 +48,7 @@ function hasAnyVital(vitals: unknown): boolean {
   return typeof vitals === "object" && vitals !== null && Object.values(vitals).some((v) => typeof v === "number");
 }
 
-export function passForDraft(draft: Record<string, unknown>): AssistantPass {
+function passForDraft(draft: Record<string, unknown>): AssistantPass {
   if (hasText(draft.plan)) return "CIERRE";
   if (hasText(draft.assessment) || (Array.isArray(draft.diagnoses) && draft.diagnoses.length > 0)) return "ANALISIS";
   if (hasText(draft.physicalExam) || hasAnyVital(draft.vitals)) return "OBJETIVO";

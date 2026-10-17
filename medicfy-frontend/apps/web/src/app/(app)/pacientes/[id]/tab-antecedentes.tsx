@@ -142,7 +142,7 @@ function AddAllergyForm({ patientId, accessToken, onCreated }: { patientId: stri
     setSubmitError(null);
     try {
       await apiFetch(`/records/patients/${patientId}/allergies`, { method: "POST", accessToken, body: values });
-      form.reset({ certainty: "CONFIRMED" } as PatientAllergyCatalogCreateInput);
+      form.reset({ certainty: "CONFIRMED" });
       setIsOpen(false);
       onCreated();
     } catch (error) {

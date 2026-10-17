@@ -9,6 +9,12 @@ export default tseslint.config(
     rules: {
       "@typescript-eslint/no-explicit-any": "error",
       "@typescript-eslint/explicit-function-return-type": "off",
+      // Prefijo _ = sin uso a propósito: omitir una llave al desestructurar
+      // ({ password: _omit, ...rest }) o cumplir la firma de un puerto.
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_", ignoreRestSiblings: true },
+      ],
       // NestJS modules are idiomatically empty classes carrying only
       // the @Module decorator.
       "@typescript-eslint/no-extraneous-class": "off",

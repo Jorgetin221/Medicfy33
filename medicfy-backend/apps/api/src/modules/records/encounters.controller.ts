@@ -105,7 +105,7 @@ export class EncountersController {
     @Body(new ZodValidationPipe(clinicalNoteCorrectionSchema)) body: ClinicalNoteCorrectionInput,
     @Req() req: ClinicalRequest
   ) {
-    const note = await this.encounters.correctNote(encounterId, req.user.sub, body);
+    const note = await this.encounters.correctNote(encounterId, body);
     await this.audit(req, req.clinicalPatientId as string, "records.encounter.note.correct", note.id);
     return note;
   }

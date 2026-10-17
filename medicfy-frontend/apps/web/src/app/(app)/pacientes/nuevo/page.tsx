@@ -3,13 +3,15 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { patientCreateSchema, isMinor, type PatientCreateInput } from "@medicfy/contracts";
 import { apiFetch } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { FieldWrapper, TextInput, SelectInput } from "@/components/ui/field";
 import { Card, ErrorState, LoadingState } from "@/components/ui/states";
+import { DateInput } from "@/components/ui/date-input";
+import { toIsoDateKey } from "@/lib/i18n/format";
 import { useT } from "@/lib/i18n/context";
 import { useZodResolver } from "@/lib/i18n/validation";
 
@@ -108,7 +110,22 @@ export default function NuevoPacientePage() {
 
           <div className="grid grid-cols-2 gap-4">
             <FieldWrapper label={t("auth.campos.fechaNacimiento")} htmlFor="birthDate" error={form.formState.errors.birthDate?.message}>
-              <TextInput id="birthDate" type="date" error={!!form.formState.errors.birthDate} {...form.register("birthDate")} />
+              <Controller
+                control={form.control}
+                name="birthDate"
+                render={({ field }) => (
+                  <DateInput
+                    ref={field.ref}
+                    id="birthDate"
+                    name={field.name}
+                    value={field.value ?? ""}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                    max={toIsoDateKey(new Date())}
+                    error={!!form.formState.errors.birthDate}
+                  />
+                )}
+              />
             </FieldWrapper>
             <FieldWrapper label={t("auth.campos.sexoAlNacer")} htmlFor="sexAtBirth" error={form.formState.errors.sexAtBirth?.message}>
               <SelectInput id="sexAtBirth" error={!!form.formState.errors.sexAtBirth} {...form.register("sexAtBirth")}>

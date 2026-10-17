@@ -267,7 +267,7 @@ export class DoctorProfileService {
         // DT-05: mismo shape que CancellationPolicy — resolveCancellationPolicy
         // (scheduling/cancellation-policy.ts) rellena lo faltante contra el
         // default del spec al leer, así que aquí se guarda tal cual.
-        cancellationPolicy: patch.cancellationPolicy as Prisma.InputJsonValue | undefined,
+        cancellationPolicy: patch.cancellationPolicy,
       }),
     });
   }

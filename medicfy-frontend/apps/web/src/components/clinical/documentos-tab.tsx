@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { FileFormatNotice, useAcceptedFile } from "@/components/ui/accepted-file";
 import { Panel } from "@/components/ui/panel";
 import { FieldWrapper, SelectInput, TextInput } from "@/components/ui/field";
+import { DateInput } from "@/components/ui/date-input";
 import { PdfViewer } from "@/components/clinical/pdf-viewer";
 import { useI18n } from "@/lib/i18n/context";
 import { formatDateLong } from "@/lib/i18n/format";
@@ -135,7 +136,7 @@ export function DocumentosTab({ patientId, accessToken }: { patientId: string; a
           </SelectInput>
         </FieldWrapper>
         <FieldWrapper label={t("clinico.documentos.fechaEstudio")} htmlFor="doc-study-date">
-          <TextInput id="doc-study-date" type="date" value={studyDate} onChange={(e) => setStudyDate(e.target.value)} />
+          <DateInput id="doc-study-date" value={studyDate} onChange={setStudyDate} />
         </FieldWrapper>
         <FieldWrapper label={t("clinico.documentos.descripcion")} htmlFor="doc-description">
           <TextInput id="doc-description" value={description} onChange={(e) => setDescription(e.target.value)} />

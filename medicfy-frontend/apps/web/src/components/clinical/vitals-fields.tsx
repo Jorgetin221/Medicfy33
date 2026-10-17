@@ -72,7 +72,7 @@ export function VitalsFields({ form, patientAgeYears }: { form: UseFormReturn<Cl
                 step={field.step}
                 error={!!fieldError}
                 className="border-0 bg-transparent p-0 text-2xl font-semibold focus-visible:outline-none"
-                {...form.register(`vitals.${field.name}` as `vitals.${VitalsFieldName}`, {
+                {...form.register(`vitals.${field.name}`, {
                   setValueAs: (value: string) => (value === "" ? undefined : Number(value)),
                 })}
               />

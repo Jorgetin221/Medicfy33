@@ -400,7 +400,7 @@ function decimalToNumber(value: Decimalish): number | undefined {
 }
 
 function buildCurrentNoteBlock(draft: Record<string, unknown>): AssistantCurrentNoteBlock {
-  const asString = (key: string): string | undefined => (typeof draft[key] === "string" ? (draft[key] as string) : undefined);
+  const asString = (key: string): string | undefined => (typeof draft[key] === "string" ? draft[key] : undefined);
   return omitUndefined({
     motivoConsulta: asString("chiefComplaint"),
     padecimientoActual: asString("currentIllness"),
@@ -419,7 +419,7 @@ function buildCurrentNoteBlock(draft: Record<string, unknown>): AssistantCurrent
 // funciones que usa la firma — nunca las decide el modelo.
 function buildCurrentVitalsBlock(rawVitals: unknown, ageYears: number): AssistantVitalsBlock {
   const raw = asRecord(rawVitals);
-  const num = (key: string): number | undefined => (typeof raw[key] === "number" ? (raw[key] as number) : undefined);
+  const num = (key: string): number | undefined => (typeof raw[key] === "number" ? raw[key] : undefined);
   const vitals = {
     bpSystolic: num("bpSystolic"),
     bpDiastolic: num("bpDiastolic"),

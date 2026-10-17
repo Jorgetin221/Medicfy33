@@ -4,11 +4,12 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
-import { registerDoctorSchema, emailVerifySchema, type RegisterDoctorInput, type EmailVerifyInput } from "@medicfy/contracts";
+import { registerDoctorSchema, type RegisterDoctorInput } from "@medicfy/contracts";
 import { apiFetch } from "@/lib/api-client";
 import { useSpecialties } from "@/lib/use-specialties";
 import { useSpecialtyName } from "@/lib/i18n/catalog";
 import { AuthLayout } from "@/components/auth-layout";
+import { VerifyEmailStep } from "@/components/verify-email-step";
 import { Button } from "@/components/ui/button";
 import { FieldWrapper, TextInput, SelectInput } from "@/components/ui/field";
 import { PasswordInput } from "@/components/ui/password-input";
@@ -59,7 +60,7 @@ export default function RegistroMedicoPage() {
   }
 
   if (step === "verify" && userId) {
-    return <VerifyEmailStep userId={userId} onVerified={() => setStep("done")} />;
+    return <VerifyEmailStep userId={userId} panelCopy={PANEL_COPY} onVerified={() => setStep("done")} />;
   }
 
   if (step === "done") {
@@ -195,54 +196,6 @@ export default function RegistroMedicoPage() {
             {t("auth.registroMedico.iniciaSesion")}
           </Link>
         </p>
-      </div>
-    </AuthLayout>
-  );
-}
-
-function VerifyEmailStep({ userId, onVerified }: { userId: string; onVerified: () => void }) {
-  const t = useT();
-  const PANEL_COPY = usePanelCopy();
-  const [error, setError] = useState<unknown>(null);
-  const form = useForm<Omit<EmailVerifyInput, "userId">>({
-    resolver: useZodResolver<Omit<EmailVerifyInput, "userId">>(emailVerifySchema.omit({ userId: true })),
-    defaultValues: { code: "" },
-  });
-
-  async function onSubmit(values: Omit<EmailVerifyInput, "userId">) {
-    setError(null);
-    try {
-      await apiFetch("/auth/email/verify", { method: "POST", body: { userId, ...values } });
-      onVerified();
-    } catch (err) {
-      setError(err);
-    }
-  }
-
-  return (
-    <AuthLayout {...PANEL_COPY}>
-      <div className="flex flex-col gap-8">
-        <div>
-          <h1 className="font-heading text-3xl text-brand-900">{t("auth.verificarCorreo.titulo")}</h1>
-          <p className="mt-2 text-base text-gray-500">{t("auth.verificarCorreo.subtitulo")}</p>
-        </div>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-5" noValidate>
-          <FieldWrapper label={t("auth.campos.codigo")} htmlFor="code" error={form.formState.errors.code?.message}>
-            <TextInput
-              id="code"
-              inputMode="numeric"
-              maxLength={6}
-              autoComplete="one-time-code"
-              autoFocus
-              error={!!form.formState.errors.code}
-              {...form.register("code")}
-            />
-          </FieldWrapper>
-          {error ? <ErrorState error={error} /> : null}
-          <Button type="submit" isLoading={form.formState.isSubmitting} className="mt-1 w-full">
-            {t("auth.verificarCorreo.verificar")}
-          </Button>
-        </form>
       </div>
     </AuthLayout>
   );
