@@ -156,6 +156,7 @@ export const pacientes: typeof es = {
     estadoResultado: { PENDING_REVIEW: "Awaiting review", REVIEWED: "Reviewed" },
     formatoPermitido: "PDF, images (JPG, PNG, HEIC, TIFF), DICOM, Word, Excel, text, HL7 and video · 50 MB max",
     formatoNoPermitido: "“{nombre}” can't be uploaded: that format isn't allowed.",
+    arrastrarAqui: "or drag the file here",
     archivoMuyGrande: "“{nombre}” is larger than {max} MB.",
     comentarioRevision: "Review comment (required):",
     motivoCancelacion: "Cancellation reason:",
@@ -181,8 +182,6 @@ export const pacientes: typeof es = {
     fechaEstudio: "Study date: {fecha} · ",
     panelTitulo: "Lab result",
     descargarOriginal: "Download the original file",
-    vacio: "No lab orders",
-    vacioAyuda: "Order a study or upload a result the patient already brought from elsewhere.",
   },
   recetas: {
     recetaTitulo: "Prescription {folio}",

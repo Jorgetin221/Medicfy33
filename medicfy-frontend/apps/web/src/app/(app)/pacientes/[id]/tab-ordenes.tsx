@@ -7,8 +7,9 @@ import { ensureOpenEncounter } from "@/lib/ensure-open-encounter";
 import { LabOrderPanel } from "@/components/clinical/lab-order-panel";
 import { Aviso } from "@/components/ui/alert";
 import type { TimelineLabOrder, TimelineStandaloneResult } from "@/lib/use-patient-clinical";
-import { Card, EmptyState, ErrorState } from "@/components/ui/states";
+import { Card, ErrorState } from "@/components/ui/states";
 import { Button } from "@/components/ui/button";
+import { FileDropZone } from "@/components/ui/file-drop-zone";
 import { DocumentTile, DocumentViewer } from "@/components/clinical/document-tile";
 import { useI18n } from "@/lib/i18n/context";
 import { formatDateLong } from "@/lib/i18n/format";
@@ -243,152 +244,159 @@ export function TabOrdenes({
     }
   }
 
-  const actionsHeader = (
-    <div className="flex flex-wrap items-center gap-3">
-      <Button type="button" variant="secondary" isLoading={isOpeningOrder} onClick={() => void openNewOrder()} className="min-h-11 px-3 text-sm">
-        {t("pacientes.ordenes.ordenarEstudio")}
-      </Button>
-      <input
-        ref={standaloneFileInputRef}
-        type="file"
-        className="hidden"
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) void uploadStandaloneResult(file);
-          e.target.value = "";
-        }}
-      />
-      <Button
-        type="button"
-        variant="secondary"
-        isLoading={isUploadingStandalone}
-        onClick={() => standaloneFileInputRef.current?.click()}
-        className="min-h-11 px-3 text-sm"
-      >
-        {t("pacientes.ordenes.subirResultado")}
-      </Button>
-      <span className="text-sm text-gray-500">{t("pacientes.ordenes.formatoPermitido")}</span>
-      {uploadNotice ? (
-        <div className="w-full">
-          <Aviso variant="advertencia" title={uploadNotice} />
-        </div>
-      ) : null}
-    </div>
-  );
-
   const allResults = results ?? [];
 
-  const ordersSection = (
+  // Dos columnas (pedido explícito, 2026-10-17): Resultados a la
+  // izquierda con "Subir resultado", Órdenes a la derecha con
+  // "+ Ordenar estudio", cada una con sus PDF debajo. Los resultados van
+  // juntos en su apartado, nunca mezclados con las órdenes; cada carpeta
+  // dice de qué orden viene. Se toman de /lab-results (traen el id del
+  // archivo); el timeline solo los cuenta.
+  // La columna entera acepta el archivo arrastrado: en Safari el
+  // selector deja "Cargar" deshabilitado (components/ui/file-drop-zone.tsx).
+  const resultsColumn = (
+    <FileDropZone onFile={(file) => void uploadStandaloneResult(file)} disabled={isUploadingStandalone} className="-m-2 p-2">
+      <section aria-labelledby="seccion-resultados" className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h3 id="seccion-resultados" className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+            {t("pacientes.ordenes.seccionResultados")} ({allResults.length})
+          </h3>
+          <input
+            ref={standaloneFileInputRef}
+            type="file"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void uploadStandaloneResult(file);
+              e.target.value = "";
+            }}
+          />
+          <Button
+            type="button"
+            variant="secondary"
+            isLoading={isUploadingStandalone}
+            onClick={() => standaloneFileInputRef.current?.click()}
+            title={`${t("pacientes.ordenes.formatoPermitido")} · ${t("pacientes.ordenes.arrastrarAqui")}`}
+            className="min-h-11 px-3 text-sm"
+          >
+            {t("pacientes.ordenes.subirResultado")}
+          </Button>
+        </div>
+        {uploadNotice ? <Aviso variant="advertencia" title={uploadNotice} /> : null}
+        {allResults.length === 0 ? (
+          <p className="text-base text-gray-500">
+            {standaloneResults.length > 0 ? t("clinico.pdf.cargando") : t("pacientes.ordenes.sinResultadosTodavia")}
+          </p>
+        ) : (
+          <Card>
+            {/* Carpetas del mismo ancho (10rem) que la de cada orden. */}
+            <div className="grid grid-cols-[repeat(auto-fill,10rem)] gap-4">
+              {allResults.map((r) => (
+                <ResultTile key={r.id} result={r} />
+              ))}
+            </div>
+          </Card>
+        )}
+      </section>
+    </FileDropZone>
+  );
+
+  const ordersColumn = (
     <section aria-labelledby="seccion-ordenes" className="flex flex-col gap-3">
-      <h3 id="seccion-ordenes" className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-        {t("pacientes.ordenes.seccionOrdenes")} ({labOrders.length})
-      </h3>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h3 id="seccion-ordenes" className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+          {t("pacientes.ordenes.seccionOrdenes")} ({labOrders.length})
+        </h3>
+        <Button type="button" variant="secondary" isLoading={isOpeningOrder} onClick={() => void openNewOrder()} className="min-h-11 px-3 text-sm">
+          {t("pacientes.ordenes.ordenarEstudio")}
+        </Button>
+      </div>
       {labOrders.length === 0 ? (
         <p className="text-base text-gray-500">{t("pacientes.ordenes.sinOrdenesTodavia")}</p>
       ) : (
         <ul className="flex flex-col gap-3">
           {labOrders.map((o) => (
             <li key={o.id}>
-              <Card>
-                <div className="flex flex-wrap items-start gap-4">
-                  <div className="w-40 shrink-0">
-                    <DocumentTile
-                      title={t("pacientes.ordenes.ordenTitulo", { folio: o.folio })}
-                      subtitle={formatDateLong(locale, o.issuedAt)}
-                      fileLabel="PDF"
-                      {...(o.status === "CANCELLED" ? { status: { label: t(STATUS_LABEL_KEYS[o.status]), tone: "cancelled" as const } } : {})}
-                      onOpen={() => openOrder(o)}
-                    />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-base font-medium text-gray-900">
-                          {t("pacientes.ordenes.folio", { folio: o.folio, fecha: formatDateLong(locale, o.issuedAt) })}
-                        </p>
-                        <p className="text-sm text-gray-500">{o.clinicalIndication}</p>
-                      </div>
-                      <span
-                        className={`whitespace-nowrap rounded-full border px-3 py-1 text-sm font-medium ${
-                          o.status === "CANCELLED" ? "border-danger-600 text-danger-600" : "border-success-600 text-success-600"
-                        }`}
-                      >
-                        {t(STATUS_LABEL_KEYS[o.status])}
-                      </span>
+              <FileDropZone onFile={(file) => void uploadResult(o.id, file)} disabled={o.status === "CANCELLED" || uploadingId === o.id}>
+                <Card>
+                  <div className="flex flex-wrap items-start gap-4">
+                    <div className="w-40 shrink-0">
+                      <DocumentTile
+                        title={t("pacientes.ordenes.ordenTitulo", { folio: o.folio })}
+                        subtitle={formatDateLong(locale, o.issuedAt)}
+                        fileLabel="PDF"
+                        {...(o.status === "CANCELLED" ? { status: { label: t(STATUS_LABEL_KEYS[o.status]), tone: "cancelled" as const } } : {})}
+                        onOpen={() => openOrder(o)}
+                      />
                     </div>
-                    <ul className="mt-2 flex flex-col gap-0.5">
-                      {o.items.map((item, i) => (
-                        <li key={i} className="text-base text-gray-900">
-                          {item.studyName}
-                        </li>
-                      ))}
-                    </ul>
-                    {o.fastingRequired && <p className="mt-1 text-sm text-warn-600">{t("pacientes.ordenes.requiereAyuno")}</p>}
-                    <p className="mt-1 text-sm text-gray-500">
-                      {t("pacientes.ordenes.resultadosDeLaOrden", { n: allResults.filter((r) => r.labOrderId === o.id).length })}
-                    </p>
-                    {o.status !== "CANCELLED" && (
-                      <div className="mt-3 flex flex-wrap items-center gap-3">
-                        <input
-                          ref={(el) => {
-                            fileInputRefs.current[o.id] = el;
-                          }}
-                          type="file"
-                          className="hidden"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) void uploadResult(o.id, file);
-                            e.target.value = "";
-                          }}
-                        />
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          isLoading={uploadingId === o.id}
-                          onClick={() => fileInputRefs.current[o.id]?.click()}
-                          className="min-h-11 px-3 text-sm"
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-base font-medium text-gray-900">
+                            {t("pacientes.ordenes.folio", { folio: o.folio, fecha: formatDateLong(locale, o.issuedAt) })}
+                          </p>
+                          <p className="text-sm text-gray-500">{o.clinicalIndication}</p>
+                        </div>
+                        <span
+                          className={`whitespace-nowrap rounded-full border px-3 py-1 text-sm font-medium ${
+                            o.status === "CANCELLED" ? "border-danger-600 text-danger-600" : "border-success-600 text-success-600"
+                          }`}
                         >
-                          {t("pacientes.ordenes.subirResultadoDeOrden")}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="destructive"
-                          isLoading={cancellingId === o.id}
-                          onClick={() => void cancelOrder(o.id)}
-                          className="min-h-11 px-3 text-sm"
-                        >
-                          {t("pacientes.ordenes.cancelarOrden")}
-                        </Button>
+                          {t(STATUS_LABEL_KEYS[o.status])}
+                        </span>
                       </div>
-                    )}
+                      <ul className="mt-2 flex flex-col gap-0.5">
+                        {o.items.map((item, i) => (
+                          <li key={i} className="text-base text-gray-900">
+                            {item.studyName}
+                          </li>
+                        ))}
+                      </ul>
+                      {o.fastingRequired && <p className="mt-1 text-sm text-warn-600">{t("pacientes.ordenes.requiereAyuno")}</p>}
+                      <p className="mt-1 text-sm text-gray-500">
+                        {t("pacientes.ordenes.resultadosDeLaOrden", { n: allResults.filter((r) => r.labOrderId === o.id).length })}
+                      </p>
+                      {o.status !== "CANCELLED" && (
+                        <div className="mt-3 flex flex-wrap items-center gap-3">
+                          <input
+                            ref={(el) => {
+                              fileInputRefs.current[o.id] = el;
+                            }}
+                            type="file"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) void uploadResult(o.id, file);
+                              e.target.value = "";
+                            }}
+                          />
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            isLoading={uploadingId === o.id}
+                            onClick={() => fileInputRefs.current[o.id]?.click()}
+                            className="min-h-11 px-3 text-sm"
+                          >
+                            {t("pacientes.ordenes.subirResultadoDeOrden")}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            isLoading={cancellingId === o.id}
+                            onClick={() => void cancelOrder(o.id)}
+                            className="min-h-11 px-3 text-sm"
+                          >
+                            {t("pacientes.ordenes.cancelarOrden")}
+                          </Button>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              </Card>
+                </Card>
+              </FileDropZone>
             </li>
           ))}
         </ul>
-      )}
-    </section>
-  );
-
-  // Todos los resultados juntos en su apartado, nunca mezclados con las
-  // órdenes; cada carpeta dice de qué orden viene. Se toman de
-  // /lab-results (traen el id del archivo); el timeline solo los cuenta.
-  const resultsSection = (
-    <section aria-labelledby="seccion-resultados" className="flex flex-col gap-3">
-      <h3 id="seccion-resultados" className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-        {t("pacientes.ordenes.seccionResultados")} ({allResults.length})
-      </h3>
-      {allResults.length === 0 ? (
-        <p className="text-base text-gray-500">
-          {standaloneResults.length > 0 ? t("clinico.pdf.cargando") : t("pacientes.ordenes.sinResultadosTodavia")}
-        </p>
-      ) : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
-          {allResults.map((r) => (
-            <ResultTile key={r.id} result={r} />
-          ))}
-        </div>
       )}
     </section>
   );
@@ -401,20 +409,13 @@ export function TabOrdenes({
     <LabOrderPanel open onClose={() => setOrderEncounterId(null)} accessToken={accessToken} encounterId={orderEncounterId} onIssued={onChanged} />
   ) : null;
 
-  const isEmpty = labOrders.length === 0 && standaloneResults.length === 0 && allResults.length === 0;
-
   return (
     <div className="flex flex-col gap-6">
-      {actionsHeader}
       {error ? <ErrorState error={error} /> : null}
-      {isEmpty ? (
-        <EmptyState title={t("pacientes.ordenes.vacio")} description={t("pacientes.ordenes.vacioAyuda")} />
-      ) : (
-        <>
-          {ordersSection}
-          {resultsSection}
-        </>
-      )}
+      <div className="grid items-start gap-8 xl:grid-cols-2">
+        {resultsColumn}
+        {ordersColumn}
+      </div>
       {previewPanel}
       {orderPanel}
     </div>

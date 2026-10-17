@@ -156,6 +156,7 @@ export const pacientes = {
     estadoResultado: { PENDING_REVIEW: "Pendiente de revisión", REVIEWED: "Revisado" },
     formatoPermitido: "PDF, imágenes (JPG, PNG, HEIC, TIFF), DICOM, Word, Excel, texto, HL7 y video · máx. 50 MB",
     formatoNoPermitido: "«{nombre}» no se puede subir: ese formato no está permitido.",
+    arrastrarAqui: "o arrastra el archivo aquí",
     archivoMuyGrande: "«{nombre}» pesa más de {max} MB.",
     comentarioRevision: "Comentario de revisión (obligatorio):",
     motivoCancelacion: "Motivo de cancelación:",
@@ -181,8 +182,6 @@ export const pacientes = {
     fechaEstudio: "Fecha del estudio: {fecha} · ",
     panelTitulo: "Resultado de laboratorio",
     descargarOriginal: "Descargar archivo original",
-    vacio: "Sin órdenes de laboratorio",
-    vacioAyuda: "Ordena un estudio o sube directo un resultado que el paciente ya traiga de otro lado.",
   },
   recetas: {
     recetaTitulo: "Receta {folio}",

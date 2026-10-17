@@ -34,7 +34,7 @@ export function ExpedienteScreen({ patientId, accessToken }: { patientId: string
 
   if (isLoading && !patient) {
     return (
-      <main className="mx-auto max-w-4xl p-6">
+      <main className="p-6 md:px-10">
         <LoadingState label={t("clinico.cargando.expediente")} />
       </main>
     );
@@ -93,7 +93,7 @@ export function ExpedienteScreen({ patientId, accessToken }: { patientId: string
   ];
 
   return (
-    <main className="mx-auto flex max-w-4xl flex-col gap-4 p-6">
+    <main className="flex flex-col gap-4 p-6 md:px-10">
       {justSigned && <Aviso variant="exito" title={t("pacientes.expediente.firmada")} />}
 
       <div className="flex flex-wrap items-start justify-between gap-4">

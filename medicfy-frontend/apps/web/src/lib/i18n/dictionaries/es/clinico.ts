@@ -478,7 +478,7 @@ export const clinico = {
     sinContacto: "No se pudo contactar al asistente. Intenta de nuevo.",
     explicacion: "El Segundo Lector analiza lo capturado y resalta los puntos de interés. No diagnostica ni sustituye tu juicio clínico.",
     leyendo: "Leyendo…",
-    puedeTardar: "Esto puede tardar hasta 2-3 minutos — el asistente lee todo el contexto disponible.",
+    puedeTardar: "Esto puede tardar hasta 2-3 minutos, el asistente lee todo el contexto disponible.",
     sinLecturas: "Sin lecturas todavía. Dispara un pase cuando tengas algo capturado.",
     banderaTitulo: "{hallazgo} — {urgencia}",
     porQueImporta: "Por qué importa:",
