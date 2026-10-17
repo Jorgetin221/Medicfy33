@@ -536,6 +536,36 @@ async function readUploadedFile(req, rawBuffer) {
   return { buffer: Buffer.from(await file.arrayBuffer()), contentType: file.type || 'application/octet-stream', fileName: file.name || '' };
 }
 
+// Consultas firmadas EN el mock (no la semilla enc-prev-1), más
+// reciente primero — de aquí salen el timeline, la hoja frontal y el
+// historial de notas, para que una consulta recién cerrada aparezca.
+function signedMockEncounters(patientId) {
+  return Object.values(encounters)
+    .filter(e => e.patientId === patientId && e.status === "SIGNED")
+    .sort((a, b) => (b.signedAt || '').localeCompare(a.signedAt || ''));
+}
+
+// Misma forma que PatientClinicalService.notesTimeline.
+function mockNotesTimeline(patientId, filters) {
+  const q = (filters.q || '').trim().toLowerCase();
+  const matches = (n) => !q || [n.chiefComplaint, n.currentIllness, n.assessment, n.plan].some(f => (f || '').toLowerCase().includes(q));
+  return signedMockEncounters(patientId)
+    .filter(e => !filters.type || e.encounterType === filters.type)
+    .filter(e => !filters.from || e.signedAt >= `${filters.from}T00:00:00.000Z`)
+    .filter(e => !filters.to || e.signedAt <= `${filters.to}T23:59:59.999Z`)
+    .flatMap(e => (e.notes || [])
+      .filter(n => !n.isCorrectionOfNoteId)
+      .map(root => ({
+        encounterId: e.id,
+        encounterType: e.encounterType,
+        signedAt: e.signedAt,
+        doctor: { legalFirstName: doctorUser.doctor.legalFirstName, legalLastName: doctorUser.doctor.legalLastName, primarySpecialty: { nameEs: "Medicina General" } },
+        note: { isCorrectionOfNoteId: null, cancellation: null, ...root },
+        corrections: (e.notes || []).filter(n => n.isCorrectionOfNoteId === root.id)
+      })))
+    .filter(t => matches(t.note) || t.corrections.some(matches));
+}
+
 function createMockEncounter(patientId, encounterType, appointmentId) {
   const id = `enc-${Date.now()}`;
   encounters[id] = {
@@ -1110,9 +1140,14 @@ const server = http.createServer(async (req, res) => {
       .filter(r => r.patientId === patId && !r.labOrderId)
       .map(r => ({ type: "standalone_result", id: r.id, labName: r.labName, resultDate: r.resultDate, uploadedAt: r.uploadedAt, uploadedByRole: r.uploadedByRole, status: r.reviewedAt ? "REVIEWED" : "PENDING_REVIEW" }))
       .reverse();
-    if (patId !== 'pat-1') return sendJson({ encounters: [], prescriptions: issuedRx, labOrders: issuedLabs, standaloneResults });
+    const sessionEncounters = Object.values(encounters)
+      .filter(e => e.patientId === patId)
+      .sort((a, b) => (b.startedAt || '').localeCompare(a.startedAt || ''))
+      .map(e => ({ type: "encounter", id: e.id, encounterType: e.encounterType, status: e.status, startedAt: e.startedAt, signedAt: e.signedAt, doctorId: "doc-1" }));
+    if (patId !== 'pat-1') return sendJson({ encounters: sessionEncounters, prescriptions: issuedRx, labOrders: issuedLabs, standaloneResults });
     return sendJson({
       encounters: [
+        ...sessionEncounters,
         {
           type: "encounter",
           id: "enc-prev-1",
@@ -1183,7 +1218,14 @@ const server = http.createServer(async (req, res) => {
       medications: medications[patId] || [],
       activeDiagnoses: mockActiveDiagnoses(patId),
       surgeries: [],
-      lastEncounter: patId === 'pat-1'
+      lastEncounter: signedMockEncounters(patId)[0]
+        ? {
+            id: signedMockEncounters(patId)[0].id,
+            encounterType: signedMockEncounters(patId)[0].encounterType,
+            signedAt: signedMockEncounters(patId)[0].signedAt,
+            doctor: { legalFirstName: doctorUser.doctor.legalFirstName, legalLastName: doctorUser.doctor.legalLastName, primarySpecialty: { nameEs: "Medicina General" } }
+          }
+        : patId === 'pat-1'
         ? {
             id: "enc-prev-1",
             encounterType: "FIRST_VISIT",
@@ -1455,8 +1497,13 @@ const server = http.createServer(async (req, res) => {
   // Listas del expediente que el mock todavía no simula: vacías, pero
   // con forma de arreglo. Con el fallback { ok: true } la pantalla
   // mostraba "formato inesperado" en lugar del estado vacío.
+  const notesTimelineRoute = pathname.match(/^\/records\/patients\/([^\/]+)\/notes-timeline$/);
+  if (notesTimelineRoute && method === 'GET') {
+    return sendJson(mockNotesTimeline(notesTimelineRoute[1], parsedUrl.query));
+  }
+
   if (method === 'GET' && (
-    pathname.match(/^\/records\/patients\/[^\/]+\/(documents|notes-timeline|history-pending-inherited|substance-uses|vitals-history)$/) ||
+    pathname.match(/^\/records\/patients\/[^\/]+\/(documents|history-pending-inherited|substance-uses|vitals-history)$/) ||
     pathname.match(/^\/lab-analytes\/patients\/[^\/]+$/) ||
     pathname === '/records/antecedentes-templates' ||
     pathname.match(/^\/catalogs\/[^\/]+$/)
@@ -1565,11 +1612,13 @@ const server = http.createServer(async (req, res) => {
 
   if (pathname.startsWith('/records/encounters/') && pathname.endsWith('/note') && method === 'PATCH') {
     const encId = pathname.split('/')[3];
+    // Se MEZCLA como en ClinicalEncounterService.updateDraft: el panel
+    // de resultados manda solo labResultAnalyteIds y no debe borrar la nota.
     if (encounters[encId]) {
-      encounters[encId].draftContent = body;
+      encounters[encId].draftContent = { ...(encounters[encId].draftContent || {}), ...body };
       saveMockState();
     }
-    return sendJson({ ok: true, draftContent: body });
+    return sendJson({ ok: true, draftContent: encounters[encId]?.draftContent ?? body });
   }
 
   if (pathname.startsWith('/records/encounters/') && pathname.endsWith('/sign') && method === 'POST') {
