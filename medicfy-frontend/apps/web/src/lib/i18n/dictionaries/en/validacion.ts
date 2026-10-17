@@ -7,8 +7,8 @@ import type { validacion as es } from "../es/validacion";
 export const validacion: typeof es = {
   "Agrega al menos una presentación.": "Add at least one presentation.",
   "CURP inválida.": "Invalid CURP.",
-  "Cada diagnóstico necesita exactamente uno: un código CIE-10 o una razón de por qué no lo tiene.":
-    "Each diagnosis needs exactly one: an ICD-10 code or a reason why it has none.",
+  "Un diagnóstico con código CIE-10 no lleva razón de ausencia de código.":
+    "A diagnosis with an ICD-10 code doesn't take a missing-code reason.",
   "Captura la FUM, la FPP por ultrasonido, o ambas.":
     "Enter the last menstrual period, the ultrasound-estimated due date, or both.",
   "Clave de catálogo inválida.": "Invalid catalog key.",
@@ -32,6 +32,8 @@ export const validacion: typeof es = {
   "El motivo de consulta debe tener al menos 3 caracteres.": "The reason for visit must be at least 3 characters.",
   "El motivo de rechazo es obligatorio y debe ser descriptivo.": "A rejection reason is required and must be descriptive.",
   "El motivo de solicitud es obligatorio.": "A reason for the request is required.",
+  "Escribe el nombre del estudio (mínimo 3 caracteres).": "Type the study name (3 characters minimum).",
+  "Cada estudio es del catálogo o escrito por el médico, no ambos.": "Each study is either from the catalog or typed in by the physician, not both.",
   "El nombre del analito es obligatorio.": "The analyte name is required.",
   "El nombre genérico debe tener al menos 2 caracteres.": "The generic name must be at least 2 characters.",
   "El padecimiento actual es obligatorio.": "The history of present illness is required.",
@@ -39,8 +41,6 @@ export const validacion: typeof es = {
   "El precio debe ser un entero entre 1 y 99,999 MXN.": "The price must be a whole number between 1 and 99,999 MXN.",
   "Escribe el agente completo (mínimo 3 caracteres). Si no hay alergias, no captures una fila.":
     "Write out the full agent (3 characters minimum). If there are no allergies, don't add a row.",
-  "Explica en al menos 10 caracteres por qué no hay código CIE-10.":
-    "Explain in at least 10 characters why there is no ICD-10 code.",
   "Fecha de nacimiento fuera de rango (entre hoy y hace 120 años).":
     "Date of birth out of range (between today and 120 years ago).",
   "Fecha inválida — usa AAAA-MM-DD.": "Invalid date — use YYYY-MM-DD.",

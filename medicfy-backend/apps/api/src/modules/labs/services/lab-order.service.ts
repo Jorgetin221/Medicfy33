@@ -14,6 +14,7 @@ import { assertEncounterEditableForDocuments } from "../../../common/encounter-e
 import { NotificationsService } from "../../notifications/services/notifications.service";
 import { NotificationLinkService } from "../../notifications/services/notification-link.service";
 import { renderLabOrderAvailable, renderLabResultAvailable } from "../../notifications/services/notification-templates";
+import { loadDoctorLetterhead } from "../../../common/pdf/doctor-letterhead";
 
 function mustGetAppBaseUrl(): string {
   const url = process.env.APP_BASE_URL;
@@ -46,7 +47,7 @@ export class LabOrderService {
   // input cuando la ruta es HANDWRITTEN_AFTER_PRINT.
   async create(encounterId: string, doctorId: string, doctorUserId: string, patientId: string, input: LabOrderCreateInput) {
     if (input.signatureRoute === "ELECTRONIC") {
-      await this.signatureVerification.verify(doctorUserId, input.password, input.totpCode);
+      await this.signatureVerification.verify(doctorUserId, input.password);
     }
 
     // Fase 4b: la orden se emite contra un encuentro DRAFT o SIGNED —
@@ -68,7 +69,9 @@ export class LabOrderService {
     // Prompt 37 (Fase 4): el estudio viene del catálogo en dos niveles
     // (tipo en externalCode del término) y CADA estudio lleva su
     // motivo, también de catálogo — "sin motivo, la orden no se emite".
-    const studyKeys = [...new Set(input.items.map((i) => i.studyKey))];
+    // Los estudios escritos por el médico (customStudyName) no pasan por
+    // el catálogo; el motivo sí, siempre.
+    const studyKeys = [...new Set(input.items.flatMap((i) => (i.studyKey ? [i.studyKey] : [])))];
     const motiveKeys = [...new Set(input.items.map((i) => i.motiveKey))];
     const [studyTerms, motiveTerms] = await Promise.all([
       this.prisma.clinicalCatalogTerm.findMany({ where: { domain: "ESTUDIO_LABORATORIO", key: { in: studyKeys }, status: "ACTIVE" } }),
@@ -80,7 +83,7 @@ export class LabOrderService {
     if (missingStudies.length > 0) {
       throw new ApiException(
         "LAB_ORDER_STUDY_NOT_IN_CATALOG",
-        "Uno de los estudios no existe en el catálogo — solicita el término al curador (R2), no hay texto libre.",
+        "Uno de los estudios no existe en el catálogo. Elige otro o escríbelo como estudio fuera de catálogo.",
         HttpStatus.UNPROCESSABLE_ENTITY,
         { missingStudies }
       );
@@ -100,11 +103,16 @@ export class LabOrderService {
     const snapshot = buildLegalSnapshot(doctor, patient);
     const fastingRequired = input.fastingRequired ?? false;
     const items = input.items.map((item) => {
-      const study = studyByKey.get(item.studyKey);
       const motive = motiveByKey.get(item.motiveKey);
-      if (!study || !motive) throw new Error("unreachable: validated above");
+      if (!motive) throw new Error("unreachable: validated above");
+      if (item.customStudyName !== undefined) {
+        // Escrito por el médico: sin término de catálogo (studyTermId null).
+        return { studyName: item.customStudyName, motiveTermId: motive.id, ...omitUndefined({ notes: item.notes }) };
+      }
+      const study = item.studyKey ? studyByKey.get(item.studyKey) : undefined;
+      if (!study) throw new Error("unreachable: validated above");
       return {
-        // El nombre viaja del CATÁLOGO, nunca del cliente.
+        // Del catálogo: el nombre viaja del término, nunca del cliente.
         studyName: study.preferredTerm,
         studyTermId: study.id,
         motiveTermId: motive.id,
@@ -137,6 +145,7 @@ export class LabOrderService {
       fastingRequired,
       items: items.map((i) => ({ studyName: i.studyName, ...(i.notes !== undefined ? { notes: i.notes } : {}) })),
       qrVerificationToken,
+      letterhead: await loadDoctorLetterhead(doctor, this.fileStorage),
       ...omitUndefined({ visualSignatureImage }),
     });
     const pdfFileKey = `lab-orders/${folio}/orden.pdf`;
@@ -218,7 +227,8 @@ export class LabOrderService {
     uploadedByRole: "DOCTOR" | "PATIENT",
     fileKey: string,
     fileHashSha256: string,
-    meta: LabResultUploadMetadataInput
+    meta: LabResultUploadMetadataInput,
+    originalFileName?: string
   ) {
     const result = await this.prisma.labResult.create({
       data: {
@@ -228,6 +238,7 @@ export class LabOrderService {
         fileKey,
         fileHashSha256,
         ...omitUndefined({
+          originalFileName,
           labOrderId: meta.labOrderId,
           labName: meta.labName,
           resultDate: meta.resultDate ? new Date(meta.resultDate) : undefined,

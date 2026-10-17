@@ -2,12 +2,13 @@
 
 import { useState } from "react";
 import type { PrescriptionCreateInput, PrescriptionItemCreateInput } from "@medicfy/contracts";
-import { apiFetch, apiFetchBlob, ApiError } from "@/lib/api-client";
+import { apiFetch, ApiError } from "@/lib/api-client";
 import { Panel } from "@/components/ui/panel";
 import { Button } from "@/components/ui/button";
 import { FieldWrapper, TextInput, Textarea } from "@/components/ui/field";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Aviso } from "@/components/ui/alert";
+import { DocumentPreview } from "@/components/clinical/document-preview";
 import { MedicationPicker, type MedicationCatalogEntry, type PrescriptionDraftItem } from "@/components/clinical/medication-picker";
 import { useT } from "@/lib/i18n/context";
 
@@ -56,7 +57,7 @@ function toWireItem(item: PrescriptionDraftItem): PrescriptionItemCreateInput {
 
 // M9: panel lateral — "emitir receta sin salir de la pantalla"
 // (CLAUDE.md §6). Dos caminos: electrónica (Grupos III-VI, firma con
-// contraseña+TOTP) o registro de receta física (Grupos I/II — R5:
+// contraseña) o registro de receta física (Grupos I/II — R5:
 // bloqueo duro, Medicfy nunca la emite, solo la registra).
 export function PrescriptionPanel({
   open,
@@ -85,7 +86,6 @@ export function PrescriptionPanel({
   // ninguna de las dos por defecto.
   const [signatureRoute, setSignatureRoute] = useState<SignatureRoute | null>(null);
   const [password, setPassword] = useState("");
-  const [totpCode, setTotpCode] = useState("");
   const [allergyConflict, setAllergyConflict] = useState<string[] | null>(null);
   // Prompt 34 (F4): el bloqueo por alergia se libera SOLO con una
   // justificación clínica escrita — nunca con un checkbox.
@@ -98,8 +98,6 @@ export function PrescriptionPanel({
   const [submitError, setSubmitError] = useState<unknown>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [issued, setIssued] = useState<IssuedPrescription | null>(null);
-  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
-  const [pdfError, setPdfError] = useState<unknown>(null);
 
   const [blockedMedication, setBlockedMedication] = useState<MedicationCatalogEntry | null>(null);
   const [physicalFolio, setPhysicalFolio] = useState("");
@@ -117,7 +115,6 @@ export function PrescriptionPanel({
     setGeneralInstructions("");
     setSignatureRoute(null);
     setPassword("");
-    setTotpCode("");
     setAllergyConflict(null);
     setAllergyJustification("");
     setGraveInteractions(null);
@@ -155,7 +152,7 @@ export function PrescriptionPanel({
       const body: PrescriptionCreateInput =
         signatureRoute === "HANDWRITTEN_AFTER_PRINT"
           ? { ...base, signatureRoute: "HANDWRITTEN_AFTER_PRINT" }
-          : { ...base, signatureRoute: "ELECTRONIC", password, totpCode };
+          : { ...base, signatureRoute: "ELECTRONIC", password };
       const result = await apiFetch<{
         prescription: { id: string; folio: string; qrVerificationToken: string | null; signatureRoute: SignatureRoute };
         warnings: { therapeuticDuplicates: string[]; therapeuticClassDuplicates: TherapeuticClassDuplicate[] };
@@ -186,11 +183,6 @@ export function PrescriptionPanel({
     }
   }
 
-  // El endpoint exige JwtAuthGuard — un <a href> normal no manda el
-  // header Authorization (el access token vive solo en memoria de
-  // React, nunca en una cookie), así que hay que traer los bytes con
-  // fetch autenticado y abrirlos como blob. Mismo patrón que ya usa
-  // Perfil para logo/firma (apiFetchBlob).
   // Prompt 36 (F4): "traer última receta" — las líneas de la última
   // receta del MISMO médico llegan como líneas EDITABLES, con su
   // procedencia y fecha de origen visibles. Nunca texto pegado.
@@ -248,24 +240,10 @@ export function PrescriptionPanel({
     }
   }
 
-  async function downloadPdf() {
+  // Prompt 38A: la impresión queda en bitácora, por documento.
+  function registerPrinted() {
     if (!issued) return;
-    setPdfError(null);
-    setIsDownloadingPdf(true);
-    try {
-      const blob = await apiFetchBlob(`/prescriptions/${issued.id}/pdf`, { accessToken });
-      if (!blob) {
-        setPdfError(new Error(t("clinico.receta.pdfNoEncontrado")));
-        return;
-      }
-      window.open(URL.createObjectURL(blob), "_blank");
-      // Prompt 38A: la impresión queda en bitácora, por documento.
-      void apiFetch(`/prescriptions/${issued.id}/register-printed`, { method: "POST", accessToken }).catch(() => undefined);
-    } catch (error) {
-      setPdfError(error);
-    } finally {
-      setIsDownloadingPdf(false);
-    }
+    void apiFetch(`/prescriptions/${issued.id}/register-printed`, { method: "POST", accessToken }).catch(() => undefined);
   }
 
   async function submitExternalPhysical() {
@@ -298,10 +276,10 @@ export function PrescriptionPanel({
   const hasRequiredContent = items.length > 0 && diagnosisSnapshot.trim().length > 0;
   const canSubmit =
     hasRequiredContent &&
-    (signatureRoute === "HANDWRITTEN_AFTER_PRINT" || (signatureRoute === "ELECTRONIC" && password.length > 0 && totpCode.length === 6));
+    (signatureRoute === "HANDWRITTEN_AFTER_PRINT" || (signatureRoute === "ELECTRONIC" && password.length > 0));
 
   return (
-    <Panel open={open} onClose={handleClose} title={t("clinico.receta.panelTitulo")}>
+    <Panel open={open} onClose={handleClose} title={t("clinico.receta.panelTitulo")} wide={issued !== null}>
       {issued ? (
         <div className="flex flex-col gap-4">
           <Aviso variant="exito" title={t("clinico.receta.emitida", { folio: issued.folio })}>
@@ -344,14 +322,6 @@ export function PrescriptionPanel({
               {t("clinico.receta.revisaAntes")}
             </Aviso>
           )}
-          <Button type="button" variant="secondary" isLoading={isDownloadingPdf} onClick={() => void downloadPdf()} className="w-fit">
-            {t("clinico.receta.descargarPdf")}
-          </Button>
-          {pdfError ? (
-            <Aviso variant="advertencia" title={t("clinico.receta.noSePudoAbrirPdf")}>
-              {pdfError instanceof ApiError ? pdfError.message : t("clinico.receta.intentaDeNuevo")}
-            </Aviso>
-          ) : null}
           <div className="flex gap-3">
             <Button type="button" variant="secondary" onClick={resetAll}>
               {t("clinico.receta.emitirOtra")}
@@ -360,6 +330,13 @@ export function PrescriptionPanel({
               {t("common.acciones.cerrar")}
             </Button>
           </div>
+          {/* La receta completa tal como se imprime, dentro del panel. */}
+          <DocumentPreview
+            path={`/prescriptions/${issued.id}/pdf`}
+            accessToken={accessToken}
+            downloadName={`receta-${issued.folio}.pdf`}
+            onDownload={registerPrinted}
+          />
         </div>
       ) : blockedMedication ? (
         <div className="flex flex-col gap-4">
@@ -504,20 +481,9 @@ export function PrescriptionPanel({
           </fieldset>
 
           {signatureRoute === "ELECTRONIC" && (
-            <div className="grid grid-cols-2 gap-3">
-              <FieldWrapper label={t("clinico.receta.confirmaContrasena")} htmlFor="rx-password">
-                <PasswordInput id="rx-password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
-              </FieldWrapper>
-              <FieldWrapper label={t("clinico.receta.codigoVerificacion")} htmlFor="rx-totp">
-                <TextInput
-                  id="rx-totp"
-                  inputMode="numeric"
-                  maxLength={6}
-                  value={totpCode}
-                  onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ""))}
-                />
-              </FieldWrapper>
-            </div>
+            <FieldWrapper label={t("clinico.receta.confirmaContrasena")} htmlFor="rx-password">
+              <PasswordInput id="rx-password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            </FieldWrapper>
           )}
 
           {submitError ? (

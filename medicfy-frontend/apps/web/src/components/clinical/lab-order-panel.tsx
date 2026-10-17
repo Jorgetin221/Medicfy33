@@ -2,13 +2,26 @@
 
 import { useEffect, useState } from "react";
 import type { LabOrderCreateInput } from "@medicfy/contracts";
-import { apiFetch, apiFetchBlob, ApiError, expectArray } from "@/lib/api-client";
+import { apiFetch, ApiError, expectArray } from "@/lib/api-client";
 import { Panel } from "@/components/ui/panel";
 import { Button } from "@/components/ui/button";
 import { FieldWrapper, TextInput } from "@/components/ui/field";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Aviso } from "@/components/ui/alert";
+import { DocumentPreview } from "@/components/clinical/document-preview";
 import { useT } from "@/lib/i18n/context";
+import { LAB_CUSTOM_STUDY_MIN_LENGTH } from "@medicfy/contracts";
+
+// Búsqueda sin acentos ni mayúsculas: "biometria" encuentra "Biometría".
+function normalizeSearch(text: string): string {
+  return text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+function matchesSearch(term: CatalogTerm, query: string): boolean {
+  const q = normalizeSearch(query.trim());
+  if (!q) return true;
+  return [term.preferredTerm, ...(term.synonyms ?? [])].some((name) => normalizeSearch(name).includes(q));
+}
 
 // Prompt 37 (F4): el estudio viene del catálogo en DOS niveles (el
 // tipo vive en externalCode del término) y cada estudio lleva su
@@ -17,10 +30,14 @@ interface CatalogTerm {
   key: string;
   preferredTerm: string;
   externalCode?: string | null;
+  synonyms?: string[];
 }
 
+// Del catálogo (studyKey) o escrito por el médico (customStudyName,
+// 2026-10-17: "un apartado para escribir su propio estudio").
 interface DraftStudy {
-  studyKey: string;
+  studyKey?: string;
+  customStudyName?: string;
   studyLabel: string;
   motiveKey: string;
   motiveLabel: string;
@@ -39,7 +56,7 @@ type SignatureRoute = "HANDWRITTEN_AFTER_PRINT" | "ELECTRONIC";
 // M10 (parcial en MVP): panel lateral, mismo patrón que
 // PrescriptionPanel — "sin salir de la pantalla" (CLAUDE.md §6). A
 // diferencia de recetas (M9-RN-009), ninguna regla M10 exige
-// contraseña+TOTP — la firma electrónica es opcional (a petición
+// reautenticación — la firma electrónica es opcional (a petición
 // explícita del usuario, 2026-08-25), mismas dos rutas que ya usa
 // PrescriptionPanel.
 export function LabOrderPanel({
@@ -62,6 +79,8 @@ export function LabOrderPanel({
   const [motivos, setMotivos] = useState<CatalogTerm[]>([]);
   const [tipoKey, setTipoKey] = useState("");
   const [studyKey, setStudyKey] = useState("");
+  const [studySearch, setStudySearch] = useState("");
+  const [customStudy, setCustomStudy] = useState("");
   const [motiveKey, setMotiveKey] = useState("");
   const [clinicalIndication, setClinicalIndication] = useState("");
   const [fastingRequired, setFastingRequired] = useState(false);
@@ -69,12 +88,9 @@ export function LabOrderPanel({
   // ninguna ruta es la opción "por defecto".
   const [signatureRoute, setSignatureRoute] = useState<SignatureRoute | null>(null);
   const [password, setPassword] = useState("");
-  const [totpCode, setTotpCode] = useState("");
   const [submitError, setSubmitError] = useState<unknown>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [issued, setIssued] = useState<IssuedLabOrder | null>(null);
-  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
-  const [pdfError, setPdfError] = useState<unknown>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -87,15 +103,15 @@ export function LabOrderPanel({
     setItems([]);
     setTipoKey("");
     setStudyKey("");
+    setStudySearch("");
+    setCustomStudy("");
     setMotiveKey("");
     setClinicalIndication("");
     setFastingRequired(false);
     setSignatureRoute(null);
     setPassword("");
-    setTotpCode("");
     setSubmitError(null);
     setIssued(null);
-    setPdfError(null);
   }
 
   function handleClose() {
@@ -103,12 +119,20 @@ export function LabOrderPanel({
     onClose();
   }
 
+  const customStudyName = customStudy.trim();
+  const canAddStudy = Boolean(motiveKey) && (Boolean(studyKey) || customStudyName.length >= LAB_CUSTOM_STUDY_MIN_LENGTH);
+
   function addStudy() {
-    const study = estudios.find((e) => e.key === studyKey);
     const motive = motivos.find((m) => m.key === motiveKey);
-    if (!study || !motive) return;
-    setItems([...items, { studyKey: study.key, studyLabel: study.preferredTerm, motiveKey: motive.key, motiveLabel: motive.preferredTerm }]);
+    if (!motive || !canAddStudy) return;
+    const study = estudios.find((e) => e.key === studyKey);
+    const entry: DraftStudy = study
+      ? { studyKey: study.key, studyLabel: study.preferredTerm, motiveKey: motive.key, motiveLabel: motive.preferredTerm }
+      : { customStudyName, studyLabel: customStudyName, motiveKey: motive.key, motiveLabel: motive.preferredTerm };
+    setItems([...items, entry]);
     setStudyKey("");
+    setStudySearch("");
+    setCustomStudy("");
     setMotiveKey("");
   }
 
@@ -122,14 +146,18 @@ export function LabOrderPanel({
     setIsSubmitting(true);
     try {
       const base = {
-        items: items.map((i) => ({ studyKey: i.studyKey, motiveKey: i.motiveKey, ...(i.notes ? { notes: i.notes } : {}) })),
+        items: items.map((i) => ({
+          ...(i.studyKey ? { studyKey: i.studyKey } : { customStudyName: i.customStudyName ?? i.studyLabel }),
+          motiveKey: i.motiveKey,
+          ...(i.notes ? { notes: i.notes } : {}),
+        })),
         clinicalIndication,
         ...(fastingRequired ? { fastingRequired: true } : {}),
       };
       const body: LabOrderCreateInput =
         signatureRoute === "HANDWRITTEN_AFTER_PRINT"
           ? { ...base, signatureRoute: "HANDWRITTEN_AFTER_PRINT" }
-          : { ...base, signatureRoute: "ELECTRONIC", password, totpCode };
+          : { ...base, signatureRoute: "ELECTRONIC", password };
       const result = await apiFetch<{ id: string; folio: string; qrVerificationToken: string; signatureRoute: SignatureRoute }>(
         `/lab-orders/encounters/${encounterId}`,
         { method: "POST", accessToken, body }
@@ -143,34 +171,13 @@ export function LabOrderPanel({
     }
   }
 
-  // Mismo patrón que PrescriptionPanel.downloadPdf(): el endpoint
-  // exige JwtAuthGuard, así que hay que traer los bytes con fetch
-  // autenticado y abrirlos como blob en vez de un <a href> normal.
-  async function downloadPdf() {
-    if (!issued) return;
-    setPdfError(null);
-    setIsDownloadingPdf(true);
-    try {
-      const blob = await apiFetchBlob(`/lab-orders/${issued.id}/pdf`, { accessToken });
-      if (!blob) {
-        setPdfError(new Error(t("clinico.orden.pdfNoEncontrado")));
-        return;
-      }
-      window.open(URL.createObjectURL(blob), "_blank");
-    } catch (error) {
-      setPdfError(error);
-    } finally {
-      setIsDownloadingPdf(false);
-    }
-  }
-
   const hasRequiredContent = items.length > 0 && clinicalIndication.trim().length > 0;
   const canSubmit =
     hasRequiredContent &&
-    (signatureRoute === "HANDWRITTEN_AFTER_PRINT" || (signatureRoute === "ELECTRONIC" && password.length > 0 && totpCode.length === 6));
+    (signatureRoute === "HANDWRITTEN_AFTER_PRINT" || (signatureRoute === "ELECTRONIC" && password.length > 0));
 
   return (
-    <Panel open={open} onClose={handleClose} title={t("clinico.orden.panelTitulo")}>
+    <Panel open={open} onClose={handleClose} title={t("clinico.orden.panelTitulo")} wide={issued !== null}>
       {issued ? (
         <div className="flex flex-col gap-4">
           <Aviso variant="exito" title={t("clinico.orden.emitida", { folio: issued.folio })}>
@@ -183,14 +190,6 @@ export function LabOrderPanel({
               {t("clinico.orden.firmaPendienteCuerpo")}
             </Aviso>
           )}
-          <Button type="button" variant="secondary" isLoading={isDownloadingPdf} onClick={() => void downloadPdf()} className="w-fit">
-            {t("clinico.orden.descargarPdf")}
-          </Button>
-          {pdfError ? (
-            <Aviso variant="advertencia" title={t("clinico.orden.noSePudoAbrirPdf")}>
-              {pdfError instanceof ApiError ? pdfError.message : t("clinico.receta.intentaDeNuevo")}
-            </Aviso>
-          ) : null}
           <div className="flex gap-3">
             <Button type="button" variant="secondary" onClick={resetAll}>
               {t("clinico.orden.ordenarOtro")}
@@ -199,15 +198,19 @@ export function LabOrderPanel({
               {t("common.acciones.cerrar")}
             </Button>
           </div>
+          {/* La orden completa tal como se imprime: membrete, paciente,
+              estudios y firma — el mismo PDF que queda en el expediente. */}
+          <DocumentPreview path={`/lab-orders/${issued.id}/pdf`} accessToken={accessToken} downloadName={`orden-${issued.folio}.pdf`} />
         </div>
       ) : (
         <div className="flex flex-col gap-4">
           {items.length > 0 && (
             <ul className="flex flex-col gap-2">
               {items.map((item, index) => (
-                <li key={`${item.studyKey}-${index}`} className="flex items-center justify-between rounded-md border border-gray-300 px-3 py-2">
+                <li key={`${item.studyKey ?? item.customStudyName}-${index}`} className="flex items-center justify-between rounded-md border border-gray-300 px-3 py-2">
                   <span>
                     <span className="block text-base text-gray-900">{item.studyLabel}</span>
+                    {item.customStudyName ? <span className="block text-sm text-gray-500">{t("clinico.orden.estudioFueraCatalogo")}</span> : null}
                     <span className="block text-sm text-gray-500">{t("clinico.orden.motivoLinea", { motivo: item.motiveLabel })}</span>
                   </span>
                   <Button type="button" variant="destructive" onClick={() => removeStudy(index)} className="min-h-11 px-3 text-sm">
@@ -219,8 +222,8 @@ export function LabOrderPanel({
           )}
 
           {/* Dos niveles: tipo (laboratorio / imagen / gabinete) y
-              estudio del catálogo; sin texto libre (R2: si falta un
-              estudio, se solicita el término al curador). */}
+              estudio del catálogo, con buscador. Si no está, el médico
+              lo escribe (customStudyName); el motivo siempre de catálogo. */}
           <div className="grid grid-cols-1 gap-3">
             <FieldWrapper label={t("clinico.orden.tipoEstudio")} htmlFor="lab-tipo">
               <select
@@ -240,22 +243,45 @@ export function LabOrderPanel({
                 ))}
               </select>
             </FieldWrapper>
+            <FieldWrapper label={t("clinico.orden.buscarEstudio")} htmlFor="lab-study-search">
+              <TextInput
+                id="lab-study-search"
+                value={studySearch}
+                onChange={(e) => setStudySearch(e.target.value)}
+                placeholder={t("clinico.orden.buscarEstudioEjemplo")}
+              />
+            </FieldWrapper>
             <FieldWrapper label={t("clinico.orden.estudioCatalogo")} htmlFor="lab-study">
               <select
                 id="lab-study"
                 value={studyKey}
-                onChange={(e) => setStudyKey(e.target.value)}
+                onChange={(e) => {
+                  setStudyKey(e.target.value);
+                  if (e.target.value) setCustomStudy("");
+                }}
                 className="min-h-11 w-full rounded-md border border-gray-300 px-3 text-base"
               >
                 <option value="">{t("clinico.orden.seleccionaEstudio")}</option>
                 {estudios
-                  .filter((e) => !tipoKey || e.externalCode === tipoKey)
+                  .filter((e) => (!tipoKey || e.externalCode === tipoKey) && matchesSearch(e, studySearch))
                   .map((e) => (
                     <option key={e.key} value={e.key}>
                       {e.preferredTerm}
                     </option>
                   ))}
               </select>
+            </FieldWrapper>
+            <FieldWrapper label={t("clinico.orden.estudioPropio")} htmlFor="lab-custom-study" hint={t("clinico.orden.estudioPropioAyuda")}>
+              <TextInput
+                id="lab-custom-study"
+                value={customStudy}
+                maxLength={200}
+                onChange={(e) => {
+                  setCustomStudy(e.target.value);
+                  if (e.target.value.trim()) setStudyKey("");
+                }}
+                placeholder={t("clinico.orden.estudioPropioEjemplo")}
+              />
             </FieldWrapper>
             <FieldWrapper label={t("clinico.orden.motivoEstudio")} htmlFor="lab-motive" hint={t("clinico.orden.motivoAyuda")}>
               <select
@@ -272,8 +298,8 @@ export function LabOrderPanel({
                 ))}
               </select>
             </FieldWrapper>
-            <Button type="button" variant="secondary" onClick={addStudy} disabled={!studyKey || !motiveKey} className="w-fit min-h-11 px-3 text-sm">
-              Agregar estudio
+            <Button type="button" variant="secondary" onClick={addStudy} disabled={!canAddStudy} className="w-fit min-h-11 px-3 text-sm">
+              {t("clinico.orden.agregarEstudio")}
             </Button>
           </div>
 
@@ -319,20 +345,9 @@ export function LabOrderPanel({
           </fieldset>
 
           {signatureRoute === "ELECTRONIC" && (
-            <div className="grid grid-cols-2 gap-3">
-              <FieldWrapper label={t("clinico.receta.confirmaContrasena")} htmlFor="lab-password">
-                <PasswordInput id="lab-password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
-              </FieldWrapper>
-              <FieldWrapper label={t("clinico.receta.codigoVerificacion")} htmlFor="lab-totp">
-                <TextInput
-                  id="lab-totp"
-                  inputMode="numeric"
-                  maxLength={6}
-                  value={totpCode}
-                  onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ""))}
-                />
-              </FieldWrapper>
-            </div>
+            <FieldWrapper label={t("clinico.receta.confirmaContrasena")} htmlFor="lab-password">
+              <PasswordInput id="lab-password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            </FieldWrapper>
           )}
 
           {submitError ? (

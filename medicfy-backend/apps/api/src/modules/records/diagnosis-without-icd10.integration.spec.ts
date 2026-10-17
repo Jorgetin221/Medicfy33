@@ -3,7 +3,6 @@ import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import cookieParser from "cookie-parser";
 import request from "supertest";
-import { TOTP, Secret } from "otpauth";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AppModule } from "../../app.module";
 import { ApiExceptionFilter } from "../../common/api-exception.filter";
@@ -33,11 +32,6 @@ function uniqueCedula(): string {
   // rozaba con los miles de médicos de prueba acumulados y el registro
   // devolvía 409 de forma intermitente, en un archivo distinto cada vez.
   return Math.floor(10000000 + Math.random() * 89999999).toString();
-}
-function totpFromUri(otpauthUri: string): string {
-  const url = new URL(otpauthUri);
-  const secret = url.searchParams.get("secret") as string;
-  return new TOTP({ algorithm: "SHA1", digits: 6, period: 30, secret: Secret.fromBase32(secret) }).generate();
 }
 
 const STRONG_PASSWORD = "Correcto-Caballo-Bateria-47!Grafito";
@@ -97,21 +91,6 @@ describe("Diagnóstico sin código CIE-10 (segunda ruta de M8-RN-006)", () => {
     return { userId, accessToken };
   }
 
-  // sign() ahora llama a SignatureVerificationService.verify() como lo
-  // primero que hace — a diferencia de signAccessToken() (bypass de
-  // sesión), la contraseña real y el TOTP real no se pueden saltar.
-  async function enrollMfa(accessToken: string): Promise<string> {
-    const start = await request(app.getHttpServer()).post("/auth/mfa/enroll").set("Authorization", `Bearer ${accessToken}`).send({});
-    expect(start.status).toBe(200);
-    const otpauthUri = start.body.otpauthUri as string;
-    const confirm = await request(app.getHttpServer())
-      .post("/auth/mfa/enroll")
-      .set("Authorization", `Bearer ${accessToken}`)
-      .send({ code: totpFromUri(otpauthUri) });
-    expect(confirm.status).toBe(200);
-    return otpauthUri;
-  }
-
   async function createPatient(accessToken: string): Promise<string> {
     const res = await request(app.getHttpServer())
       .post("/patients")
@@ -139,7 +118,6 @@ describe("Diagnóstico sin código CIE-10 (segunda ruta de M8-RN-006)", () => {
 
   it("firma con un diagnóstico sin código CIE-10 y razón válida — persiste codeAbsentReason, icd10Code queda null", async () => {
     const doctor = await registerDoctor();
-    const otpauthUri = await enrollMfa(doctor.accessToken);
     const patientId = await createPatient(doctor.accessToken);
     const encounterId = await createEncounter(doctor.accessToken, patientId);
 
@@ -156,8 +134,6 @@ describe("Diagnóstico sin código CIE-10 (segunda ruta de M8-RN-006)", () => {
             certainty: "SUSPECTED",
           },
         ],
-        password: STRONG_PASSWORD,
-        totpCode: totpFromUri(otpauthUri),
       });
 
     expect(res.status).toBe(201);
@@ -168,7 +144,6 @@ describe("Diagnóstico sin código CIE-10 (segunda ruta de M8-RN-006)", () => {
 
   it("rechaza con 400 si el diagnóstico trae icd10Code Y codeAbsentReason a la vez", async () => {
     const doctor = await registerDoctor();
-    const otpauthUri = await enrollMfa(doctor.accessToken);
     const patientId = await createPatient(doctor.accessToken);
     const encounterId = await createEncounter(doctor.accessToken, patientId);
     const icd10Code = (await prisma.icd10Code.findFirstOrThrow()).code;
@@ -187,16 +162,16 @@ describe("Diagnóstico sin código CIE-10 (segunda ruta de M8-RN-006)", () => {
             certainty: "CONFIRMED",
           },
         ],
-        password: STRONG_PASSWORD,
-        totpCode: totpFromUri(otpauthUri),
       });
 
     expect(res.status).toBe(400);
   });
 
-  it("rechaza con 400 si el diagnóstico no trae ni icd10Code ni codeAbsentReason", async () => {
+  // 2026-10-17: la justificación dejó de ser obligatoria (ver
+  // encounterDiagnosisSchema) — un diagnóstico sin código firma solo con
+  // su descripción.
+  it("firma un diagnóstico sin código CIE-10 y sin justificación", async () => {
     const doctor = await registerDoctor();
-    const otpauthUri = await enrollMfa(doctor.accessToken);
     const patientId = await createPatient(doctor.accessToken);
     const encounterId = await createEncounter(doctor.accessToken, patientId);
 
@@ -206,16 +181,13 @@ describe("Diagnóstico sin código CIE-10 (segunda ruta de M8-RN-006)", () => {
       .send({
         ...VALID_NOTE,
         diagnoses: [{ description: "Dx", diagnosisType: "PRINCIPAL", certainty: "CONFIRMED" }],
-        password: STRONG_PASSWORD,
-        totpCode: totpFromUri(otpauthUri),
       });
 
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(201);
   });
 
-  it("rechaza con 400 si codeAbsentReason tiene menos de 10 caracteres", async () => {
+  it("acepta una justificación corta si el médico decide escribirla", async () => {
     const doctor = await registerDoctor();
-    const otpauthUri = await enrollMfa(doctor.accessToken);
     const patientId = await createPatient(doctor.accessToken);
     const encounterId = await createEncounter(doctor.accessToken, patientId);
 
@@ -225,16 +197,13 @@ describe("Diagnóstico sin código CIE-10 (segunda ruta de M8-RN-006)", () => {
       .send({
         ...VALID_NOTE,
         diagnoses: [{ description: "Dx", codeAbsentReason: "muy corto", diagnosisType: "PRINCIPAL", certainty: "CONFIRMED" }],
-        password: STRONG_PASSWORD,
-        totpCode: totpFromUri(otpauthUri),
       });
 
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(201);
   });
 
   it("la ruta con código CIE-10 sigue funcionando exactamente igual que antes", async () => {
     const doctor = await registerDoctor();
-    const otpauthUri = await enrollMfa(doctor.accessToken);
     const patientId = await createPatient(doctor.accessToken);
     const encounterId = await createEncounter(doctor.accessToken, patientId);
     const icd10 = await prisma.icd10Code.findFirstOrThrow();
@@ -245,8 +214,6 @@ describe("Diagnóstico sin código CIE-10 (segunda ruta de M8-RN-006)", () => {
       .send({
         ...VALID_NOTE,
         diagnoses: [{ icd10Code: icd10.code, description: icd10.description, diagnosisType: "PRINCIPAL", certainty: "CONFIRMED" }],
-        password: STRONG_PASSWORD,
-        totpCode: totpFromUri(otpauthUri),
       });
 
     expect(res.status).toBe(201);

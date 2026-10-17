@@ -15,7 +15,6 @@ import { evaluateVitalRanges } from "../../../common/vital-ranges.util";
 import type { RedFlagVitalsInput } from "../../../common/red-flag-detector.util";
 import { AppointmentStateMachineService } from "../../scheduling/services/appointment-state-machine.service";
 import { SpecialtyScaleService } from "./specialty-scale.service";
-import { SignatureVerificationService } from "../../identity/services/signature-verification.service";
 import { PatientClinicalService } from "./patient-clinical.service";
 import { RedFlagService } from "./red-flag.service";
 import { LabReferenceRangeService } from "../../labs/services/lab-reference-range.service";
@@ -41,7 +40,6 @@ export class ClinicalEncounterService {
     private readonly prisma: PrismaService,
     private readonly appointments: AppointmentStateMachineService,
     private readonly scales: SpecialtyScaleService,
-    private readonly signatureVerification: SignatureVerificationService,
     private readonly patientClinical: PatientClinicalService,
     private readonly redFlags: RedFlagService,
     private readonly labReferenceRanges: LabReferenceRangeService
@@ -186,11 +184,10 @@ export class ClinicalEncounterService {
   // contenido final, se calcula el hash y se encadena con el último
   // encuentro firmado del mismo paciente (M8-CA-004).
   async sign(encounterId: string, doctorUserId: string, input: ClinicalNoteSignInput) {
-    // Fase 6 · Prompt 43: reautenticación obligatoria — antes que
-    // cualquier otra validación, para no revelar nada del contenido de
-    // la nota a quien no pueda probar que es el médico dueño de la
-    // sesión. Mismo servicio que ya usan recetas/órdenes ELECTRONIC.
-    await this.signatureVerification.verify(doctorUserId, input.password, input.totpCode);
+    // Fase 6 · Prompt 43 pedía reautenticar aquí; por decisión explícita
+    // del usuario (2026-10-16) cerrar la consulta ya no pide contraseña
+    // — ver el comentario de clinicalNoteSignSchema. doctorUserId sigue
+    // siendo el actor autenticado (JWT + CareRelationshipGuard).
 
     // PENDIENTE(jorge): validación de contenido mínimo NOM-004 — antes
     // de permitir firmar, falta validar que la nota trae el contenido
@@ -234,12 +231,8 @@ export class ClinicalEncounterService {
       patientInstructions,
       suggestedFollowUpDays,
       labResultAnalyteIds,
-      password: _password,
-      totpCode: _totpCode,
       ...requiredNote
     } = input;
-    void _password;
-    void _totpCode;
     // Prompt 27/31.2: si el cliente mandó bmi/bsaM2, se IGNORAN — el
     // servidor siempre recalcula sobre peso y talla firmados.
     const { bmi: _clientBmi, bsaM2: _clientBsa, ...vitals } = rawVitals;
@@ -530,10 +523,9 @@ export class ClinicalEncounterService {
   // del encounter, no reemplazan a los de la nota original en la
   // base de datos (la interfaz decide cómo mostrarlo).
   async correctNote(encounterId: string, doctorUserId: string, input: ClinicalNoteCorrectionInput) {
-    // Prompt 44A: "su propia firma" — una adenda reautentica igual que
-    // firmar la nota original (clinicalNoteCorrectionSchema extiende
-    // clinicalNoteSignSchema, así que password/totpCode ya viajan).
-    await this.signatureVerification.verify(doctorUserId, input.password, input.totpCode);
+    // Prompt 44A: "su propia firma" — una adenda se firma igual que la
+    // nota original (clinicalNoteCorrectionSchema extiende
+    // clinicalNoteSignSchema), hoy sin contraseña (ver sign()).
 
     const encounter = await this.prisma.clinicalEncounter.findUnique({ where: { id: encounterId } });
     if (!encounter) {
@@ -563,12 +555,8 @@ export class ClinicalEncounterService {
       isCorrectionOfNoteId,
       patientInstructions,
       suggestedFollowUpDays,
-      password: _password,
-      totpCode: _totpCode,
       ...requiredNote
     } = input;
-    void _password;
-    void _totpCode;
     const computedVitals = withComputedVitals(vitals);
 
     return this.prisma.$transaction(async (tx) => {

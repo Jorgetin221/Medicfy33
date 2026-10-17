@@ -6,6 +6,8 @@ export * from "./validators/birthDate";
 export * from "./validators/email";
 export * from "./validators/biography";
 export * from "./validators/price";
+export * from "./validators/medical-files";
+export * from "./catalogs/lab-studies";
 export * from "./schemas/identity.schema";
 export * from "./schemas/doctor.schema";
 export * from "./schemas/scheduling.schema";

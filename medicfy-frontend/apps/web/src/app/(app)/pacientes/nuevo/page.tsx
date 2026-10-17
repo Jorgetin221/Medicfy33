@@ -13,6 +13,17 @@ import { Card, ErrorState, LoadingState } from "@/components/ui/states";
 import { useT } from "@/lib/i18n/context";
 import { useZodResolver } from "@/lib/i18n/validation";
 
+// El médico captura los 10 dígitos nacionales; el +52 lo agrega el
+// formulario (el contrato y la base siguen en E.164, M1 "prefijo +52").
+// Si pegan el número ya con lada de país (+52 / 52), no se duplica.
+const MX_NATIONAL_DIGITS = 10;
+function toMxE164(value: unknown): string {
+  const digits = typeof value === "string" ? value.replace(/\D/g, "") : "";
+  const national = digits.length === MX_NATIONAL_DIGITS + 2 && digits.startsWith("52") ? digits.slice(2) : digits;
+  return national ? `+52${national}` : "";
+}
+const MX_PHONE_INPUT_PROPS = { type: "tel", inputMode: "numeric", autoComplete: "tel-national", placeholder: "3312345678" } as const;
+
 // Alta mínima de paciente (M2-CA-009). Campos opcionales de la
 // especificación (dirección, contacto de emergencia, tipo de sangre,
 // CURP) quedan fuera de este primer corte — el picker de citas solo
@@ -112,10 +123,9 @@ export default function NuevoPacientePage() {
             <FieldWrapper label={t("pacientes.alta.telefono")} htmlFor="phoneE164" error={form.formState.errors.phoneE164?.message} hint={t("pacientes.alta.pistaTelefono")}>
               <TextInput
                 id="phoneE164"
-                type="tel"
-                placeholder="+523312345678"
+                {...MX_PHONE_INPUT_PROPS}
                 error={!!form.formState.errors.phoneE164}
-                {...form.register("phoneE164")}
+                {...form.register("phoneE164", { setValueAs: toMxE164 })}
               />
             </FieldWrapper>
             <FieldWrapper label={t("pacientes.alta.correo")} htmlFor="email" error={form.formState.errors.email?.message}>
@@ -166,10 +176,9 @@ export default function NuevoPacientePage() {
                 >
                   <TextInput
                     id="guardian.guardianPhoneE164"
-                    type="tel"
-                    placeholder="+523312345678"
+                    {...MX_PHONE_INPUT_PROPS}
                     error={!!form.formState.errors.guardian?.guardianPhoneE164}
-                    {...form.register("guardian.guardianPhoneE164")}
+                    {...form.register("guardian.guardianPhoneE164", { setValueAs: toMxE164 })}
                   />
                 </FieldWrapper>
                 <FieldWrapper

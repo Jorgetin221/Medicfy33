@@ -5,6 +5,7 @@ import { apiFetch, apiFetchBlob, apiUpload, expectArray } from "@/lib/api-client
 import { blobToDataUrl } from "@/lib/blob-to-data-url";
 import { Card, EmptyState, ErrorState, LoadingState } from "@/components/ui/states";
 import { Button } from "@/components/ui/button";
+import { FileFormatNotice, useAcceptedFile } from "@/components/ui/accepted-file";
 import { Panel } from "@/components/ui/panel";
 import { FieldWrapper, SelectInput, TextInput } from "@/components/ui/field";
 import { PdfViewer } from "@/components/clinical/pdf-viewer";
@@ -48,6 +49,8 @@ export function DocumentosTab({ patientId, accessToken }: { patientId: string; a
   const { t, locale } = useI18n();
   const [documents, setDocuments] = useState<ClinicalAttachmentRecord[] | null>(null);
   const [error, setError] = useState<unknown>(null);
+  // DOCUMENT_ACCEPT se valida aquí, no en el <input> (Safari, lib/file-accept.ts).
+  const documentFormat = useAcceptedFile(DOCUMENT_ACCEPT);
   const [category, setCategory] = useState<AttachmentCategory>("EXTERNAL_DOCUMENT");
   const [studyDate, setStudyDate] = useState("");
   const [description, setDescription] = useState("");
@@ -142,11 +145,10 @@ export function DocumentosTab({ patientId, accessToken }: { patientId: string; a
         <input
           ref={fileInputRef}
           type="file"
-          accept={DOCUMENT_ACCEPT}
           className="hidden"
           onChange={(e) => {
             const file = e.target.files?.[0];
-            if (file) void uploadDocument(file);
+            if (file && documentFormat.check(file)) void uploadDocument(file);
             e.target.value = "";
           }}
         />
@@ -180,6 +182,7 @@ export function DocumentosTab({ patientId, accessToken }: { patientId: string; a
   return (
     <div className="flex flex-col gap-4">
       {uploadForm}
+      <FileFormatNotice notice={documentFormat.notice} />
       {error ? <ErrorState error={error} /> : null}
       {documents.length === 0 ? (
         <EmptyState title={t("clinico.documentos.sinDocumentos")} description={t("clinico.documentos.sinDocumentosAyuda")} />

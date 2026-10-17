@@ -258,7 +258,7 @@ describe("AssistantController — Prompt 51 (Los cuatro pases)", () => {
     const controller = new AbortController();
     controller.abort();
 
-    const outcome = await orchestrator.requestPass(encounterId, "SUBJETIVO", controller.signal);
+    const outcome = await orchestrator.requestPass(encounterId, "SUBJETIVO", "es", controller.signal);
     expect(outcome).toEqual({ kind: "cancelled" });
     expect(fakePort.calls).toHaveLength(0);
   });

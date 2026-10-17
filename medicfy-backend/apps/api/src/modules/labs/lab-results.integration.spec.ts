@@ -128,19 +128,33 @@ describe("Resultados de laboratorio — listar y descargar lo ya subido", () => 
     expect(auditEntry).not.toBeNull();
   });
 
-  // Fase 4c: la especificación (M10, casos límite) solo acepta
-  // PDF/JPG para adjuntos de estudios — antes se subía cualquier tipo
-  // de archivo sin validación (upload-validation.util.ts).
-  it("rechaza formatos no permitidos (400 con código claro) y acepta JPG además de PDF", async () => {
+  // Catálogo MEDICAL_FILE_FORMATS (contracts): formatos clínicos sí,
+  // cualquier otra cosa no — antes se subía cualquier tipo de archivo
+  // sin validación, y después solo PDF/JPG/PNG (2026-10-16: el usuario
+  // pidió "todo el formato que usan los médicos").
+  it("rechaza formatos no clínicos (400 con código claro) y acepta JPG, PDF y DICOM", async () => {
     const doctor = await registerDoctor();
     const patientId = await createPatient(doctor.accessToken);
 
     const rejected = await request(app.getHttpServer())
       .post(`/lab-results/patients/${patientId}`)
       .set("Authorization", `Bearer ${doctor.accessToken}`)
-      .attach("file", Buffer.from("no es un resultado clinico"), { filename: "notas.txt", contentType: "text/plain" });
+      .attach("file", Buffer.from("MZ binario"), { filename: "programa.exe", contentType: "application/x-msdownload" });
     expect(rejected.status).toBe(400);
     expect(rejected.body.error.code).toBe("LAB_RESULT_FILE_TYPE_NOT_ALLOWED");
+
+    // Los navegadores mandan .dcm como application/octet-stream: decide
+    // la extensión, y el archivo se sirve con su tipo real.
+    const dicomAccepted = await request(app.getHttpServer())
+      .post(`/lab-results/patients/${patientId}`)
+      .set("Authorization", `Bearer ${doctor.accessToken}`)
+      .attach("file", Buffer.from("DICM simulado"), { filename: "tórax-pa.dcm", contentType: "application/octet-stream" });
+    expect(dicomAccepted.status).toBe(201);
+    expect(dicomAccepted.body.originalFileName).toBe("tórax-pa.dcm");
+    const dicomFile = await request(app.getHttpServer())
+      .get(`/lab-results/patients/${patientId}/${dicomAccepted.body.id}/file`)
+      .set("Authorization", `Bearer ${doctor.accessToken}`);
+    expect(dicomFile.headers["content-type"]).toContain("application/dicom");
 
     const jpgAccepted = await request(app.getHttpServer())
       .post(`/lab-results/patients/${patientId}`)

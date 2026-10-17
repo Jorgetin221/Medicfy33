@@ -6,6 +6,8 @@ import { JwtAuthGuard } from "../identity/guards/jwt-auth.guard";
 import { CareRelationshipGuard, type ClinicalRequest } from "../../common/guards/care-relationship.guard";
 import { AuditService } from "../identity/services/audit.service";
 import { getRequestMeta } from "../identity/request-meta";
+import { parseAcceptLanguage } from "../../common/i18n/locale";
+import { clientDisconnectSignal } from "../../common/client-disconnect-signal";
 import { AssistantPassOrchestratorService } from "./services/assistant-pass-orchestrator.service";
 
 // Fase 8 · Prompt 51. Mismo patrón de guardas/auditoría que
@@ -33,12 +35,9 @@ export class AssistantController {
   ) {
     // El pase se cancela cuando el CLIENTE aborta esta petición (por
     // ejemplo, disparó un pase nuevo antes de que este terminara) —
-    // 'close' es el evento estándar de Node cuando la conexión
-    // termina, la haya cerrado el cliente o el servidor.
-    const controller = new AbortController();
-    req.on("close", () => controller.abort());
-
-    const outcome = await this.orchestrator.requestPass(encounterId, body.pase, controller.signal);
+    // ver clientDisconnectSignal para por qué no es req.on("close").
+    const locale = parseAcceptLanguage(req.headers["accept-language"]);
+    const outcome = await this.orchestrator.requestPass(encounterId, body.pase, locale, clientDisconnectSignal(req));
     // result siempre SUCCESS aquí: CareRelationshipGuard ya resolvió
     // DENIED antes de llegar a este controller (R3 exige registrar
     // ambos casos, pero no en el mismo lugar). outcome.kind (ok/
@@ -61,10 +60,8 @@ export class AssistantController {
   @Post("summary")
   @ApiOperation({ summary: "Resumen objetivo, rápido, de lo capturado hasta ahora" })
   async requestSummary(@Param("encounterId") encounterId: string, @Req() req: ClinicalRequest) {
-    const controller = new AbortController();
-    req.on("close", () => controller.abort());
-
-    const outcome = await this.orchestrator.requestSummary(encounterId, controller.signal);
+    const locale = parseAcceptLanguage(req.headers["accept-language"]);
+    const outcome = await this.orchestrator.requestSummary(encounterId, locale, clientDisconnectSignal(req));
     await this.audit(req, `assistant.summary.request.${outcome.kind}`, encounterId);
     return outcome;
   }

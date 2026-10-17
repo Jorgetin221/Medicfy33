@@ -3,6 +3,7 @@
 import { useId, useRef, useState } from "react";
 import { Button } from "./button";
 import { ErrorState } from "./states";
+import { FileFormatNotice, useAcceptedFile } from "./accepted-file";
 import { useT } from "@/lib/i18n/context";
 
 // Primer componente de carga de archivos del proyecto (Perfil, Parte B
@@ -25,10 +26,16 @@ export function FileUpload({
   const inputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  // `accept` se valida aquí, no en el <input> (Safari, lib/file-accept.ts).
+  const { notice, check } = useAcceptedFile(accept);
 
   async function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (!check(file)) {
+      if (inputRef.current) inputRef.current.value = "";
+      return;
+    }
     setError(null);
     setIsUploading(true);
     try {
@@ -55,13 +62,14 @@ export function FileUpload({
           )}
         </div>
         <div className="flex flex-col gap-2">
-          <input ref={inputRef} id={inputId} type="file" accept={accept} onChange={handleChange} className="hidden" />
+          <input ref={inputRef} id={inputId} type="file" onChange={handleChange} className="hidden" />
           <Button type="button" variant="secondary" isLoading={isUploading} onClick={() => inputRef.current?.click()}>
             {previewSrc ? t("ui.archivo.reemplazar") : t("ui.archivo.subirImagen")}
           </Button>
           <p className="text-sm text-gray-500">{t("ui.archivo.restriccion")}</p>
         </div>
       </div>
+      <FileFormatNotice notice={notice} />
       {error ? <ErrorState error={error} /> : null}
     </div>
   );

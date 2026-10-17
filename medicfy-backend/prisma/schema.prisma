@@ -2340,6 +2340,10 @@ model LabResult {
   uploadedByRole     LabResultUploaderRole
   fileKey            String
   fileHashSha256     String
+  // Nombre con el que el médico subió el archivo ("BH-marzo.pdf",
+  // "torax.dcm"): es lo que reconoce en el expediente. Opcional porque
+  // los resultados subidos antes de 2026-10-16 no lo guardaron.
+  originalFileName   String?
   labName            String?
   resultDate         DateTime?             @db.Date
   reviewedByDoctorId String?

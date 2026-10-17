@@ -1,4 +1,5 @@
 import type { AssistantPass, AssistantReading } from "@medicfy/contracts";
+import type { Locale } from "../../../common/i18n/locale";
 import type { AssembledAssistantContext } from "../assistant-context.types";
 
 export const ASSISTANT_MODEL_PORT = Symbol("ASSISTANT_MODEL_PORT");
@@ -7,6 +8,9 @@ export interface AssistantModelCallInput {
   context: AssembledAssistantContext;
   hashContexto: string;
   pase: AssistantPass;
+  // Idioma de la interfaz del médico (Accept-Language): el texto libre
+  // de la lectura sale en ese idioma.
+  locale: Locale;
   signal: AbortSignal;
 }
 
@@ -36,6 +40,7 @@ export type AssistantModelOutcome =
 export interface AssistantSummaryCallInput {
   context: AssembledAssistantContext;
   hashContexto: string;
+  locale: Locale;
   signal: AbortSignal;
 }
 

@@ -51,7 +51,7 @@ export function ConsultaSidebar({
   const lastThreeEncounters = (timeline?.encounters ?? []).filter((e) => e.status === "SIGNED").slice(0, 3);
 
   return (
-    <aside className="flex w-full flex-col gap-4 lg:sticky lg:top-4 lg:h-[calc(100vh-2rem)] lg:w-72 lg:shrink-0 lg:overflow-y-auto">
+    <aside className="flex w-full flex-col gap-4 lg:sticky lg:top-4 lg:h-[calc(100vh_-_2rem_-_var(--consulta-footer-height,0px))] lg:w-72 lg:shrink-0 lg:overflow-y-auto">
       {/* Prompt 13 — orden de prominencia fijo: 1) ALERGIAS ACTIVAS
           destacadas (el renglón que el médico lee antes de prescribir;
           "sin alergias registradas" explícito, nunca un hueco), 2)

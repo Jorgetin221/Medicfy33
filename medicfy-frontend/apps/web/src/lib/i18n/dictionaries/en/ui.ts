@@ -12,6 +12,7 @@ export const ui: typeof es = {
   },
   archivo: {
     sinArchivo: "No file",
+    formatoNoPermitido: "“{nombre}” can't be uploaded here. Allowed formats: {permitidos}.",
     reemplazar: "Replace",
     subirImagen: "Upload image",
     restriccion: "JPG or PNG, 5 MB maximum.",

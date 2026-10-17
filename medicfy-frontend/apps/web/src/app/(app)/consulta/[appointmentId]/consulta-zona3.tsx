@@ -171,9 +171,12 @@ export function ConsultaZona3({
 
           `sticky` con scroll propio, igual que Zona 1: la nota mide varios
           miles de píxeles y sin esto el expediente se iba con el scroll
-          justo cuando sirve para contrastar lo que se está escribiendo. */}
+          justo cuando sirve para contrastar lo que se está escribiendo.
+          La altura descuenta la barra fija de firma (ConsultaForm publica
+          --consulta-footer-height): sin eso, el final de la lectura del
+          asistente quedaba detrás de "Firmar y cerrar consulta". */}
       <aside
-        className="sticky top-4 hidden h-[calc(100vh-2rem)] shrink-0 overflow-y-auto lg:block lg:w-80 2xl:w-96"
+        className="sticky top-4 hidden h-[calc(100vh_-_2rem_-_var(--consulta-footer-height,0px))] shrink-0 overflow-y-auto lg:block lg:w-80 2xl:w-96"
         aria-label={t("consulta.zona3.titulo")}
       >
         {panel}

@@ -11,6 +11,7 @@ import { AuditService } from "../identity/services/audit.service";
 import { getRequestMeta } from "../identity/request-meta";
 import { LAB_RESULT_MAX_FILE_BYTES, labResultFileFilter } from "../../common/upload-validation.util";
 import { LabSheetExtractionService } from "./services/lab-sheet-extraction.service";
+import { clientDisconnectSignal } from "../../common/client-disconnect-signal";
 
 // Visión + una hoja con muchos analitos puede tardar más que el
 // resumen objetivo (30s) pero no tanto como una lectura clínica
@@ -20,10 +21,8 @@ import { LabSheetExtractionService } from "./services/lab-sheet-extraction.servi
 const DEFAULT_LAB_OCR_TIMEOUT_MS = 90_000;
 
 function buildOcrSignal(req: ClinicalRequest): AbortSignal {
-  const callerController = new AbortController();
-  req.on("close", () => callerController.abort());
   const timeoutMs = Number(process.env.ASSISTANT_LAB_OCR_TIMEOUT_MS ?? DEFAULT_LAB_OCR_TIMEOUT_MS);
-  return AbortSignal.any([callerController.signal, AbortSignal.timeout(timeoutMs)]);
+  return AbortSignal.any([clientDisconnectSignal(req), AbortSignal.timeout(timeoutMs)]);
 }
 
 // Capa 1 (v2.5) — mismo patrón de guardias/auditoría/multipart que

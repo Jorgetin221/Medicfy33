@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ASSISTANT_PASSES, type AssistantPass, type AssistantReading } from "@medicfy/contracts";
+import { type AssistantPass, type AssistantReading } from "@medicfy/contracts";
 import { apiFetch, expectArray } from "@/lib/api-client";
+import { flushEncounterDraft } from "@/lib/use-encounter-autosave";
 import { Button } from "@/components/ui/button";
 import { Aviso } from "@/components/ui/alert";
 import { useT } from "@/lib/i18n/context";
@@ -35,6 +36,24 @@ const PASS_LABEL_KEY: Record<AssistantPass, MessageKey> = {
   ANALISIS: "clinico.asistente.pases.ANALISIS",
   CIERRE: "clinico.asistente.pases.CIERRE",
 };
+
+// "Iniciar IA" sin elegir lectura (usuario, 2026-10-17): el pase sale
+// de lo que la nota ya tiene escrito, del más avanzado al más temprano —
+// el mismo orden en que el médico llena la consulta.
+function hasText(value: unknown): boolean {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function hasAnyVital(vitals: unknown): boolean {
+  return typeof vitals === "object" && vitals !== null && Object.values(vitals).some((v) => typeof v === "number");
+}
+
+export function passForDraft(draft: Record<string, unknown>): AssistantPass {
+  if (hasText(draft.plan)) return "CIERRE";
+  if (hasText(draft.assessment) || (Array.isArray(draft.diagnoses) && draft.diagnoses.length > 0)) return "ANALISIS";
+  if (hasText(draft.physicalExam) || hasAnyVital(draft.vitals)) return "OBJETIVO";
+  return "SUBJETIVO";
+}
 
 const UNAVAILABLE_MESSAGE_KEY: Record<Exclude<PassOutcome, { kind: "ok" } | { kind: "cancelled" }>["reason"], MessageKey> = {
   TIMEOUT: "clinico.asistente.noDisponible.TIMEOUT",
@@ -81,10 +100,16 @@ export function AsistenteTab({ encounterId, accessToken }: { encounterId: string
     void load();
   }, [load]);
 
-  async function runPass(pase: AssistantPass) {
-    setPending(pase);
+  async function startAssistant() {
+    setPending("SUBJETIVO");
     setError(null);
     try {
+      // Que el pase lea lo último que escribió el médico, no el
+      // borrador de hace 2 s.
+      await flushEncounterDraft(encounterId);
+      const encounter = await apiFetch<{ draftContent?: Record<string, unknown> }>(`/records/encounters/${encounterId}`, { accessToken });
+      const pase = passForDraft(encounter.draftContent ?? {});
+      setPending(pase);
       const outcome = await apiFetch<PassOutcome>(`/records/encounters/${encounterId}/assistant/passes`, {
         method: "POST",
         accessToken,
@@ -114,28 +139,23 @@ export function AsistenteTab({ encounterId, accessToken }: { encounterId: string
         <p className="mb-2 text-sm text-gray-700">
           {t("clinico.asistente.explicacion")}
         </p>
-        <div className="flex flex-wrap gap-2">
-          {ASSISTANT_PASSES.map((pase) => (
-            <Button
-              key={pase}
-              type="button"
-              variant="secondary"
-              disabled={pending !== null}
-              onClick={() => void runPass(pase)}
-              className="min-h-11 text-sm"
-            >
-              {pending === pase ? t("clinico.asistente.leyendo") : t(PASS_LABEL_KEY[pase])}
-            </Button>
-          ))}
-        </div>
+        <Button type="button" isLoading={pending !== null} disabled={pending !== null} onClick={() => void startAssistant()} className="min-h-11 px-5">
+          {pending ? t("clinico.asistente.leyendoPase", { pase: t(PASS_LABEL_KEY[pending]) }) : t("clinico.asistente.iniciarIA")}
+        </Button>
         {pending && <p className="mt-2 text-sm text-gray-500">{t("clinico.asistente.puedeTardar")}</p>}
       </div>
+
 
       {error && <Aviso variant="advertencia" title={error} />}
 
       {!reading && !pending && readings !== null && (
         <p className="text-sm text-gray-500">{t("clinico.asistente.sinLecturas")}</p>
       )}
+
+      {latest && !pending ? (
+        // La app eligió el pase sola: el médico ve cuál fue.
+        <p className="text-sm font-medium uppercase tracking-wide text-brand-700">{t(PASS_LABEL_KEY[latest.pase])}</p>
+      ) : null}
 
       {reading && (
         <div className="flex flex-col gap-4">

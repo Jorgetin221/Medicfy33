@@ -4,6 +4,7 @@ import type { UseFormReturn } from "react-hook-form";
 import type { ClinicalNoteSignInput } from "@medicfy/contracts";
 import { FieldWrapper, TextInput } from "@/components/ui/field";
 import { vitalRangeStatus, VITAL_RANGE_LABEL_KEY, VITAL_RANGE_TILE_CLASS } from "@/lib/vital-ranges";
+import { bmiCategory, computeBmi } from "@/lib/bmi";
 import { useT } from "@/lib/i18n/context";
 import type { MessageKey } from "@/lib/i18n/dictionaries";
 
@@ -83,6 +84,25 @@ export function VitalsFields({ form, patientAgeYears }: { form: UseFormReturn<Cl
           </div>
         );
       })}
+      <BmiTile weightKg={watchedVitals.weightKg} heightCm={watchedVitals.heightCm} patientAgeYears={patientAgeYears} />
+    </div>
+  );
+}
+
+// IMC automático: se llena solo al escribir peso y talla; no se captura.
+function BmiTile({ weightKg, heightCm, patientAgeYears }: { weightKg?: number | undefined; heightCm?: number | undefined; patientAgeYears: number | null }) {
+  const t = useT();
+  const bmi = computeBmi(weightKg, heightCm);
+  const category = bmi !== null ? bmiCategory(bmi, patientAgeYears) : null;
+  return (
+    <div className="rounded-md border border-brand-700 bg-brand-100 p-3" aria-live="polite">
+      <p className="text-sm font-medium text-gray-700">{t("clinico.vitales.imc")}</p>
+      <p className="text-2xl font-semibold text-brand-900">{bmi !== null ? bmi.toFixed(1) : "—"}</p>
+      <span className="text-sm text-gray-700">
+        kg/m²
+        {category ? ` · ${t(`clinico.vitales.imcCategoria.${category}`)}` : ""}
+      </span>
+      {bmi === null ? <p className="text-xs text-gray-500">{t("clinico.vitales.imcAyuda")}</p> : null}
     </div>
   );
 }

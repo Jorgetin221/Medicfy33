@@ -1,0 +1,11 @@
+-- Nombre original del archivo de un resultado de laboratorio (§6.7),
+-- para mostrarlo en el expediente. Columna nueva y opcional: no toca
+-- ningún dato existente. Los GRANT de lab_results son por tabla, así
+-- que medicfy_app ya puede leerla y escribirla.
+-- Escrita a mano por el mismo motivo que las migraciones anteriores:
+-- el CLI de Prisma no alcanza binaries.prisma.sh desde este entorno.
+-- PENDIENTE(jorge): correr `prisma migrate dev` donde haya acceso.
+--
+-- Reversa:
+--   ALTER TABLE "lab_results" DROP COLUMN "originalFileName";
+ALTER TABLE "lab_results" ADD COLUMN "originalFileName" TEXT;

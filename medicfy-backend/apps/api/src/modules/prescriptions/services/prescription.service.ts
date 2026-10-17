@@ -17,6 +17,7 @@ import { crossCheckAllergies } from "../allergy-cross-check.util";
 import { NotificationsService } from "../../notifications/services/notifications.service";
 import { NotificationLinkService } from "../../notifications/services/notification-link.service";
 import { renderPrescriptionAvailable } from "../../notifications/services/notification-templates";
+import { loadDoctorLetterhead } from "../../../common/pdf/doctor-letterhead";
 
 function mustGetAppBaseUrl(): string {
   const url = process.env.APP_BASE_URL;
@@ -43,13 +44,13 @@ export class PrescriptionService {
 
   // Corrección v2.1 de especificacion-plataforma-clinica-con-ia.md
   // §1: "la firma digital no debe ser obligatoria para imprimir una
-  // receta". verify() (contraseña+TOTP, M9-RN-009) solo aplica a la
-  // ruta ELECTRONIC — el discriminated union de PrescriptionCreateInput
-  // ya garantiza que password/totpCode ni siquiera existen en el
-  // input cuando la ruta es HANDWRITTEN_AFTER_PRINT.
+  // receta". verify() (contraseña, M9-RN-009) solo aplica a la ruta
+  // ELECTRONIC — el discriminated union de PrescriptionCreateInput ya
+  // garantiza que password ni siquiera existe en el input cuando la
+  // ruta es HANDWRITTEN_AFTER_PRINT.
   async create(encounterId: string, doctorId: string, doctorUserId: string, patientId: string, input: PrescriptionCreateInput) {
     if (input.signatureRoute === "ELECTRONIC") {
-      await this.signatureVerification.verify(doctorUserId, input.password, input.totpCode);
+      await this.signatureVerification.verify(doctorUserId, input.password);
     }
 
     // Fase 4b: la receta se compone y EMITE (folio, snapshot legal,
@@ -269,6 +270,7 @@ export class PrescriptionService {
       diagnosisSnapshot: input.diagnosisSnapshot,
       items,
       qrVerificationToken,
+      letterhead: await loadDoctorLetterhead(doctor, this.fileStorage),
       ...omitUndefined({ generalInstructions: input.generalInstructions }),
     });
     const pdfFileKey = `prescriptions/${folio}/receta.pdf`;

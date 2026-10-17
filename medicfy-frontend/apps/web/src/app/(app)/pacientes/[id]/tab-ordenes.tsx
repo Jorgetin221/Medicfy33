@@ -1,14 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import Link from "next/link";
-import { apiFetch, apiFetchBlob, apiUpload, expectArray } from "@/lib/api-client";
-import { blobToDataUrl } from "@/lib/blob-to-data-url";
+import { MEDICAL_FILE_MAX_BYTES, resolveMedicalFileFormat } from "@medicfy/contracts";
+import { apiFetch, apiUpload, expectArray } from "@/lib/api-client";
+import { ensureOpenEncounter } from "@/lib/ensure-open-encounter";
+import { LabOrderPanel } from "@/components/clinical/lab-order-panel";
+import { Aviso } from "@/components/ui/alert";
 import type { TimelineLabOrder, TimelineStandaloneResult } from "@/lib/use-patient-clinical";
 import { Card, EmptyState, ErrorState } from "@/components/ui/states";
 import { Button } from "@/components/ui/button";
-import { Panel } from "@/components/ui/panel";
-import { PdfViewer } from "@/components/clinical/pdf-viewer";
+import { DocumentTile, DocumentViewer } from "@/components/clinical/document-tile";
 import { useI18n } from "@/lib/i18n/context";
 import { formatDateLong } from "@/lib/i18n/format";
 import type { MessageKey } from "@/lib/i18n/dictionaries";
@@ -20,6 +21,8 @@ import type { MessageKey } from "@/lib/i18n/dictionaries";
 // alcanzan para armar el botón "Ver resultado" — esto sí.
 interface LabResultRecord {
   id: string;
+  // Nombre con el que se subió (null en resultados anteriores a 2026-10-16).
+  originalFileName?: string | null;
   labOrderId: string | null;
   labName: string | null;
   resultDate: string | null;
@@ -36,18 +39,11 @@ const STATUS_LABEL_KEYS: Record<TimelineLabOrder["status"], MessageKey> = {
   CANCELLED: "pacientes.ordenes.estado.CANCELLED",
 };
 
-const STANDALONE_STATUS_LABEL_KEYS: Record<TimelineStandaloneResult["status"], MessageKey> = {
-  PENDING_REVIEW: "pacientes.ordenes.estadoResultado.PENDING_REVIEW",
-  REVIEWED: "pacientes.ordenes.estadoResultado.REVIEWED",
-};
-
-// Especificación §14 (M10, casos límite): "Estudios de imagen → se
-// aceptan como adjunto PDF/JPG; sin visor DICOM." Se agrega PNG por
-// ser el mismo trío que ya acepta el resto de la app para documentos
-// escaneados (§9, perfil del médico). El servidor (labResultFileFilter,
-// lab-results.controller.ts) es la autoridad real — esto es solo el
-// filtro nativo del selector de archivo y el texto de ayuda.
-const LAB_RESULT_ACCEPT = "application/pdf,image/jpeg,image/png";
+// Todos los formatos clínicos del catálogo compartido (PDF, imágenes,
+// DICOM, Office, texto, HL7, video) — el mismo que valida el servidor.
+// Se validan en canUpload(), no con `accept` en el <input>: Safari
+// bloqueaba el botón "Cargar" incluso con un PDF (lib/file-accept.ts).
+const BYTES_PER_MB = 1024 * 1024;
 
 export function TabOrdenes({
   accessToken,
@@ -65,27 +61,22 @@ export function TabOrdenes({
   const { t, locale } = useI18n();
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
-  const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [isUploadingStandalone, setIsUploadingStandalone] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  // Consulta a la que se liga la orden nueva (ver ensureOpenEncounter).
+  const [orderEncounterId, setOrderEncounterId] = useState<string | null>(null);
+  const [isOpeningOrder, setIsOpeningOrder] = useState(false);
+  // Formato o tamaño no válido: se avisa ANTES de subir, con el motivo.
+  const [uploadNotice, setUploadNotice] = useState<string | null>(null);
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const standaloneFileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Antes solo se mostraba el estado ("Pendiente de revisión") sin
-  // ninguna forma de abrir el archivo — GET .../file ya existía en el
-  // backend, solo faltaba conectarlo aquí.
   const [results, setResults] = useState<LabResultRecord[] | null>(null);
-  const [viewingId, setViewingId] = useState<string | null>(null);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
-  // "Ver sin descargar" pasó por dos intentos fallidos: window.open()
-  // tras un await ya no cuenta como gesto directo del usuario para
-  // varios navegadores (lo bloquean o lo mandan a descargas), y una
-  // URL blob:/data: en un <iframe> depende de que ESE navegador traiga
-  // habilitado su visor de PDF nativo — no es parejo entre navegadores
-  // ni configuraciones. PdfViewer (pdf.js) dibuja el PDF con Canvas,
-  // sin depender de ningún visor externo. Para imágenes sí basta un
-  // <img> normal — ahí nunca hubo el problema.
-  const [preview, setPreview] = useState<{ mimeType: string; pdfData: ArrayBuffer | null; imageUrl: string | null; downloadUrl: string } | null>(null);
+  // Cada orden y cada resultado se muestran como una "mini carpeta" que
+  // abre el documento en el visor del sistema (DocumentViewer), sin
+  // descargarlo ni depender del visor de PDF del navegador.
+  const [viewing, setViewing] = useState<{ title: string; path: string; downloadName: string } | null>(null);
 
   const loadResults = useCallback(() => {
     apiFetch<unknown>(`/lab-results/patients/${patientId}`, { accessToken })
@@ -95,28 +86,48 @@ export function TabOrdenes({
 
   useEffect(loadResults, [loadResults]);
 
-  async function viewResult(resultId: string) {
-    setError(null);
-    setViewingId(resultId);
-    try {
-      const blob = await apiFetchBlob(`/lab-results/patients/${patientId}/${resultId}/file`, { accessToken });
-      if (!blob) return;
-      const downloadUrl = URL.createObjectURL(blob);
-      if (blob.type === "application/pdf") {
-        setPreview({ mimeType: blob.type, pdfData: await blob.arrayBuffer(), imageUrl: null, downloadUrl });
-      } else {
-        setPreview({ mimeType: blob.type, pdfData: null, imageUrl: await blobToDataUrl(blob), downloadUrl });
-      }
-    } catch (err) {
-      setError(err);
-    } finally {
-      setViewingId(null);
-    }
+  function resultTitle(result: LabResultRecord): string {
+    return result.originalFileName || result.labName || t("pacientes.ordenes.resultado");
   }
 
-  function closePreview() {
-    if (preview) URL.revokeObjectURL(preview.downloadUrl);
-    setPreview(null);
+  // Los resultados viven en su propio apartado: cada uno dice de qué
+  // orden viene (o que llegó sin orden).
+  function resultOrigin(result: LabResultRecord): string {
+    const order = labOrders.find((o) => o.id === result.labOrderId);
+    return order ? t("pacientes.ordenes.deLaOrden", { folio: order.folio }) : t("pacientes.ordenes.resultadoSinOrden");
+  }
+
+  function resultLabel(result: LabResultRecord): string {
+    return (result.originalFileName && resolveMedicalFileFormat(result.originalFileName, "")?.label) || "LAB";
+  }
+
+  function canUpload(file: File): boolean {
+    setUploadNotice(null);
+    if (!resolveMedicalFileFormat(file.name, file.type)) {
+      setUploadNotice(t("pacientes.ordenes.formatoNoPermitido", { nombre: file.name }));
+      return false;
+    }
+    if (file.size > MEDICAL_FILE_MAX_BYTES) {
+      setUploadNotice(t("pacientes.ordenes.archivoMuyGrande", { nombre: file.name, max: MEDICAL_FILE_MAX_BYTES / BYTES_PER_MB }));
+      return false;
+    }
+    return true;
+  }
+
+  function openResult(result: LabResultRecord) {
+    setViewing({
+      title: resultTitle(result),
+      path: `/lab-results/patients/${patientId}/${result.id}/file`,
+      downloadName: result.originalFileName || `resultado-${result.uploadedAt.slice(0, 10)}`,
+    });
+  }
+
+  function openOrder(order: TimelineLabOrder) {
+    setViewing({
+      title: t("pacientes.ordenes.ordenTitulo", { folio: order.folio }),
+      path: `/lab-orders/${order.id}/pdf`,
+      downloadName: `orden-${order.folio}.pdf`,
+    });
   }
 
   async function markReviewed(resultId: string) {
@@ -134,45 +145,34 @@ export function TabOrdenes({
     }
   }
 
-  function ResultRow({ result }: { result: LabResultRecord }) {
+  function ResultTile({ result }: { result: LabResultRecord }) {
     return (
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-gray-300 px-3 py-2">
-        <div>
-          <p className="text-base text-gray-900">
-            {result.labName || t("pacientes.ordenes.resultado")}
-            {result.resultDate ? t("pacientes.ordenes.estudioDel", { fecha: formatDateLong(locale, result.resultDate) }) : ""}
-          </p>
-          <p className="text-sm text-gray-500">
-            {t("pacientes.ordenes.subidoPor", {
-              fecha: formatDateLong(locale, result.uploadedAt),
-              quien: result.uploadedByRole === "DOCTOR" ? t("pacientes.ordenes.elMedico") : t("pacientes.ordenes.elPaciente"),
-            })}
-            {result.doctorComment ? t("pacientes.ordenes.comentario", { texto: result.doctorComment }) : ""}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span
-            className={`whitespace-nowrap rounded-full border px-3 py-1 text-sm font-medium ${
-              result.reviewedAt ? "border-success-600 text-success-600" : "border-warn-600 text-warn-600"
-            }`}
+      <div className="flex flex-col gap-2">
+        <DocumentTile
+          title={resultTitle(result)}
+          subtitle={`${formatDateLong(locale, result.resultDate ?? result.uploadedAt)} · ${resultOrigin(result)}`}
+          fileLabel={resultLabel(result)}
+          status={
+            result.reviewedAt
+              ? { label: t("pacientes.ordenes.revisado"), tone: "ok" }
+              : { label: t("pacientes.ordenes.pendienteRevision"), tone: "pending" }
+          }
+          onOpen={() => openResult(result)}
+        />
+        {result.doctorComment ? (
+          <p className="text-sm text-gray-700">{t("pacientes.ordenes.comentario", { texto: result.doctorComment })}</p>
+        ) : null}
+        {!result.reviewedAt ? (
+          <Button
+            type="button"
+            variant="secondary"
+            isLoading={reviewingId === result.id}
+            onClick={() => void markReviewed(result.id)}
+            className="min-h-11 px-3 text-sm"
           >
-            {result.reviewedAt ? t("pacientes.ordenes.revisado") : t("pacientes.ordenes.pendienteRevision")}
-          </span>
-          <Button type="button" variant="secondary" isLoading={viewingId === result.id} onClick={() => void viewResult(result.id)} className="min-h-11 px-3 text-sm">
-            {t("pacientes.ordenes.verResultado")}
+            {t("pacientes.ordenes.marcarRevisado")}
           </Button>
-          {!result.reviewedAt ? (
-            <Button
-              type="button"
-              variant="secondary"
-              isLoading={reviewingId === result.id}
-              onClick={() => void markReviewed(result.id)}
-              className="min-h-11 px-3 text-sm"
-            >
-              {t("pacientes.ordenes.marcarRevisado")}
-            </Button>
-          ) : null}
-        </div>
+        ) : null}
       </div>
     );
   }
@@ -192,20 +192,8 @@ export function TabOrdenes({
     }
   }
 
-  async function downloadPdf(labOrderId: string) {
-    setError(null);
-    setDownloadingId(labOrderId);
-    try {
-      const blob = await apiFetchBlob(`/lab-orders/${labOrderId}/pdf`, { accessToken });
-      if (blob) window.open(URL.createObjectURL(blob), "_blank");
-    } catch (err) {
-      setError(err);
-    } finally {
-      setDownloadingId(null);
-    }
-  }
-
   async function uploadResult(labOrderId: string, file: File) {
+    if (!canUpload(file)) return;
     setError(null);
     setUploadingId(labOrderId);
     try {
@@ -225,6 +213,7 @@ export function TabOrdenes({
   // acepta labOrderId opcional (lab-results.controller.ts); esto solo
   // conecta esa ruta que no tenía UI.
   async function uploadStandaloneResult(file: File) {
+    if (!canUpload(file)) return;
     setError(null);
     setIsUploadingStandalone(true);
     try {
@@ -238,20 +227,30 @@ export function TabOrdenes({
     }
   }
 
-  // M10-RN-001: "la orden pertenece a un encuentro, igual que la
-  // receta" — no se puede emitir desde aquí directamente, el botón
-  // abre (o continúa) una consulta, donde vive el panel real.
+  // "Ordenar estudio" abre el panel de la orden aquí mismo (2026-10-17:
+  // antes llevaba a una consulta nueva). M10-RN-001 — "la orden pertenece
+  // a un encuentro" — se cumple ligándola a la consulta abierta sin cita
+  // del paciente, que se crea en segundo plano si no existe.
+  async function openNewOrder() {
+    setError(null);
+    setIsOpeningOrder(true);
+    try {
+      setOrderEncounterId(await ensureOpenEncounter(patientId, accessToken));
+    } catch (err) {
+      setError(err);
+    } finally {
+      setIsOpeningOrder(false);
+    }
+  }
+
   const actionsHeader = (
     <div className="flex flex-wrap items-center gap-3">
-      <Link href={`/consulta/paciente/${patientId}`}>
-        <Button type="button" variant="secondary" className="min-h-11 px-3 text-sm">
-          {t("pacientes.ordenes.ordenarEstudio")}
-        </Button>
-      </Link>
+      <Button type="button" variant="secondary" isLoading={isOpeningOrder} onClick={() => void openNewOrder()} className="min-h-11 px-3 text-sm">
+        {t("pacientes.ordenes.ordenarEstudio")}
+      </Button>
       <input
         ref={standaloneFileInputRef}
         type="file"
-        accept={LAB_RESULT_ACCEPT}
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0];
@@ -269,183 +268,155 @@ export function TabOrdenes({
         {t("pacientes.ordenes.subirResultado")}
       </Button>
       <span className="text-sm text-gray-500">{t("pacientes.ordenes.formatoPermitido")}</span>
+      {uploadNotice ? (
+        <div className="w-full">
+          <Aviso variant="advertencia" title={uploadNotice} />
+        </div>
+      ) : null}
     </div>
   );
 
-  const standaloneSection = standaloneResults.length > 0 && (
-    <div>
-      <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500">{t("pacientes.ordenes.sinOrden")}</h3>
-      <ul className="flex flex-col gap-2">
-        {standaloneResults.map((r) => {
-          const loaded = results?.find((full) => full.id === r.id);
-          return (
-            <li key={r.id}>
-              {loaded ? (
-                <ResultRow result={loaded} />
-              ) : (
-                // Mientras carga /lab-results/patients/:id (loadResults),
-                // se muestra el resumen que ya trajo el timeline del
-                // paciente para no dejar la pantalla en blanco.
-                <Card>
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-base font-medium text-gray-900">{r.labName || t("pacientes.ordenes.sinNombreLab")}</p>
-                      <p className="text-sm text-gray-500">
-                        {r.resultDate ? t("pacientes.ordenes.fechaEstudio", { fecha: formatDateLong(locale, r.resultDate) }) : ""}
-                        {t("pacientes.ordenes.subidoPor", {
-                          fecha: formatDateLong(locale, r.uploadedAt),
-                          quien: r.uploadedByRole === "DOCTOR" ? t("pacientes.ordenes.elMedico") : t("pacientes.ordenes.elPaciente"),
-                        })}
-                      </p>
-                    </div>
-                    <span
-                      className={`whitespace-nowrap rounded-full border px-3 py-1 text-sm font-medium ${
-                        r.status === "REVIEWED" ? "border-success-600 text-success-600" : "border-warn-600 text-warn-600"
-                      }`}
-                    >
-                      {t(STANDALONE_STATUS_LABEL_KEYS[r.status])}
-                    </span>
+  const allResults = results ?? [];
+
+  const ordersSection = (
+    <section aria-labelledby="seccion-ordenes" className="flex flex-col gap-3">
+      <h3 id="seccion-ordenes" className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+        {t("pacientes.ordenes.seccionOrdenes")} ({labOrders.length})
+      </h3>
+      {labOrders.length === 0 ? (
+        <p className="text-base text-gray-500">{t("pacientes.ordenes.sinOrdenesTodavia")}</p>
+      ) : (
+        <ul className="flex flex-col gap-3">
+          {labOrders.map((o) => (
+            <li key={o.id}>
+              <Card>
+                <div className="flex flex-wrap items-start gap-4">
+                  <div className="w-40 shrink-0">
+                    <DocumentTile
+                      title={t("pacientes.ordenes.ordenTitulo", { folio: o.folio })}
+                      subtitle={formatDateLong(locale, o.issuedAt)}
+                      fileLabel="PDF"
+                      {...(o.status === "CANCELLED" ? { status: { label: t(STATUS_LABEL_KEYS[o.status]), tone: "cancelled" as const } } : {})}
+                      onOpen={() => openOrder(o)}
+                    />
                   </div>
-                </Card>
-              )}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-base font-medium text-gray-900">
+                          {t("pacientes.ordenes.folio", { folio: o.folio, fecha: formatDateLong(locale, o.issuedAt) })}
+                        </p>
+                        <p className="text-sm text-gray-500">{o.clinicalIndication}</p>
+                      </div>
+                      <span
+                        className={`whitespace-nowrap rounded-full border px-3 py-1 text-sm font-medium ${
+                          o.status === "CANCELLED" ? "border-danger-600 text-danger-600" : "border-success-600 text-success-600"
+                        }`}
+                      >
+                        {t(STATUS_LABEL_KEYS[o.status])}
+                      </span>
+                    </div>
+                    <ul className="mt-2 flex flex-col gap-0.5">
+                      {o.items.map((item, i) => (
+                        <li key={i} className="text-base text-gray-900">
+                          {item.studyName}
+                        </li>
+                      ))}
+                    </ul>
+                    {o.fastingRequired && <p className="mt-1 text-sm text-warn-600">{t("pacientes.ordenes.requiereAyuno")}</p>}
+                    <p className="mt-1 text-sm text-gray-500">
+                      {t("pacientes.ordenes.resultadosDeLaOrden", { n: allResults.filter((r) => r.labOrderId === o.id).length })}
+                    </p>
+                    {o.status !== "CANCELLED" && (
+                      <div className="mt-3 flex flex-wrap items-center gap-3">
+                        <input
+                          ref={(el) => {
+                            fileInputRefs.current[o.id] = el;
+                          }}
+                          type="file"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) void uploadResult(o.id, file);
+                            e.target.value = "";
+                          }}
+                        />
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          isLoading={uploadingId === o.id}
+                          onClick={() => fileInputRefs.current[o.id]?.click()}
+                          className="min-h-11 px-3 text-sm"
+                        >
+                          {t("pacientes.ordenes.subirResultadoDeOrden")}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          isLoading={cancellingId === o.id}
+                          onClick={() => void cancelOrder(o.id)}
+                          className="min-h-11 px-3 text-sm"
+                        >
+                          {t("pacientes.ordenes.cancelarOrden")}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </Card>
             </li>
-          );
-        })}
-      </ul>
-    </div>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+
+  // Todos los resultados juntos en su apartado, nunca mezclados con las
+  // órdenes; cada carpeta dice de qué orden viene. Se toman de
+  // /lab-results (traen el id del archivo); el timeline solo los cuenta.
+  const resultsSection = (
+    <section aria-labelledby="seccion-resultados" className="flex flex-col gap-3">
+      <h3 id="seccion-resultados" className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+        {t("pacientes.ordenes.seccionResultados")} ({allResults.length})
+      </h3>
+      {allResults.length === 0 ? (
+        <p className="text-base text-gray-500">
+          {standaloneResults.length > 0 ? t("clinico.pdf.cargando") : t("pacientes.ordenes.sinResultadosTodavia")}
+        </p>
+      ) : (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+          {allResults.map((r) => (
+            <ResultTile key={r.id} result={r} />
+          ))}
+        </div>
+      )}
+    </section>
   );
 
   const previewPanel = (
-    <Panel open={preview !== null} onClose={closePreview} title={t("pacientes.ordenes.panelTitulo")} wide>
-      {preview ? (
-        <div className="flex flex-col gap-3">
-          <a href={preview.downloadUrl} download className="w-fit text-sm font-medium text-brand-700 underline">
-            {t("pacientes.ordenes.descargarOriginal")}
-          </a>
-          {preview.pdfData ? (
-            <PdfViewer data={preview.pdfData} />
-          ) : preview.imageUrl ? (
-            <img src={preview.imageUrl} alt={t("pacientes.ordenes.panelTitulo")} className="max-w-full" />
-          ) : null}
-        </div>
-      ) : null}
-    </Panel>
+    <DocumentViewer document={viewing} accessToken={accessToken} onClose={() => setViewing(null)} />
   );
 
-  if (labOrders.length === 0) {
-    return (
-      <div className="flex flex-col gap-4">
-        {actionsHeader}
-        {error ? <ErrorState error={error} /> : null}
-        {standaloneResults.length === 0 ? (
-          <EmptyState
-            title={t("pacientes.ordenes.vacio")}
-            description={t("pacientes.ordenes.vacioAyuda")}
-          />
-        ) : (
-          standaloneSection
-        )}
-        {previewPanel}
-      </div>
-    );
-  }
+  const orderPanel = orderEncounterId ? (
+    <LabOrderPanel open onClose={() => setOrderEncounterId(null)} accessToken={accessToken} encounterId={orderEncounterId} onIssued={onChanged} />
+  ) : null;
+
+  const isEmpty = labOrders.length === 0 && standaloneResults.length === 0 && allResults.length === 0;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-6">
       {actionsHeader}
       {error ? <ErrorState error={error} /> : null}
-      <ul className="flex flex-col gap-3">
-        {labOrders.map((o) => (
-          <li key={o.id}>
-            <Card>
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-base font-medium text-gray-900">
-                    {t("pacientes.ordenes.folio", { folio: o.folio, fecha: formatDateLong(locale, o.issuedAt) })}
-                  </p>
-                  <p className="text-sm text-gray-500">{o.clinicalIndication}</p>
-                </div>
-                <span
-                  className={`whitespace-nowrap rounded-full border px-3 py-1 text-sm font-medium ${
-                    o.status === "CANCELLED" ? "border-danger-600 text-danger-600" : "border-success-600 text-success-600"
-                  }`}
-                >
-                  {t(STATUS_LABEL_KEYS[o.status])}
-                </span>
-              </div>
-              <ul className="mt-2 flex flex-col gap-0.5">
-                {o.items.map((item, i) => (
-                  <li key={i} className="text-base text-gray-900">
-                    {item.studyName}
-                  </li>
-                ))}
-              </ul>
-              {o.fastingRequired && <p className="mt-1 text-sm text-warn-600">{t("pacientes.ordenes.requiereAyuno")}</p>}
-              <p className="mt-2 break-all text-sm text-gray-500">
-                {t("pacientes.ordenes.verificacion")} <span className="font-mono">/verificar/{o.qrVerificationToken}</span>
-              </p>
-              {results && results.some((r) => r.labOrderId === o.id) ? (
-                <div className="mt-3 flex flex-col gap-2">
-                  {results
-                    .filter((r) => r.labOrderId === o.id)
-                    .map((r) => (
-                      <ResultRow key={r.id} result={r} />
-                    ))}
-                </div>
-              ) : null}
-              <div className="mt-3 flex flex-wrap items-center gap-3">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  isLoading={downloadingId === o.id}
-                  onClick={() => void downloadPdf(o.id)}
-                  className="min-h-11 px-3 text-sm"
-                >
-                  {t("pacientes.ordenes.descargarPdf")}
-                </Button>
-                {o.status !== "CANCELLED" && (
-                  <>
-                    <input
-                      ref={(el) => {
-                        fileInputRefs.current[o.id] = el;
-                      }}
-                      type="file"
-                      accept={LAB_RESULT_ACCEPT}
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) void uploadResult(o.id, file);
-                        e.target.value = "";
-                      }}
-                    />
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      isLoading={uploadingId === o.id}
-                      onClick={() => fileInputRefs.current[o.id]?.click()}
-                      className="min-h-11 px-3 text-sm"
-                    >
-                      {t("pacientes.ordenes.subirResultado")}
-                    </Button>
-                    <span className="text-sm text-gray-500">{t("pacientes.ordenes.formatoPermitido")}</span>
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      isLoading={cancellingId === o.id}
-                      onClick={() => void cancelOrder(o.id)}
-                      className="min-h-11 px-3 text-sm"
-                    >
-                      {t("pacientes.ordenes.cancelarOrden")}
-                    </Button>
-                  </>
-                )}
-              </div>
-            </Card>
-          </li>
-        ))}
-      </ul>
-      {standaloneSection}
+      {isEmpty ? (
+        <EmptyState title={t("pacientes.ordenes.vacio")} description={t("pacientes.ordenes.vacioAyuda")} />
+      ) : (
+        <>
+          {ordersSection}
+          {resultsSection}
+        </>
+      )}
       {previewPanel}
+      {orderPanel}
     </div>
   );
 }

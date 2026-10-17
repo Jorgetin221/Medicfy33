@@ -31,6 +31,9 @@ export const MESSAGES_EN: Record<string, string> = {
   "Código inválido.": "Invalid code.",
   "Datos de entrada inválidos.": "Invalid input data.",
   "Debes adjuntar un archivo.": "You must attach a file.",
+  "Formato no permitido.": "File format not allowed.",
+  "Formato no permitido. Se aceptan PDF, imágenes (JPG, PNG, HEIC, TIFF…), DICOM, Word, Excel, texto, HL7 y video.":
+    "File format not allowed. Accepted: PDF, images (JPG, PNG, HEIC, TIFF…), DICOM, Word, Excel, text, HL7 and video.",
   "Debes tener la verificación en dos pasos activada para firmar documentos clínicos.":
     "You must have two-step verification enabled to sign clinical documents.",
   "Diagnóstico no encontrado para este paciente.": "Diagnosis not found for this patient.",
@@ -176,8 +179,8 @@ export const MESSAGES_EN: Record<string, string> = {
   "Un término no se puede fusionar consigo mismo.": "A term cannot be merged into itself.",
   "Una o más especialidades secundarias no existen en el catálogo.":
     "One or more secondary specialties do not exist in the catalog.",
-  "Uno de los estudios no existe en el catálogo — solicita el término al curador (R2), no hay texto libre.":
-    "One of the studies does not exist in the catalog — request the term from the curator (R2); free text is not allowed.",
+  "Uno de los estudios no existe en el catálogo. Elige otro o escríbelo como estudio fuera de catálogo.":
+    "One of the studies does not exist in the catalog. Choose another one or type it in as an off-catalog study.",
   "Uno o más medicamentos no existen en el catálogo.": "One or more medications do not exist in the catalog.",
   "Usuario no encontrado.": "User not found.",
   "Ya tienes el máximo de invitaciones pendientes (3).": "You already have the maximum pending invitations (3).",

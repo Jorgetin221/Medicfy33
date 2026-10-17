@@ -1,6 +1,8 @@
 ﻿import http from 'node:http';
 import url from 'node:url';
 import fs from 'node:fs';
+import path from 'node:path';
+import { createHash, randomUUID } from 'node:crypto';
 
 const PORT = 3001;
 
@@ -343,6 +345,23 @@ const historyItems = {
   "pat-3": []
 };
 
+// Compartido por /active-diagnoses y /hoja-frontal.
+function mockActiveDiagnoses(patId) {
+  if (patId !== 'pat-1') return [];
+  return [
+    {
+      icd10Code: "I10",
+      description: "Hipertensión esencial (primaria)",
+      diagnosisType: "PRINCIPAL",
+      certainty: "CONFIRMED",
+      firstRecordedAt: "2026-07-01T10:00:00.000Z",
+      lastRecordedAt: new Date().toISOString(),
+      timesRecorded: 2,
+      lastEncounterId: "enc-1"
+    }
+  ];
+}
+
 const specialties = [
   { id: "spec-gen", code: "GENERAL", nameEs: "Medicina General", requiresSpecialtyLicense: false },
   { id: "spec-gin", code: "GINECOLOGIA_OBSTETRICIA", nameEs: "Ginecología y Obstetricia", requiresSpecialtyLicense: true },
@@ -360,13 +379,323 @@ const sampleIcd10 = [
   { code: "R51", description: "Cefalea" }
 ];
 
+// id: UUID, igual que en el API real — prescriptionItemCreateSchema
+// exige medicationCatalogId uuid; sin id la receta no se podía armar.
 const sampleMedications = [
-  { genericName: "Paracetamol", brandNames: ["Tempra"], presentations: [{ label: "Tableta 500 mg" }], atcCode: "N02BE01", controlGroup: "VI", isElectronicallyPrescribable: true },
-  { genericName: "Ibuprofeno", brandNames: ["Motrin"], presentations: [{ label: "Tableta 400 mg" }], atcCode: "M01AE01", controlGroup: "VI", isElectronicallyPrescribable: true },
-  { genericName: "Amoxicilina", brandNames: ["Amoxil"], presentations: [{ label: "Cápsula 500 mg" }], atcCode: "J01CA04", controlGroup: "VI", isElectronicallyPrescribable: true },
-  { genericName: "Losartán", brandNames: ["Cozaar"], presentations: [{ label: "Tableta 50 mg" }], atcCode: "C09CA01", controlGroup: "VI", isElectronicallyPrescribable: true },
-  { genericName: "Omeprazol", brandNames: ["Losec"], presentations: [{ label: "Cápsula 20 mg" }], atcCode: "A02BC01", controlGroup: "VI", isElectronicallyPrescribable: true }
+  { id: "6f1c2a10-0001-4a00-8000-000000000001", genericName: "Paracetamol", brandNames: ["Tempra"], presentations: [{ label: "Tableta 500 mg" }], atcCode: "N02BE01", controlGroup: "VI", isElectronicallyPrescribable: true },
+  { id: "6f1c2a10-0002-4a00-8000-000000000002", genericName: "Ibuprofeno", brandNames: ["Motrin"], presentations: [{ label: "Tableta 400 mg" }], atcCode: "M01AE01", controlGroup: "VI", isElectronicallyPrescribable: true },
+  { id: "6f1c2a10-0003-4a00-8000-000000000003", genericName: "Amoxicilina", brandNames: ["Amoxil"], presentations: [{ label: "Cápsula 500 mg" }], atcCode: "J01CA04", controlGroup: "VI", isElectronicallyPrescribable: true },
+  { id: "6f1c2a10-0004-4a00-8000-000000000004", genericName: "Losartán", brandNames: ["Cozaar"], presentations: [{ label: "Tableta 50 mg" }], atcCode: "C09CA01", controlGroup: "VI", isElectronicallyPrescribable: true },
+  { id: "6f1c2a10-0005-4a00-8000-000000000005", genericName: "Omeprazol", brandNames: ["Losec"], presentations: [{ label: "Cápsula 20 mg" }], atcCode: "A02BC01", controlGroup: "VI", isElectronicallyPrescribable: true }
 ];
+
+// Mismo catálogo que prisma/seed.ts (seedEstudiosFase4), compartido en
+// packages/contracts/src/catalogs/lab-studies.ts: el tipo de cada
+// estudio viaja en externalCode.
+const labStudyCatalog = await import('./packages/contracts/src/catalogs/lab-studies.ts');
+const labCatalogs = {
+  TIPO_ESTUDIO: labStudyCatalog.LAB_STUDY_TYPES.map(t => ({ key: t.key, preferredTerm: t.term })),
+  MOTIVO_ESTUDIO: labStudyCatalog.LAB_STUDY_MOTIVES.map(m => ({ key: m.key, preferredTerm: m.term })),
+  ESTUDIO_LABORATORIO: labStudyCatalog.LAB_STUDIES.map(e => ({ key: e.key, preferredTerm: e.term, externalCode: e.tipo, synonyms: e.synonyms ?? [] }))
+};
+
+// Recetas, órdenes y resultados de laboratorio del mock. Se guardan en
+// disco (ver "Persistencia del mock" más abajo).
+const issuedPrescriptions = [];
+const issuedLabOrders = [];
+const labResults = [];
+
+// El PDF del mock es EL MISMO diseño que el de producción: se importa
+// el módulo de dibujo del API con el type-stripping de Node (>= 22.18).
+// Si la versión de Node no lo soporta, la receta/orden se emite igual
+// y solo la descarga del PDF responde "no disponible".
+const pdfLayout = await import('./apps/api/src/common/pdf/clinical-document-layout.ts').catch((e) => {
+  console.warn(`PDF de receta/orden no disponible en el mock: ${e.message}`);
+  return null;
+});
+
+function ageFromBirthDate(birthDate) {
+  const born = new Date(`${birthDate}T00:00:00Z`);
+  const now = new Date();
+  let age = now.getUTCFullYear() - born.getUTCFullYear();
+  const beforeBirthday = now.getUTCMonth() < born.getUTCMonth() || (now.getUTCMonth() === born.getUTCMonth() && now.getUTCDate() < born.getUTCDate());
+  return beforeBirthday ? age - 1 : age;
+}
+
+// Equivalente de buildLegalSnapshot() (legal-snapshot.util.ts): los
+// datos legales se congelan en el documento al emitirlo (R6).
+function mockLegalSnapshot(encounterId) {
+  const encounter = encounters[encounterId] || encounters["enc-1"];
+  const patient = patients.find(p => p.id === encounter.patientId) || patients[0];
+  const doctor = doctorUser.doctor;
+  return {
+    encounterId: encounter.id,
+    patientId: patient.id,
+    doctorNameSnapshot: doctor.displayName || `${doctor.legalFirstName} ${doctor.legalLastName}`,
+    doctorLicenseSnapshot: doctor.professionalLicense,
+    doctorSpecialtySnapshot: specialties.find(s => s.id === doctor.primarySpecialtyId)?.nameEs,
+    practiceAddressSnapshot: "Consultorio Principal · Av. Américas 1254, Guadalajara, Jal.",
+    patientNameSnapshot: [patient.firstName, patient.lastNamePaternal, patient.lastNameMaternal].filter(Boolean).join(" "),
+    patientAgeSnapshot: ageFromBirthDate(patient.birthDate),
+    patientSexSnapshot: patient.sexAtBirth
+  };
+}
+
+function nextMockFolio(prefix, list) {
+  return `${prefix}-${String(list.length + 1).padStart(6, "0")}`;
+}
+
+async function storeMockPdf(id, render, input) {
+  if (!pdfLayout) return;
+  saveMockFile(`${id}.pdf`, await render({ ...input, letterhead: mockLetterhead() }));
+}
+
+// Mismo membrete que loadDoctorLetterhead() del API: logo y datos de
+// contacto de Perfil → Marca.
+function mockLetterhead() {
+  const doctor = doctorUser.doctor;
+  const logo = doctor.logoUrl ? readMockFile(doctor.logoUrl) : null;
+  return Object.fromEntries(
+    Object.entries({
+      logoImage: logo ?? undefined,
+      phrase: doctor.letterheadPhrase || undefined,
+      phone: doctor.professionalPhone || undefined,
+      email: doctor.professionalEmail || undefined,
+    }).filter(([, value]) => value !== undefined)
+  );
+}
+
+// ── Persistencia del mock ──
+// Antes todo vivía en memoria y se perdía al reiniciar: recetas,
+// órdenes, resultados subidos y pacientes nuevos "desaparecían". Se
+// guardan en .mock-data/ (fuera de git; solo datos sintéticos, R7).
+// Bórrala para volver al estado inicial del mock.
+const MOCK_DATA_DIR = url.fileURLToPath(new URL('./.mock-data/', import.meta.url));
+const MOCK_FILES_DIR = path.join(MOCK_DATA_DIR, 'files');
+const MOCK_STATE_FILE = path.join(MOCK_DATA_DIR, 'state.json');
+const SEED_PATIENT_IDS = new Set(patients.map(p => p.id));
+
+function saveMockFile(name, buffer) {
+  fs.mkdirSync(MOCK_FILES_DIR, { recursive: true });
+  fs.writeFileSync(path.join(MOCK_FILES_DIR, path.basename(name)), buffer);
+}
+
+function readMockFile(name) {
+  try {
+    return fs.readFileSync(path.join(MOCK_FILES_DIR, path.basename(name)));
+  } catch {
+    return null;
+  }
+}
+
+function saveMockState() {
+  fs.mkdirSync(MOCK_DATA_DIR, { recursive: true });
+  fs.writeFileSync(MOCK_STATE_FILE, JSON.stringify({
+    patients: patients.filter(p => !SEED_PATIENT_IDS.has(p.id)),
+    encounters,
+    issuedPrescriptions,
+    issuedLabOrders,
+    labResults,
+    doctor: doctorUser.doctor,
+  }, null, 2));
+}
+
+function loadMockState() {
+  if (!fs.existsSync(MOCK_STATE_FILE)) return;
+  try {
+    const state = JSON.parse(fs.readFileSync(MOCK_STATE_FILE, 'utf8'));
+    for (const patient of state.patients ?? []) {
+      if (patients.some(p => p.id === patient.id)) continue;
+      patients.push(patient);
+      allergies[patient.id] ??= [];
+      medications[patient.id] ??= [];
+      historyItems[patient.id] ??= [];
+    }
+    Object.assign(encounters, state.encounters ?? {});
+    issuedPrescriptions.push(...(state.issuedPrescriptions ?? []));
+    issuedLabOrders.push(...(state.issuedLabOrders ?? []));
+    labResults.push(...(state.labResults ?? []));
+    if (state.doctor) Object.assign(doctorUser.doctor, state.doctor);
+  } catch (e) {
+    console.warn(`No se pudo leer ${MOCK_STATE_FILE}, se arranca vacío: ${e.message}`);
+  }
+}
+
+loadMockState();
+
+// Catálogo de formatos clínicos compartido con el API y el frontend
+// (packages/contracts/src/validators/medical-files.ts).
+const medicalFiles = await import('./packages/contracts/src/validators/medical-files.ts');
+
+// Un solo archivo en el campo "file" (apiUpload), como el
+// FileInterceptor("file") del API.
+async function readUploadedFile(req, rawBuffer) {
+  const form = await new Response(rawBuffer, { headers: { 'content-type': req.headers['content-type'] || '' } }).formData();
+  const file = form.get('file');
+  if (!file || typeof file === 'string') return null;
+  return { buffer: Buffer.from(await file.arrayBuffer()), contentType: file.type || 'application/octet-stream', fileName: file.name || '' };
+}
+
+function createMockEncounter(patientId, encounterType, appointmentId) {
+  const id = `enc-${Date.now()}`;
+  encounters[id] = {
+    id,
+    patientId,
+    appointmentId: appointmentId ?? null,
+    encounterType,
+    status: "DRAFT",
+    startedAt: new Date().toISOString(),
+    signedAt: null,
+    draftContent: {},
+    notes: [],
+    diagnoses: []
+  };
+  saveMockState();
+  return encounters[id];
+}
+
+// ── Asistente clínico ("El Segundo Lector") ──
+// La llamada a Claude es LA MISMA que la del API real
+// (claude-model-calls.ts: prompt, contrato, idioma, reintento). Lo único
+// propio del mock es armar el contexto con sus datos en memoria — con
+// la misma forma que ContextAssemblerService y, como allá, sin nombre,
+// CURP, contacto ni folio del paciente. Sin ANTHROPIC_API_KEY en .env
+// responde NOT_CONFIGURED, igual que el API real.
+const assistantCalls = await import('./apps/api/src/modules/assistant/services/claude-model-calls.ts').catch((e) => {
+  console.warn(`Asistente clínico no disponible en el mock: ${e.message}`);
+  return null;
+});
+const vitalRanges = await import('./apps/api/src/common/vital-ranges.util.ts').catch(() => null);
+const vitalsCalc = await import('./apps/api/src/common/vitals-calculations.util.ts').catch(() => null);
+
+// Mismos valores por omisión que AssistantPassOrchestratorService.
+const ASSISTANT_TIMEOUT_MS = 180_000;
+const ASSISTANT_SUMMARY_TIMEOUT_MS = 30_000;
+const ASSISTANT_MAX_TOKENS_PER_ENCOUNTER = 60_000;
+const ASSISTANT_PASSES = ["SUBJETIVO", "OBJETIVO", "ANALISIS", "CIERRE"];
+
+// encounterId -> lecturas, más reciente primero.
+const assistantReadings = new Map();
+const assistantLogger = {
+  warn: (message) => console.warn(`[asistente] ${message}`),
+  error: (message) => console.error(`[asistente] ${message}`),
+};
+let claudeClient;
+function getClaudeClient() {
+  // Perezoso: .env se carga más abajo en este archivo.
+  if (claudeClient === undefined) claudeClient = assistantCalls?.createClaudeClient() ?? null;
+  return claudeClient;
+}
+
+function withoutUndefined(obj) {
+  return Object.fromEntries(Object.entries(obj).filter(([, value]) => value !== undefined));
+}
+
+function mockVitalsBlock(rawVitals, ageYears) {
+  const raw = rawVitals && typeof rawVitals === 'object' ? rawVitals : {};
+  const num = (key) => (typeof raw[key] === 'number' ? raw[key] : undefined);
+  const ranged = {
+    bpSystolic: num('bpSystolic'),
+    bpDiastolic: num('bpDiastolic'),
+    heartRate: num('heartRate'),
+    respiratoryRate: num('respiratoryRate'),
+    tempC: num('tempC'),
+    spo2: num('spo2'),
+  };
+  const anthropometry = vitalsCalc
+    ? vitalsCalc.withBodySurfaceArea(vitalsCalc.withComputedVitals({ weightKg: num('weightKg'), heightCm: num('heightCm') }))
+    : {};
+  const flags = vitalRanges ? vitalRanges.evaluateVitalRanges(ageYears, ranged) : { outOfRange: [], critical: [] };
+  return {
+    ...withoutUndefined({
+      presionSistolicaMmHg: ranged.bpSystolic,
+      presionDiastolicaMmHg: ranged.bpDiastolic,
+      frecuenciaCardiacaLpm: ranged.heartRate,
+      frecuenciaRespiratoriaRpm: ranged.respiratoryRate,
+      temperaturaC: ranged.tempC,
+      spo2Porcentaje: ranged.spo2,
+      glucosaCapilarMgDl: num('glucoseCapMgDl'),
+      llenadoCapilarSegundos: num('capillaryRefillSeconds'),
+      pesoKg: num('weightKg'),
+      tallaCm: num('heightCm'),
+      perimetroCefalicoCm: num('headCircumferenceCm'),
+      perimetroAbdominalCm: num('abdominalCircumferenceCm'),
+      imc: anthropometry.bmi,
+      superficieCorporalM2: anthropometry.bsaM2,
+    }),
+    fueraDeRango: flags.outOfRange,
+    criticos: flags.critical,
+  };
+}
+
+function mockAssistantContext(encounterId) {
+  const encounter = encounters[encounterId] || encounters["enc-1"];
+  const patient = patients.find(p => p.id === encounter.patientId) || patients[0];
+  const draft = encounter.draftContent || {};
+  const ageYears = ageFromBirthDate(patient.birthDate);
+  const text = (key) => (typeof draft[key] === 'string' && draft[key].trim() ? draft[key] : undefined);
+  const draftDiagnoses = Array.isArray(draft.diagnoses) && draft.diagnoses.length > 0 ? draft.diagnoses : encounter.diagnoses || [];
+  return {
+    paciente: {
+      edadAnios: ageYears,
+      sexo: patient.sexAtBirth,
+      embarazo: null,
+      tipoSangre: patient.bloodType ?? null,
+      residencia: patient.addressMunicipality || patient.addressState
+        ? { municipio: patient.addressMunicipality ?? null, estado: patient.addressState ?? null }
+        : null,
+    },
+    seguridad: (allergies[patient.id] || []).filter(a => a.status === 'ACTIVE').map(a => ({ sustancia: a.substance, reaccion: a.reaction ?? null, gravedad: a.severity })),
+    problemas: mockActiveDiagnoses(patient.id).map(d => ({ codigoIcd10: d.icd10Code, descripcion: d.description, fecha: d.lastRecordedAt })),
+    medicacion: (medications[patient.id] || []).filter(m => m.status === 'ACTIVE').map(m => ({ nombreGenerico: m.genericName, dosis: m.dose, via: m.route, frecuencia: m.frequency })),
+    antecedentes: (historyItems[patient.id] || []).map(h => ({
+      categoria: h.category,
+      subtipo: h.subcategory,
+      estado: h.isNegated ? "NEGADO" : "PRESENTE",
+      parentesco: h.familyMember ?? null,
+      comentario: h.description ?? null,
+    })),
+    toxicomanias: [],
+    ginecoObstetricos: null,
+    laboratorio: [],
+    signosVitalesPrevios: [],
+    trayectoria: [],
+    actual: withoutUndefined({
+      motivoConsulta: text('chiefComplaint'),
+      padecimientoActual: text('currentIllness'),
+      exploracionFisica: text('physicalExam'),
+      valoracion: text('assessment'),
+      plan: text('plan'),
+      pronostico: text('prognosis'),
+      indicacionesPaciente: text('patientInstructions'),
+      proximaCitaDias: typeof draft.suggestedFollowUpDays === 'number' ? draft.suggestedFollowUpDays : undefined,
+    }),
+    signosVitales: mockVitalsBlock(draft.vitals, ageYears),
+    // El mock guarda specialtyData tal como llega del cliente: número
+    // crudo por escala (el API real lo envuelve en {value, interpretation}).
+    escalas: Object.entries(draft.specialtyData || {}).flatMap(([escala, entry]) => {
+      const valor = typeof entry === 'number' ? entry : entry?.value;
+      return typeof valor === 'number' ? [{ escala, valor, interpretacion: entry?.interpretation ?? null }] : [];
+    }),
+    sintomasAlarmaMarcados: [],
+    diagnosticosConsulta: draftDiagnoses
+      .filter(d => typeof d.description === 'string')
+      .map(d => ({ codigoIcd10: d.icd10Code ?? null, descripcion: d.description, tipo: d.diagnosisType ?? "", certeza: d.certainty ?? "" })),
+    banderasRojasDetectadas: [],
+    documentosConsulta: {
+      recetas: issuedPrescriptions
+        .filter(p => p.encounterId === encounter.id && p.status !== 'CANCELLED')
+        .flatMap(p => p.items.map(i => ({ medicamento: i.genericName, dosis: i.dose, via: i.route, frecuencia: i.frequency, duracion: i.duration }))),
+      ordenesEstudio: issuedLabOrders
+        .filter(o => o.encounterId === encounter.id && o.status !== 'CANCELLED')
+        .flatMap(o => o.items.map(i => ({ estudio: i.studyName, indicacion: o.clinicalIndication }))),
+    },
+    encuadre: {
+      especialidad: specialties.find(s => s.id === doctorUser.doctor.primarySpecialtyId)?.nameEs ?? null,
+      tipoConsulta: encounter.encounterType,
+    },
+  };
+}
 
 // ── Atlas Anatómico 3D (port mínimo de AtlasHttpAdapter) ──
 // .env de este repo, si existe: ahí van ATLAS_API_URL, ATLAS_VIEWER_URL,
@@ -444,12 +773,16 @@ const server = http.createServer(async (req, res) => {
 
   // Read JSON body
   let body = {};
+  // Crudo también: las subidas de archivo llegan como multipart/form-data,
+  // no como JSON (ver readUploadedFile).
+  let rawBuffer = Buffer.alloc(0);
   if (['POST', 'PATCH', 'PUT'].includes(method)) {
     const buffers = [];
     for await (const chunk of req) {
       buffers.push(chunk);
     }
-    const rawBody = Buffer.concat(buffers).toString();
+    rawBuffer = Buffer.concat(buffers);
+    const rawBody = rawBuffer.toString();
     try {
       if (rawBody) body = JSON.parse(rawBody);
     } catch (e) {}
@@ -463,6 +796,17 @@ const server = http.createServer(async (req, res) => {
   const sendError = (code, message, statusCode = 400) => {
     res.writeHead(statusCode, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: { code, message } }));
+  };
+
+  const sendFile = (buffer, contentType) => {
+    res.writeHead(200, { 'Content-Type': contentType, 'Content-Length': buffer.length });
+    res.end(buffer);
+  };
+
+  const sendPdf = (documentId, notFoundCode, notFoundMessage) => {
+    const pdf = readMockFile(`${documentId}.pdf`);
+    if (!pdf) return sendError(notFoundCode, notFoundMessage, 404);
+    return sendFile(pdf, 'application/pdf');
   };
 
   console.log(`[${method}] ${pathname}`);
@@ -501,6 +845,41 @@ const server = http.createServer(async (req, res) => {
   if (pathname === '/doctors/me' && method === 'GET') {
     const user = getCurrentUser(req);
     return sendJson(user.doctor || doctorUser.doctor);
+  }
+
+  // Perfil: datos del médico y del membrete (frase, teléfono, correo).
+  // Antes caía en el fallback y no se guardaba nada.
+  if (pathname === '/doctors/me' && method === 'PATCH') {
+    const doctor = getCurrentUser(req).doctor || doctorUser.doctor;
+    Object.assign(doctor, body);
+    saveMockState();
+    return sendJson(doctor);
+  }
+
+  // Perfil → Marca: logo y firma visual. Los usan la receta y la orden
+  // (membrete y firma). Misma forma que BrandingAssetsController.
+  if (pathname === '/doctors/me/branding-assets' && method === 'POST') {
+    const kind = parsedUrl.query.kind;
+    if (kind !== 'logo' && kind !== 'signature') return sendError('VALIDATION_ERROR', 'kind inválido.', 400);
+    const file = await readUploadedFile(req, rawBuffer).catch(() => null);
+    if (!file || !['image/png', 'image/jpeg'].includes(file.contentType)) {
+      return sendError('VALIDATION_ERROR', 'Sube una imagen PNG o JPG.', 400);
+    }
+    const fileKey = `branding-${kind}`;
+    saveMockFile(fileKey, file.buffer);
+    const doctor = getCurrentUser(req).doctor || doctorUser.doctor;
+    doctor[kind === 'logo' ? 'logoUrl' : 'signatureImageUrl'] = fileKey;
+    doctor[kind === 'logo' ? 'logoContentType' : 'signatureContentType'] = file.contentType;
+    saveMockState();
+    return sendJson(doctor, 201);
+  }
+  const brandingAsset = pathname.match(/^\/doctors\/me\/branding-assets\/(logo|signature)$/);
+  if (brandingAsset && method === 'GET') {
+    const doctor = getCurrentUser(req).doctor || doctorUser.doctor;
+    const fileKey = brandingAsset[1] === 'logo' ? doctor.logoUrl : doctor.signatureImageUrl;
+    const file = fileKey ? readMockFile(fileKey) : null;
+    if (!file) return sendError('NOT_FOUND', 'Archivo no encontrado.', 404);
+    return sendFile(file, (brandingAsset[1] === 'logo' ? doctor.logoContentType : doctor.signatureContentType) || 'image/png');
   }
 
   if (pathname === '/doctors/me/documents' && method === 'GET') {
@@ -618,19 +997,8 @@ const server = http.createServer(async (req, res) => {
       if (action === 'start') {
         apt.status = 'IN_PROGRESS';
         if (!apt.encounter) {
-          const encId = `enc-${Date.now()}`;
-          encounters[encId] = {
-            id: encId,
-            patientId: apt.patientId,
-            encounterType: "FOLLOW_UP",
-            status: "DRAFT",
-            startedAt: new Date().toISOString(),
-            signedAt: null,
-            draftContent: {},
-            notes: [],
-            diagnoses: []
-          };
-          apt.encounter = { id: encId, status: "DRAFT", encounterType: "FOLLOW_UP" };
+          const created = createMockEncounter(apt.patientId, "FOLLOW_UP", apt.id);
+          apt.encounter = { id: created.id, status: "DRAFT", encounterType: "FOLLOW_UP" };
         }
       } else if (action === 'confirm') apt.status = 'CONFIRMED';
       else if (action === 'complete') apt.status = 'COMPLETED';
@@ -669,6 +1037,7 @@ const server = http.createServer(async (req, res) => {
     allergies[newPat.id] = [];
     medications[newPat.id] = [];
     historyItems[newPat.id] = [];
+    saveMockState();
     return sendJson(newPat, 201);
   }
 
@@ -707,7 +1076,41 @@ const server = http.createServer(async (req, res) => {
   // quedaban siempre vacíos aunque sí hubiera datos).
   if (pathname.match(/^\/records\/patients\/[^\/]+\/timeline$/)) {
     const patId = pathname.split('/')[3];
-    if (patId !== 'pat-1') return sendJson({ encounters: [], prescriptions: [], labOrders: [], standaloneResults: [] });
+    // Lo emitido en esta sesión del mock, más reciente primero.
+    const issuedRx = issuedPrescriptions
+      .filter(p => p.patientId === patId)
+      .map(p => ({
+        type: "prescription",
+        id: p.id,
+        folio: p.folio,
+        prescriptionType: "ELECTRONIC",
+        signatureRoute: p.signatureRoute,
+        issuedAt: p.issuedAt,
+        diagnosisSnapshot: p.diagnosisSnapshot,
+        qrVerificationToken: p.qrVerificationToken,
+        status: p.status,
+        items: p.items.map(i => ({ genericName: i.genericName, brandName: i.brandName, presentation: i.presentation, dose: i.dose, route: i.route, frequency: i.frequency, duration: i.duration, controlGroup: i.controlGroup }))
+      }))
+      .reverse();
+    const issuedLabs = issuedLabOrders
+      .filter(o => o.patientId === patId)
+      .map(o => ({
+        type: "lab_order",
+        id: o.id,
+        folio: o.folio,
+        issuedAt: o.issuedAt,
+        clinicalIndication: o.clinicalIndication,
+        fastingRequired: o.fastingRequired,
+        qrVerificationToken: o.qrVerificationToken,
+        status: o.status,
+        items: o.items
+      }))
+      .reverse();
+    const standaloneResults = labResults
+      .filter(r => r.patientId === patId && !r.labOrderId)
+      .map(r => ({ type: "standalone_result", id: r.id, labName: r.labName, resultDate: r.resultDate, uploadedAt: r.uploadedAt, uploadedByRole: r.uploadedByRole, status: r.reviewedAt ? "REVIEWED" : "PENDING_REVIEW" }))
+      .reverse();
+    if (patId !== 'pat-1') return sendJson({ encounters: [], prescriptions: issuedRx, labOrders: issuedLabs, standaloneResults });
     return sendJson({
       encounters: [
         {
@@ -721,6 +1124,7 @@ const server = http.createServer(async (req, res) => {
         }
       ],
       prescriptions: [
+        ...issuedRx,
         {
           type: "prescription",
           id: "rx-1",
@@ -736,38 +1140,422 @@ const server = http.createServer(async (req, res) => {
           ]
         }
       ],
-      labOrders: [],
-      standaloneResults: []
+      labOrders: issuedLabs,
+      standaloneResults
     });
   }
 
   if (pathname.match(/^\/records\/patients\/[^\/]+\/active-diagnoses$/)) {
+    return sendJson(mockActiveDiagnoses(pathname.split('/')[3]));
+  }
+
+  // Hoja frontal del panel de consulta (Fase 5 · Prompt 39A). Misma
+  // forma que PatientClinicalService.hojaFrontal; sin esta ruta caía en
+  // el fallback { ok: true } y hoja-frontal.tsx tronaba en
+  // medications.filter.
+  if (pathname.match(/^\/records\/patients\/[^\/]+\/hoja-frontal$/) && method === 'GET') {
     const patId = pathname.split('/')[3];
-    if (patId !== 'pat-1') return sendJson([]);
-    return sendJson([
-      {
-        icd10Code: "I10",
-        description: "Hipertensión esencial (primaria)",
-        diagnosisType: "PRINCIPAL",
-        certainty: "CONFIRMED",
-        firstRecordedAt: "2026-07-01T10:00:00.000Z",
-        lastRecordedAt: new Date().toISOString(),
-        timesRecorded: 2,
-        lastEncounterId: "enc-1"
+    const pat = patients.find(p => p.id === patId);
+    if (!pat) return sendError('NOT_FOUND', 'Paciente no encontrado.', 404);
+    const nextAppointment = appointments
+      .filter(a => a.patientId === patId && ['SCHEDULED', 'CONFIRMED'].includes(a.status) && new Date(a.startsAt) >= new Date())
+      .sort((a, b) => a.startsAt.localeCompare(b.startsAt))[0];
+    return sendJson({
+      patient: {
+        id: pat.id,
+        medicfyId: pat.medicfyId,
+        firstName: pat.firstName,
+        lastNamePaternal: pat.lastNamePaternal,
+        lastNameMaternal: pat.lastNameMaternal ?? null,
+        birthDate: pat.birthDate,
+        sexAtBirth: pat.sexAtBirth,
+        phoneE164: pat.phoneE164,
+        email: pat.email,
+        addressStreet: pat.addressStreet ?? null,
+        addressExt: pat.addressExt ?? null,
+        addressInt: pat.addressInt ?? null,
+        addressColonia: pat.addressColonia ?? null,
+        addressMunicipality: pat.addressMunicipality ?? null,
+        addressState: pat.addressState ?? null,
+        addressPostalCode: pat.addressPostalCode ?? null
+      },
+      allergies: allergies[patId] || [],
+      medications: medications[patId] || [],
+      activeDiagnoses: mockActiveDiagnoses(patId),
+      surgeries: [],
+      lastEncounter: patId === 'pat-1'
+        ? {
+            id: "enc-prev-1",
+            encounterType: "FIRST_VISIT",
+            signedAt: "2026-07-15T10:25:00.000Z",
+            doctor: { legalFirstName: doctorUser.doctor.legalFirstName, legalLastName: doctorUser.doctor.legalLastName, primarySpecialty: { nameEs: "Medicina General" } }
+          }
+        : null,
+      nextAppointment: nextAppointment
+        ? { id: nextAppointment.id, startsAt: nextAppointment.startsAt, status: nextAppointment.status, service: { name: nextAppointment.service?.name ?? "" } }
+        : null
+    });
+  }
+
+  // ── Catálogos de estudios de la orden de laboratorio ──
+  const catalogMatch = pathname.match(/^\/catalogs\/([^\/]+)$/);
+  if (catalogMatch && method === 'GET' && labCatalogs[catalogMatch[1]]) {
+    return sendJson(labCatalogs[catalogMatch[1]]);
+  }
+
+  // ── Recetas (M9) — misma forma de respuesta que PrescriptionsController ──
+  const rxCreate = pathname.match(/^\/prescriptions\/encounters\/([^\/]+)$/);
+  if (rxCreate && method === 'POST') {
+    const requested = Array.isArray(body.items) ? body.items : [];
+    if (!body.diagnosisSnapshot || requested.length === 0) {
+      return sendError('VALIDATION_ERROR', 'La receta necesita el diagnóstico y al menos un medicamento.', 400);
+    }
+    if (body.signatureRoute === 'ELECTRONIC' && !body.password) {
+      return sendError('SIGNATURE_MFA_REQUIRED', 'Confirma tu contraseña para firmar.', 428);
+    }
+    const items = requested.map(item => {
+      const med = sampleMedications.find(m => m.id === item.medicationCatalogId);
+      if (!med) return null;
+      return {
+        medicationCatalogId: med.id,
+        genericName: med.genericName,
+        brandName: med.brandNames[0] ?? null,
+        presentation: med.presentations[0]?.label ?? "N/A",
+        dose: [item.dose, item.doseUnit].filter(Boolean).join(" "),
+        route: item.route,
+        frequency: item.frequency,
+        duration: item.duration,
+        quantity: item.quantity ?? null,
+        specialInstructions: item.specialInstructions ?? null,
+        indication: item.indication ?? null,
+        controlGroup: med.controlGroup
+      };
+    });
+    if (items.some(item => item === null)) {
+      return sendError('PRESCRIPTION_MISSING_LEGAL_FIELD', 'Uno o más medicamentos no existen en el catálogo.', 422);
+    }
+    const issuedAt = new Date();
+    const snapshot = mockLegalSnapshot(rxCreate[1]);
+    const prescription = {
+      id: randomUUID(),
+      folio: nextMockFolio("RX", issuedPrescriptions),
+      signatureRoute: body.signatureRoute,
+      qrVerificationToken: randomUUID(),
+      issuedAt: issuedAt.toISOString(),
+      diagnosisSnapshot: body.diagnosisSnapshot,
+      status: body.signatureRoute === 'HANDWRITTEN_AFTER_PRINT' ? 'PENDING_HANDWRITTEN_SIGNATURE' : 'ISSUED',
+      items,
+      ...snapshot
+    };
+    issuedPrescriptions.push(prescription);
+    saveMockState();
+    await storeMockPdf(prescription.id, pdfLayout?.renderPrescriptionPdf, {
+      ...snapshot,
+      folio: prescription.folio,
+      issuedAt,
+      signatureRoute: prescription.signatureRoute,
+      signatureTimestamp: prescription.signatureRoute === 'ELECTRONIC' ? issuedAt : null,
+      diagnosisSnapshot: prescription.diagnosisSnapshot,
+      qrVerificationToken: prescription.qrVerificationToken,
+      items: items.map(i => ({
+        genericName: i.genericName,
+        presentation: i.presentation,
+        dose: i.dose,
+        route: i.route,
+        frequency: i.frequency,
+        duration: i.duration,
+        ...(i.brandName ? { brandName: i.brandName } : {}),
+        ...(i.quantity ? { quantity: i.quantity } : {}),
+        ...(i.specialInstructions ? { specialInstructions: i.specialInstructions } : {})
+      })),
+      ...(body.generalInstructions ? { generalInstructions: body.generalInstructions } : {})
+    });
+    return sendJson({
+      prescription: { id: prescription.id, folio: prescription.folio, qrVerificationToken: prescription.qrVerificationToken, signatureRoute: prescription.signatureRoute },
+      warnings: { therapeuticDuplicates: [], therapeuticClassDuplicates: [] },
+      interactionWarnings: []
+    }, 201);
+  }
+
+  const rxLast = pathname.match(/^\/prescriptions\/patients\/([^\/]+)\/last$/);
+  if (rxLast && method === 'GET') {
+    const last = issuedPrescriptions.filter(p => p.patientId === rxLast[1] && p.status !== 'CANCELLED').at(-1);
+    if (!last) return sendJson({ prescription: null, lines: [] });
+    return sendJson({
+      prescription: { id: last.id, folio: last.folio, issuedAt: last.issuedAt },
+      lines: last.items.map(i => ({
+        medicationCatalogId: i.medicationCatalogId,
+        genericName: i.genericName,
+        presentation: i.presentation,
+        dose: i.dose,
+        doseUnit: null,
+        indication: i.indication,
+        route: i.route,
+        frequency: i.frequency,
+        duration: i.duration,
+        quantity: i.quantity,
+        specialInstructions: i.specialInstructions,
+        origin: "HEREDADA",
+        sourcePrescriptionId: last.id,
+        sourceIssuedAt: last.issuedAt
+      }))
+    });
+  }
+
+  const rxAction = pathname.match(/^\/prescriptions\/([^\/]+)\/(pdf|cancel|confirm-handwritten-delivery)$/);
+  if (rxAction) {
+    const prescription = issuedPrescriptions.find(p => p.id === rxAction[1]);
+    if (rxAction[2] === 'pdf' && method === 'GET') {
+      return sendPdf(rxAction[1], 'PRESCRIPTION_PDF_NOT_FOUND', 'No hay un PDF disponible para esta receta.');
+    }
+    if (prescription && rxAction[2] === 'cancel' && method === 'POST') {
+      prescription.status = 'CANCELLED';
+      saveMockState();
+      return sendJson({ prescriptionId: prescription.id, reason: body.reason, cancelledAt: new Date().toISOString() });
+    }
+    if (prescription && rxAction[2] === 'confirm-handwritten-delivery' && method === 'POST') {
+      prescription.status = 'ISSUED';
+      saveMockState();
+      return sendJson({ prescriptionId: prescription.id, confirmedAt: new Date().toISOString() });
+    }
+  }
+
+  // ── Órdenes de estudios (M10) — misma forma que LabOrdersController ──
+  const labCreate = pathname.match(/^\/lab-orders\/encounters\/([^\/]+)$/);
+  if (labCreate && method === 'POST') {
+    const requested = Array.isArray(body.items) ? body.items : [];
+    if (!body.clinicalIndication || requested.length === 0) {
+      return sendError('VALIDATION_ERROR', 'La orden necesita la indicación clínica y al menos un estudio.', 400);
+    }
+    if (body.signatureRoute === 'ELECTRONIC' && !body.password) {
+      return sendError('SIGNATURE_MFA_REQUIRED', 'Confirma tu contraseña para firmar.', 428);
+    }
+    // Del catálogo (studyKey) o escrito por el médico (customStudyName),
+    // como labOrderItemCreateSchema; el motivo siempre de catálogo.
+    const items = requested.map(item => {
+      const motive = labCatalogs.MOTIVO_ESTUDIO.find(m => m.key === item.motiveKey);
+      const custom = typeof item.customStudyName === 'string' ? item.customStudyName.trim() : '';
+      const study = labCatalogs.ESTUDIO_LABORATORIO.find(s => s.key === item.studyKey);
+      const studyName = custom.length >= 3 && !item.studyKey ? custom : study?.preferredTerm;
+      return studyName && motive ? { studyName, loincCode: null, notes: item.notes ?? null } : null;
+    });
+    if (items.some(item => item === null)) {
+      return sendError('LAB_ORDER_STUDY_NOT_IN_CATALOG', 'Uno o más estudios o motivos no existen en el catálogo.', 422);
+    }
+    const issuedAt = new Date();
+    const snapshot = mockLegalSnapshot(labCreate[1]);
+    const labOrder = {
+      id: randomUUID(),
+      folio: nextMockFolio("LAB", issuedLabOrders),
+      signatureRoute: body.signatureRoute,
+      qrVerificationToken: randomUUID(),
+      issuedAt: issuedAt.toISOString(),
+      clinicalIndication: body.clinicalIndication,
+      fastingRequired: body.fastingRequired === true,
+      status: 'ISSUED',
+      items,
+      ...snapshot
+    };
+    issuedLabOrders.push(labOrder);
+    saveMockState();
+    await storeMockPdf(labOrder.id, pdfLayout?.renderLabOrderPdf, {
+      ...snapshot,
+      folio: labOrder.folio,
+      issuedAt,
+      signatureRoute: labOrder.signatureRoute,
+      signatureTimestamp: labOrder.signatureRoute === 'ELECTRONIC' ? issuedAt : null,
+      clinicalIndication: labOrder.clinicalIndication,
+      fastingRequired: labOrder.fastingRequired,
+      qrVerificationToken: labOrder.qrVerificationToken,
+      items: items.map(i => ({ studyName: i.studyName, ...(i.notes ? { notes: i.notes } : {}) }))
+    });
+    return sendJson({
+      id: labOrder.id,
+      folio: labOrder.folio,
+      qrVerificationToken: labOrder.qrVerificationToken,
+      signatureRoute: labOrder.signatureRoute,
+      signatureMethod: labOrder.signatureRoute === 'ELECTRONIC' ? 'INTERNAL_SYSTEM' : null,
+      signedAt: labOrder.signatureRoute === 'ELECTRONIC' ? labOrder.issuedAt : null
+    }, 201);
+  }
+
+  const labAction = pathname.match(/^\/lab-orders\/([^\/]+)\/(pdf|cancel)$/);
+  if (labAction) {
+    const labOrder = issuedLabOrders.find(o => o.id === labAction[1]);
+    if (labAction[2] === 'pdf' && method === 'GET') {
+      return sendPdf(labAction[1], 'LAB_ORDER_PDF_NOT_FOUND', 'No hay un PDF disponible para esta orden.');
+    }
+    if (labOrder && labAction[2] === 'cancel' && method === 'POST') {
+      labOrder.status = 'CANCELLED';
+      saveMockState();
+      return sendJson({ labOrderId: labOrder.id, reason: body.reason, cancelledAt: new Date().toISOString() });
+    }
+  }
+
+  // ── Resultados de laboratorio (archivo PDF/JPG/PNG) — misma forma que
+  // LabResultsController. Antes el mock descartaba el archivo subido.
+  const labResultsList = pathname.match(/^\/lab-results\/patients\/([^\/]+)$/);
+  if (labResultsList && method === 'GET') {
+    return sendJson(
+      labResults
+        .filter(r => r.patientId === labResultsList[1])
+        .sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt))
+        .map(({ patientId: _p, contentType: _c, ...result }) => result)
+    );
+  }
+  if (labResultsList && method === 'POST') {
+    const file = await readUploadedFile(req, rawBuffer).catch(() => null);
+    if (!file) return sendError('FILE_REQUIRED', 'Debes adjuntar un archivo.', 400);
+    if (file.buffer.length > medicalFiles.MEDICAL_FILE_MAX_BYTES) {
+      return sendError('FILE_TOO_LARGE', 'El archivo pesa más de 50 MB.', 413);
+    }
+    const format = medicalFiles.resolveMedicalFileFormat(file.fileName, file.contentType);
+    if (!format) {
+      return sendError('LAB_RESULT_FILE_TYPE_NOT_ALLOWED', 'Formato no permitido. Se aceptan PDF, imágenes (JPG, PNG, HEIC, TIFF…), DICOM, Word, Excel, texto, HL7 y video.', 400);
+    }
+    const labOrderId = typeof parsedUrl.query.labOrderId === 'string' ? parsedUrl.query.labOrderId : null;
+    const result = {
+      id: randomUUID(),
+      patientId: labResultsList[1],
+      labOrderId,
+      labName: null,
+      resultDate: null,
+      uploadedAt: new Date().toISOString(),
+      uploadedByRole: "DOCTOR",
+      reviewedAt: null,
+      doctorComment: null,
+      originalFileName: file.fileName.slice(0, 200) || null,
+      contentType: format.mimeTypes[0]
+    };
+    saveMockFile(`result-${result.id}`, file.buffer);
+    labResults.push(result);
+    const order = issuedLabOrders.find(o => o.id === labOrderId);
+    if (order && order.status === 'ISSUED') order.status = 'RESULTS_UPLOADED';
+    saveMockState();
+    const { patientId: _p, contentType: _c, ...response } = result;
+    return sendJson(response, 201);
+  }
+  const labResultAction = pathname.match(/^\/lab-results\/patients\/([^\/]+)\/([^\/]+)\/(file|review)$/);
+  if (labResultAction) {
+    const result = labResults.find(r => r.id === labResultAction[2] && r.patientId === labResultAction[1]);
+    if (!result) return sendError('NOT_FOUND', 'Resultado no encontrado.', 404);
+    if (labResultAction[3] === 'file' && method === 'GET') {
+      const file = readMockFile(`result-${result.id}`);
+      return file ? sendFile(file, result.contentType) : sendError('NOT_FOUND', 'El archivo del resultado no está disponible.', 404);
+    }
+    if (labResultAction[3] === 'review' && method === 'POST') {
+      result.reviewedAt = new Date().toISOString();
+      result.doctorComment = body.doctorComment ?? null;
+      saveMockState();
+      const { patientId: _p, contentType: _c, ...response } = result;
+      return sendJson(response);
+    }
+  }
+
+  // Listas del expediente que el mock todavía no simula: vacías, pero
+  // con forma de arreglo. Con el fallback { ok: true } la pantalla
+  // mostraba "formato inesperado" en lugar del estado vacío.
+  if (method === 'GET' && (
+    pathname.match(/^\/records\/patients\/[^\/]+\/(documents|notes-timeline|history-pending-inherited|substance-uses|vitals-history)$/) ||
+    pathname.match(/^\/lab-analytes\/patients\/[^\/]+$/) ||
+    pathname === '/records/antecedentes-templates' ||
+    pathname.match(/^\/catalogs\/[^\/]+$/)
+  )) {
+    return sendJson([]);
+  }
+
+  // Misma regla que PatientClinicalService.gynecoVisibility: visible
+  // para sexo al nacer F (el mock no guarda habilitación manual).
+  if (pathname.match(/^\/records\/patients\/[^\/]+\/gyneco-history$/) && method === 'GET') {
+    const pat = patients.find(p => p.id === pathname.split('/')[3]);
+    return sendJson({ visible: pat?.sexAtBirth === 'F', history: null });
+  }
+
+  // Asistente clínico (pases y resumen objetivo) — misma forma de
+  // respuesta que AssistantController. Va antes de
+  // GET /records/encounters/:id, que si no se tragaba
+  // GET .../assistant/passes devolviendo el encuentro.
+  const assistantRoute = pathname.match(/^\/records\/encounters\/([^\/]+)\/assistant\/(passes|summary)$/);
+  if (assistantRoute) {
+    const encounterId = encounters[assistantRoute[1]] ? assistantRoute[1] : "enc-1";
+    const isSummary = assistantRoute[2] === 'summary';
+    if (method === 'GET' && !isSummary) {
+      return sendJson((assistantReadings.get(encounterId) ?? []).map(({ tokens: _tokens, ...reading }) => reading));
+    }
+    if (method === 'POST') {
+      const client = getClaudeClient();
+      if (!assistantCalls || !client) return sendJson({ kind: 'unavailable', reason: 'NOT_CONFIGURED' });
+      if (!isSummary && !ASSISTANT_PASSES.includes(body.pase)) return sendError('VALIDATION_ERROR', 'Pase inválido.', 400);
+
+      const readings = assistantReadings.get(encounterId) ?? [];
+      const spentTokens = readings.reduce((sum, r) => sum + r.tokens, 0);
+      if (!isSummary && spentTokens >= ASSISTANT_MAX_TOKENS_PER_ENCOUNTER) {
+        return sendJson({ kind: 'unavailable', reason: 'SPEND_CAP_REACHED' });
       }
-    ]);
+
+      const context = mockAssistantContext(encounterId);
+      const hashContexto = createHash('sha256').update(JSON.stringify(context)).digest('hex');
+      const locale = String(req.headers['accept-language'] || '').trim().toLowerCase().startsWith('en') ? 'en' : 'es';
+      // Cliente que se va antes de la respuesta = cancelar (ver
+      // client-disconnect-signal.ts: no se usa req.on('close')).
+      const disconnect = new AbortController();
+      res.on('close', () => { if (!res.writableEnded) disconnect.abort(); });
+      const timeout = AbortSignal.timeout(isSummary ? ASSISTANT_SUMMARY_TIMEOUT_MS : ASSISTANT_TIMEOUT_MS);
+      const signal = AbortSignal.any([disconnect.signal, timeout]);
+      const cancelledOrTimedOut = () => (timeout.aborted && !disconnect.signal.aborted ? { kind: 'unavailable', reason: 'TIMEOUT' } : { kind: 'cancelled' });
+
+      if (isSummary) {
+        const outcome = await assistantCalls.generateSummaryWithClaude(client, { context, hashContexto, locale, signal }, assistantLogger);
+        return sendJson(outcome.kind === 'cancelled' ? cancelledOrTimedOut() : outcome);
+      }
+
+      const outcome = await assistantCalls.generateReadingWithClaude(client, { context, hashContexto, pase: body.pase, locale, signal }, assistantLogger);
+      if (outcome.kind === 'cancelled') return sendJson(cancelledOrTimedOut());
+      if (outcome.kind === 'unavailable') return sendJson(outcome);
+      const saved = {
+        id: randomUUID(),
+        pase: body.pase,
+        reading: outcome.result.reading,
+        createdAt: new Date().toISOString(),
+        tokens: outcome.result.inputTokens + outcome.result.outputTokens,
+      };
+      assistantReadings.set(encounterId, [saved, ...readings]);
+      return sendJson({ kind: 'ok', reading: saved.reading, readingId: saved.id, createdAt: saved.createdAt });
+    }
+  }
+
+  // Sin datos antropométricos en el mock: resultados-charts.tsx trata
+  // el error como "sin curva".
+  if (pathname.match(/^\/records\/patients\/[^\/]+\/growth-curves$/) && method === 'GET') {
+    return sendError('NOT_FOUND', 'Sin curva de crecimiento.', 404);
   }
 
   if (pathname.match(/^\/records\/patients\/[^\/]+\/pregnancy$/)) {
     return sendJson({ pregnancy: null });
   }
 
-  // Consultado por el bootstrap de /consulta/[appointmentId] para
-  // decidir Primera vez vs Seguimiento cuando la cita todavía no
-  // tiene encounter (POST crea uno nuevo justo después).
-  if (pathname.match(/^\/records\/patients\/[^\/]+\/encounters$/)) {
-    const patId = pathname.split('/')[3];
-    return sendJson(patId === 'pat-1' ? [{ status: "SIGNED" }] : []);
+  // GET: lista para decidir Primera vez vs Seguimiento y para retomar un
+  // borrador sin cita. POST: crea la consulta — antes caía en el GET y
+  // devolvía la lista, así que "Iniciar consulta" desde el expediente
+  // (y "Ordenar estudio", que lleva ahí) terminaba en
+  // /records/encounters/undefined.
+  const patientEncounters = pathname.match(/^\/records\/patients\/([^\/]+)\/encounters$/);
+  if (patientEncounters) {
+    const patId = patientEncounters[1];
+    if (method === 'POST') {
+      return sendJson(createMockEncounter(patId, body.encounterType || "FIRST_VISIT", body.appointmentId), 201);
+    }
+    const list = Object.values(encounters)
+      .filter(e => e.patientId === patId)
+      .map(e => ({
+        id: e.id,
+        status: e.status,
+        encounterType: e.encounterType,
+        startedAt: e.startedAt,
+        appointmentId: e.appointmentId ?? appointments.find(a => a.encounter?.id === e.id)?.id ?? null
+      }));
+    if (patId === 'pat-1') list.push({ id: "enc-prev-1", status: "SIGNED", encounterType: "FIRST_VISIT", startedAt: "2026-07-15T10:00:00.000Z", appointmentId: null });
+    return sendJson(list);
   }
 
   if (pathname.startsWith('/records/encounters/') && method === 'GET') {
@@ -779,6 +1567,7 @@ const server = http.createServer(async (req, res) => {
     const encId = pathname.split('/')[3];
     if (encounters[encId]) {
       encounters[encId].draftContent = body;
+      saveMockState();
     }
     return sendJson({ ok: true, draftContent: body });
   }
@@ -796,9 +1585,14 @@ const server = http.createServer(async (req, res) => {
         physicalExam: body.physicalExam || null,
         assessment: body.assessment || encounters[encId].draftContent.assessment || "",
         plan: body.plan || encounters[encId].draftContent.plan || "",
-        prognosis: null,
+        prognosis: body.prognosis || null,
+        patientInstructions: body.patientInstructions || null,
         createdAt: new Date().toISOString()
       });
+      if (Array.isArray(body.diagnoses)) {
+        encounters[encId].diagnoses = body.diagnoses.map((d, i) => ({ id: `diag-${Date.now()}-${i}`, icd10Code: d.icd10Code ?? null, codeAbsentReason: d.codeAbsentReason ?? null, description: d.description, diagnosisType: d.diagnosisType, certainty: d.certainty }));
+      }
+      saveMockState();
     }
     return sendJson({ ok: true, signed: true });
   }
@@ -1119,7 +1913,10 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (pathname === '/medications' && method === 'GET') {
-    return sendJson(sampleMedications);
+    const q = String(parsedUrl.query.search || '').trim().toLowerCase();
+    return sendJson(q
+      ? sampleMedications.filter(m => [m.genericName, ...m.brandNames].some(name => name.toLowerCase().includes(q)))
+      : sampleMedications);
   }
 
   if (pathname === '/note-templates' && method === 'GET') {

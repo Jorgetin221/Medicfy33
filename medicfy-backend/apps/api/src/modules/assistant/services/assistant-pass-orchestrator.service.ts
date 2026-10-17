@@ -1,6 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 import type { AssistantPass, AssistantReading } from "@medicfy/contracts";
+import type { Locale } from "../../../common/i18n/locale";
 import { PrismaService } from "../../../prisma/prisma.service";
 import { ContextAssemblerService } from "./context-assembler.service";
 import { ASSISTANT_MODEL_PORT, type AssistantModelPort } from "./assistant-model.port";
@@ -26,7 +27,7 @@ const SUMMARY_TIMEOUT_MS = 30_000;
 // necesita propagar el `signal` que ya trae la petición HTTP hasta la
 // llamada real al modelo, para no seguir pagando/esperando una
 // respuesta que ya nadie quiere. El controller arma ese signal desde
-// `req.on("close", ...)`.
+// la respuesta (clientDisconnectSignal).
 // Medido con llamadas reales durante Prompt 51: un caso clínico con
 // contenido real (varios diferenciales, banderas rojas, hallazgos
 // clave, cada uno con su razonamiento, más plan_sugerido/fuentes)
@@ -74,7 +75,7 @@ export class AssistantPassOrchestratorService {
     @Inject(ASSISTANT_MODEL_PORT) private readonly modelPort: AssistantModelPort
   ) {}
 
-  async requestPass(encounterId: string, pase: AssistantPass, callerSignal: AbortSignal): Promise<AssistantPassOutcome> {
+  async requestPass(encounterId: string, pase: AssistantPass, locale: Locale, callerSignal: AbortSignal): Promise<AssistantPassOutcome> {
     if (callerSignal.aborted) return { kind: "cancelled" };
 
     const spend = await this.spentTokens(encounterId);
@@ -87,7 +88,7 @@ export class AssistantPassOrchestratorService {
     const timeoutSignal = AbortSignal.timeout(timeoutMs);
     const combinedSignal = AbortSignal.any([callerSignal, timeoutSignal]);
 
-    const outcome = await this.modelPort.generateReading({ context, hashContexto, pase, signal: combinedSignal });
+    const outcome = await this.modelPort.generateReading({ context, hashContexto, pase, locale, signal: combinedSignal });
 
     if (outcome.kind === "cancelled") {
       // El puerto no distingue POR QUÉ se abortó — solo este
@@ -119,7 +120,7 @@ export class AssistantPassOrchestratorService {
   // aparte a propósito — ver claude-model.adapter.ts). Mismo patrón de
   // cancelación por señal combinada que requestPass(), con un timeout
   // mucho más corto porque la salida es mucho más pequeña.
-  async requestSummary(encounterId: string, callerSignal: AbortSignal): Promise<{ kind: "ok"; resumen: string } | { kind: "unavailable"; reason: string } | { kind: "cancelled" }> {
+  async requestSummary(encounterId: string, locale: Locale, callerSignal: AbortSignal): Promise<{ kind: "ok"; resumen: string } | { kind: "unavailable"; reason: string } | { kind: "cancelled" }> {
     if (callerSignal.aborted) return { kind: "cancelled" };
 
     const { context, hashContexto } = await this.contextAssembler.assemble(encounterId);
@@ -127,7 +128,7 @@ export class AssistantPassOrchestratorService {
     const timeoutSignal = AbortSignal.timeout(timeoutMs);
     const combinedSignal = AbortSignal.any([callerSignal, timeoutSignal]);
 
-    const outcome = await this.modelPort.generateSummary({ context, hashContexto, signal: combinedSignal });
+    const outcome = await this.modelPort.generateSummary({ context, hashContexto, locale, signal: combinedSignal });
     if (outcome.kind === "cancelled") {
       return timeoutSignal.aborted && !callerSignal.aborted ? { kind: "unavailable", reason: "TIMEOUT" } : { kind: "cancelled" };
     }

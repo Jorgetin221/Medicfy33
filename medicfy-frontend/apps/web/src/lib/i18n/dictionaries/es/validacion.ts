@@ -14,8 +14,8 @@
 export const validacion = {
   "Agrega al menos una presentación.": "Agrega al menos una presentación.",
   "CURP inválida.": "CURP inválida.",
-  "Cada diagnóstico necesita exactamente uno: un código CIE-10 o una razón de por qué no lo tiene.":
-    "Cada diagnóstico necesita exactamente uno: un código CIE-10 o una razón de por qué no lo tiene.",
+  "Un diagnóstico con código CIE-10 no lleva razón de ausencia de código.":
+    "Un diagnóstico con código CIE-10 no lleva razón de ausencia de código.",
   "Captura la FUM, la FPP por ultrasonido, o ambas.": "Captura la FUM, la FPP por ultrasonido, o ambas.",
   "Clave de catálogo inválida.": "Clave de catálogo inválida.",
   "Con estado activo o suspendido, cantidad y unidad/frecuencia son obligatorias.":
@@ -37,6 +37,8 @@ export const validacion = {
   "El motivo de consulta debe tener al menos 3 caracteres.": "El motivo de consulta debe tener al menos 3 caracteres.",
   "El motivo de rechazo es obligatorio y debe ser descriptivo.": "El motivo de rechazo es obligatorio y debe ser descriptivo.",
   "El motivo de solicitud es obligatorio.": "El motivo de solicitud es obligatorio.",
+  "Escribe el nombre del estudio (mínimo 3 caracteres).": "Escribe el nombre del estudio (mínimo 3 caracteres).",
+  "Cada estudio es del catálogo o escrito por el médico, no ambos.": "Cada estudio es del catálogo o escrito por el médico, no ambos.",
   "El nombre del analito es obligatorio.": "El nombre del analito es obligatorio.",
   "El nombre genérico debe tener al menos 2 caracteres.": "El nombre genérico debe tener al menos 2 caracteres.",
   "El padecimiento actual es obligatorio.": "El padecimiento actual es obligatorio.",
@@ -44,7 +46,6 @@ export const validacion = {
   "El precio debe ser un entero entre 1 y 99,999 MXN.": "El precio debe ser un entero entre 1 y 99,999 MXN.",
   "Escribe el agente completo (mínimo 3 caracteres). Si no hay alergias, no captures una fila.":
     "Escribe el agente completo (mínimo 3 caracteres). Si no hay alergias, no captures una fila.",
-  "Explica en al menos 10 caracteres por qué no hay código CIE-10.": "Explica en al menos 10 caracteres por qué no hay código CIE-10.",
   "Fecha de nacimiento fuera de rango (entre hoy y hace 120 años).": "Fecha de nacimiento fuera de rango (entre hoy y hace 120 años).",
   "Fecha inválida — usa AAAA-MM-DD.": "Fecha inválida — usa AAAA-MM-DD.",
   "Fecha inválida, usa formato YYYY-MM-DD.": "Fecha inválida, usa formato YYYY-MM-DD.",

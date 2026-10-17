@@ -17,7 +17,13 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiQuery, ApiTags } from "@nestjs/swagger";
 import type { Express } from "express";
 import { createHash } from "node:crypto";
-import { labResultUploadMetadataSchema, labResultReviewSchema, type LabResultReviewInput } from "@medicfy/contracts";
+import {
+  MEDICAL_FILE_MAX_BYTES,
+  labResultUploadMetadataSchema,
+  labResultReviewSchema,
+  resolveMedicalFileFormat,
+  type LabResultReviewInput,
+} from "@medicfy/contracts";
 import { ApiException } from "../../common/api-exception";
 import { JwtAuthGuard } from "../identity/guards/jwt-auth.guard";
 import { CareRelationshipGuard, type ClinicalRequest } from "../../common/guards/care-relationship.guard";
@@ -25,10 +31,11 @@ import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { AuditService } from "../identity/services/audit.service";
 import { getRequestMeta } from "../identity/request-meta";
 import { FILE_STORAGE_PORT, type FileStoragePort } from "../doctors/services/file-storage.port";
-import { extensionForMimeType } from "../doctors/services/local-disk-file-storage.adapter";
 import { LabOrderService } from "./services/lab-order.service";
-import { LAB_RESULT_MAX_FILE_BYTES, labResultFileFilter } from "../../common/upload-validation.util";
+import { medicalFileFilter } from "../../common/upload-validation.util";
 import { DownloadThrottle } from "../../common/rate-limit";
+
+const MAX_ORIGINAL_FILE_NAME_LENGTH = 200;
 
 // §6.7: "v1.0: sube el médico o el paciente" — este controller cubre
 // la subida como médico (con vínculo activo verificado por el
@@ -67,7 +74,7 @@ export class LabResultsController {
   }
 
   @Post()
-  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: LAB_RESULT_MAX_FILE_BYTES }, fileFilter: labResultFileFilter }))
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: MEDICAL_FILE_MAX_BYTES }, fileFilter: medicalFileFilter }))
   @ApiConsumes("multipart/form-data")
   @ApiQuery({ name: "labOrderId", required: false })
   @ApiOperation({ summary: "Sube un resultado de laboratorio (§6.7)" })
@@ -85,17 +92,23 @@ export class LabResultsController {
       throw new ApiException("VALIDATION_ERROR", "Metadatos inválidos.", HttpStatus.BAD_REQUEST, { issues: meta.error.issues });
     }
 
+    // multer entrega el nombre en latin1: "biometría.pdf" llegaba como
+    // "biometrÃ­a.pdf".
+    const originalFileName = Buffer.from(file.originalname, "latin1").toString("utf8").slice(0, MAX_ORIGINAL_FILE_NAME_LENGTH);
+    const format = resolveMedicalFileFormat(originalFileName, file.mimetype);
+    if (!format) {
+      throw new ApiException("LAB_RESULT_FILE_TYPE_NOT_ALLOWED", "Formato no permitido.", HttpStatus.BAD_REQUEST);
+    }
+
     const fileHashSha256 = createHash("sha256").update(file.buffer).digest("hex");
     // El adaptador de almacenamiento (LocalDiskFileStorageAdapter) no
     // guarda el content-type en ningún lado — lo infiere de la
-    // extensión del fileKey al leerlo (retrieve()). Sin extensión aquí,
-    // todo volvía como application/octet-stream y el navegador forzaba
-    // la descarga en vez de mostrarlo inline. Mismo patrón que ya usa
-    // doctor-branding.service.ts.
-    const fileKey = `lab-results/${patientId}/${Date.now()}-${fileHashSha256.slice(0, 12)}${extensionForMimeType(file.mimetype)}`;
-    await this.fileStorage.store({ fileKey, buffer: file.buffer, contentType: file.mimetype });
+    // extensión del fileKey al leerlo (retrieve()). Por eso la extensión
+    // sale del formato reconocido, no del tipo que mandó el navegador.
+    const fileKey = `lab-results/${patientId}/${Date.now()}-${fileHashSha256.slice(0, 12)}${format.extensions[0]}`;
+    await this.fileStorage.store({ fileKey, buffer: file.buffer, contentType: format.mimeTypes[0] ?? file.mimetype });
 
-    const result = await this.labOrders.uploadResult(patientId, req.user.sub, "DOCTOR", fileKey, fileHashSha256, meta.data);
+    const result = await this.labOrders.uploadResult(patientId, req.user.sub, "DOCTOR", fileKey, fileHashSha256, meta.data, originalFileName);
     await this.audit(req, patientId, "lab_results.upload", result.id);
     return result;
   }

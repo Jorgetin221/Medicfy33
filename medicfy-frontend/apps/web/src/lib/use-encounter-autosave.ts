@@ -12,6 +12,18 @@ import type { SaveState } from "@/components/ui/save-indicator";
 // la letra vigente.
 const AUTOSAVE_DEBOUNCE_MS = 2_000;
 
+// El asistente clínico lee el borrador DEL SERVIDOR. Si el médico
+// escribe un signo vital y dispara un pase antes del rebote de 2 s, el
+// modelo leería la versión anterior — "la IA no toma los signos
+// vitales". La pestaña del asistente vive en otro árbol de componentes
+// que el formulario, así que el hook registra aquí su "guardar ya" por
+// encuentro y flushEncounterDraft() lo invoca antes de cada pase.
+const draftFlushers = new Map<string, () => Promise<void>>();
+
+export async function flushEncounterDraft(encounterId: string): Promise<void> {
+  await draftFlushers.get(encounterId)?.();
+}
+
 interface UseEncounterAutosaveArgs {
   encounterId: string | null;
   accessToken: string | null;
@@ -37,6 +49,7 @@ export function useEncounterAutosave({ encounterId, accessToken, values, enabled
   valuesRef.current = values;
   const lastSavedJsonRef = useRef<string>(JSON.stringify(values));
   const savingRef = useRef(false);
+  const inFlightRef = useRef<Promise<void> | null>(null);
   const enabledRef = useRef(enabled);
   enabledRef.current = enabled;
 
@@ -45,6 +58,10 @@ export function useEncounterAutosave({ encounterId, accessToken, values, enabled
     const currentJson = JSON.stringify(valuesRef.current);
     if (currentJson === lastSavedJsonRef.current) return;
 
+    let finishInFlight: () => void = () => undefined;
+    inFlightRef.current = new Promise<void>((resolve) => {
+      finishInFlight = resolve;
+    });
     savingRef.current = true;
     setSaveState("guardando");
     try {
@@ -72,8 +89,24 @@ export function useEncounterAutosave({ encounterId, accessToken, values, enabled
       }
     } finally {
       savingRef.current = false;
+      inFlightRef.current = null;
+      finishInFlight();
     }
   }, [encounterId, accessToken]);
+
+  // Si ya hay un guardado en vuelo, se espera y luego se guarda lo que
+  // haya cambiado mientras tanto.
+  useEffect(() => {
+    if (!encounterId) return undefined;
+    const flush = async () => {
+      if (inFlightRef.current) await inFlightRef.current;
+      await attemptSave();
+    };
+    draftFlushers.set(encounterId, flush);
+    return () => {
+      if (draftFlushers.get(encounterId) === flush) draftFlushers.delete(encounterId);
+    };
+  }, [encounterId, attemptSave]);
 
   // Rebote de 2s: cada cambio de valores reinicia el temporizador; a
   // los 2s de quietud, se guarda.

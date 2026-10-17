@@ -18,6 +18,9 @@ import { Button } from "@/components/ui/button";
 import { FieldWrapper, TextInput, Textarea, SelectInput } from "@/components/ui/field";
 import { Card, LoadingState, EmptyState, ErrorState } from "@/components/ui/states";
 import { Aviso } from "@/components/ui/alert";
+import { FileFormatNotice, useAcceptedFile } from "@/components/ui/accepted-file";
+
+const POST_PHOTO_ACCEPT = "image/jpeg,image/png,image/webp";
 import { useT } from "@/lib/i18n/context";
 import { useZodResolver } from "@/lib/i18n/validation";
 import type { MessageKey } from "@/lib/i18n/dictionaries";
@@ -318,6 +321,7 @@ function PostCard({
 }) {
   const t = useT();
   const [actionError, setActionError] = useState<unknown>(null);
+  const photoFormat = useAcceptedFile(POST_PHOTO_ACCEPT);
   const [isBusy, setIsBusy] = useState(false);
   const visibility = VISIBILITY_META[post.visibility];
 
@@ -361,6 +365,7 @@ function PostCard({
   }
 
   async function uploadPhoto(file: File) {
+    if (!photoFormat.check(file)) return;
     setActionError(null);
     setIsBusy(true);
     try {
@@ -396,6 +401,11 @@ function PostCard({
         </div>
       ) : null}
 
+      {photoFormat.notice ? (
+        <div className="mt-3">
+          <FileFormatNotice notice={photoFormat.notice} />
+        </div>
+      ) : null}
       {actionError ? (
         <div className="mt-3">
           <ErrorState error={actionError} />
@@ -421,7 +431,6 @@ function PostCard({
             {isBusy ? t("publicaciones.subiendo") : t("publicaciones.agregarFoto")}
             <input
               type="file"
-              accept="image/jpeg,image/png,image/webp"
               className="hidden"
               disabled={isBusy}
               onChange={(e) => {

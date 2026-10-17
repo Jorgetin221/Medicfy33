@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, extname, join, normalize, resolve, sep } from "node:path";
+import { medicalFileMimeType } from "@medicfy/contracts";
 import type { FileStoragePort } from "./file-storage.port";
 
 // No hay columna de content-type en disco (ni sidecar): se infiere de
@@ -76,7 +77,9 @@ export class LocalDiskFileStorageAdapter implements FileStoragePort {
     } catch {
       throw new NotFoundException("Archivo no encontrado.");
     }
-    const contentType = MIME_TYPE_BY_EXTENSION[extname(target)] ?? "application/octet-stream";
+    // Los resultados de laboratorio aceptan más formatos (DICOM, Office,
+    // video...): el catálogo compartido resuelve los que no están aquí.
+    const contentType = MIME_TYPE_BY_EXTENSION[extname(target)] ?? medicalFileMimeType(target);
     return { buffer, contentType };
   }
 }

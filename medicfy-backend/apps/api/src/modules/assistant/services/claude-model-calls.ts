@@ -1,0 +1,398 @@
+import Anthropic from "@anthropic-ai/sdk";
+import { zodToJsonSchema } from "zod-to-json-schema";
+import { assistantModelOutputSchema, assistantSummarySchema, type AssistantModelOutput, type AssistantPass } from "@medicfy/contracts";
+import type { Locale } from "../../../common/i18n/locale";
+import type {
+  AssistantModelCallInput,
+  AssistantModelOutcome,
+  AssistantSummaryCallInput,
+  AssistantSummaryOutcome,
+} from "./assistant-model.port";
+
+// Llamadas reales a la API de Claude para "El Segundo Lector". Sin
+// decoradores ni dependencias de Nest A PROPÓSITO: dev-server.mjs (el
+// mock local) importa este mismo archivo con el type-stripping de Node,
+// así que la IA del mock es exactamente la de producción — mismo
+// prompt, mismo contrato, mismo reintento. ClaudeModelAdapter (Nest) es
+// solo la envoltura. Por eso aquí: solo `import type` para módulos
+// propios, nada de enums ni parameter properties.
+//
+// Fase 8 · Prompt 51 — adaptador real contra la API de Claude. Puerto/
+// adaptador (mismo patrón que NOTIFICATION_PORT/FILE_STORAGE_PORT):
+// nada del orquestador conoce el SDK de Anthropic, así que las
+// pruebas de disparo/cancelación/tope de gasto usan un doble de
+// prueba y nunca llaman a la red.
+//
+// ANTHROPIC_API_KEY se lee de forma PEREZOSA (al llamar, no al
+// construir el servicio): el resto de la aplicación debe poder
+// arrancar y servir cada otra funcionalidad sin esta clave — solo el
+// asistente se degrada ("DEGRADACIÓN HONESTA", Prompt 51) si falta.
+const TOOL_NAME = "emitir_lectura_clinica";
+const DEFAULT_MODEL_ID = "claude-sonnet-5";
+// p51-v2 (2026-10-16): idioma de salida según la interfaz del médico y
+// contexto clínico completo (signos vitales, escalas, toxicomanías,
+// gineco-obstétricos, documentos de la consulta...).
+const PROMPT_VERSION = "p51-v3";
+// 4096 se quedaba corto en un caso clínico real con varios
+// diferenciales detallados: el modelo llenaba diferenciales/
+// estudios_sugeridos y se quedaba sin espacio para
+// plan_sugerido/no_puedo_saber/fuentes (los últimos campos del
+// contrato), y esas claves faltantes fallaban la validación —
+// confirmado con una llamada real durante Prompt 51.
+const MAX_OUTPUT_TOKENS = 8192;
+
+// Latencia (usuario, 2026-10-16: "la IA está demorando mucho"). Medido
+// con el mismo caso real (pase OBJETIVO, claude-sonnet-5): 47.8 s antes;
+// 28.4 s sin razonamiento extendido + esfuerzo medio + salida acotada
+// (BREVITY_RULE); 24.1 s con esfuerzo bajo, con la misma calidad de
+// banderas y diferenciales. ASSISTANT_EFFORT lo cambia sin tocar código.
+const THINKING: Anthropic.ThinkingConfigParam = { type: "disabled" };
+type Effort = NonNullable<Anthropic.OutputConfig["effort"]>;
+const EFFORT = (process.env.ASSISTANT_EFFORT ?? "low") as Effort;
+
+// Lista cerrada de autoridades clínicas, a petición explícita del
+// usuario (2026-09-02): toda cita en `fuentes` debe venir de aquí, no
+// de cualquier fuente que el modelo recuerde. Fuera de alcance de
+// hoy, por decisión explícita del usuario tras el conflicto
+// señalado (dosis exacta como campo primario, formato de documento
+// en vez de JSON estructurado): eso queda pendiente hasta que exista
+// el filtro de seguridad server-side (Prompt 52).
+const AUTHORITY_SOURCES = [
+  "NIH", "CDC", "AHA", "ADA", "ACC", "IDSA", // EE.UU.
+  "NICE", "SIGN", // Reino Unido
+  "OMS", // Global
+  "GPC/CENETEC (México)",
+  "UpToDate y consensos de sociedades médicas revisados por pares",
+].join(", ");
+
+const PASS_INSTRUCTIONS: Record<AssistantPass, string> = {
+  SUBJETIVO:
+    "Pase 1, disparado justo después de que el médico terminó de capturar el subjetivo (motivo de consulta y padecimiento actual). Concéntrate en qué falta preguntar (falta_por_preguntar) y en banderas rojas del relato (banderas_rojas). Todavía puede no haber información suficiente para diferenciales — 0 diferenciales es una respuesta válida y honesta en este pase.",
+  OBJETIVO:
+    "Pase 2, disparado tras la exploración física. Ahora sí sugiere diferenciales preliminares (diferenciales), siempre con a_favor y en_contra, nunca uno solo.",
+  ANALISIS:
+    "Pase 3, disparado tras el análisis del médico. Afina los diferenciales con lo que el médico ya razonó, sugiere estudios (estudios_sugeridos) y una conducta (plan_sugerido).",
+  CIERRE:
+    "Pase 4, disparado cuando el médico pide cerrar la consulta. Haz una revisión final de todo lo capturado: no introduzcas hallazgos nuevos que no se puedan sostener con el contexto ya dado, señala si algo quedó sin explorar.",
+};
+
+// Sin $refStrategy:"none" el esquema sale envuelto en {$ref,
+// definitions}; Anthropic espera un JSON Schema autocontenido en
+// input_schema. superRefine (el conteo de diferenciales, la
+// integridad referencial fuente_id/afirmacion_id) no es representable
+// en JSON Schema — se pierde aquí a propósito; sigue aplicándose
+// completo del lado del servidor en validateModelOutput() más abajo,
+// antes de que la respuesta exista para nadie.
+// zod-to-json-schema's generic inference chokes on this schema's
+// ZodEffects wrapper ("Type instantiation is excessively deep") — a
+// known friction point of that library with .superRefine() on a
+// large object. Untyped function reference sidesteps it at the type
+// level only; the runtime call (and its output) is unaffected —
+// verified against the actual JSON Schema output in this module's
+// tests.
+const untypedZodToJsonSchema = zodToJsonSchema as (schema: unknown, options: unknown) => Record<string, unknown>;
+
+function buildInputSchema(): Anthropic.Tool.InputSchema {
+  const { $schema: _omit, ...schema } = untypedZodToJsonSchema(assistantModelOutputSchema, {
+    $refStrategy: "none",
+    target: "jsonSchema7",
+  });
+  return schema as Anthropic.Tool.InputSchema;
+}
+
+const READING_TOOL: Anthropic.Tool = {
+  name: TOOL_NAME,
+  description:
+    "Emite la lectura clínica estructurada de este pase. Es la ÚNICA forma de responder: nunca texto libre, nunca markdown, nunca una explicación fuera de esta herramienta.",
+  input_schema: buildInputSchema(),
+  // strict:true rechaza el schema real (Anthropic no soporta
+  // minimum/maximum en propiedades number con validación estricta:
+  // "For 'number' type, properties maximum, minimum are not
+  // supported", confirmado con una llamada real durante Prompt 51).
+  // No hace falta: assistantModelOutputSchema.safeParse() ya vuelve a
+  // validar TODO server-side (incluidos los rangos y las reglas de
+  // superRefine que JSON Schema no puede expresar de todas formas),
+  // con reintento si falla.
+};
+
+// El prompt y el contexto están en español; esta línea decide en qué
+// idioma escribe el modelo. Las claves del JSON y los valores de enum
+// (urgencia, probabilidad_relativa) son CONTRATO, no texto — el
+// frontend ya los traduce, así que nunca cambian de idioma.
+const OUTPUT_LANGUAGE_RULE: Record<Locale, string> = {
+  es: "- Escribe todo el texto libre de tu respuesta en español.",
+  en: "- IMPORTANT: the physician is using the system in ENGLISH. Write EVERY free-text value of your output in English (resumen, hallazgos, banderas rojas, diferenciales, preguntas, maniobras, estudios, plan, no_puedo_saber, por_que_esa_confianza), even though these instructions and the clinical context are in Spanish. Keep the JSON keys and the closed enum values (urgencia, probabilidad_relativa) exactly as the schema defines them.",
+};
+
+// Salida acotada: cada elemento que el modelo escribe es tiempo de espera
+// para el médico, y una lectura larga tampoco se lee en consulta.
+const BREVITY_RULE =
+  "- Sé breve y directo: frases cortas, sin repetir el contexto. Máximo 4 elementos por lista y máximo 3 diferenciales; prioriza lo que cambia la conducta en esta consulta.";
+
+// "La IA no está tomando todos los criterios" (usuario, 2026-10-16):
+// el contexto ya trae cada bloque; esto le dice al modelo que los use.
+const CONTEXT_USAGE_RULE =
+  "- Analiza TODO el contexto, bloque por bloque: signosVitales de esta consulta (incluidos IMC y superficie corporal ya calculados, y las marcas fueraDeRango/criticos que decidió el servidor), su tendencia contra signosVitalesPrevios, escalas, sintomasAlarmaMarcados, banderasRojasDetectadas, diagnosticosConsulta, antecedentes (los PRESENTES y también los NEGADOS), toxicomanias, ginecoObstetricos, embarazo, medicacion, seguridad (alergias), laboratorio, trayectoria y documentosConsulta (recetas y estudios ya indicados hoy: no los vuelvas a sugerir como si faltaran). Todo signo vital fuera de rango debe aparecer explícitamente en hallazgos_clave o banderas_rojas.";
+
+export function buildSystemPrompt(pase: AssistantPass, locale: Locale): string {
+  return [
+    "Eres 'El Segundo Lector' de Medicfy: un asistente clínico de soporte técnico de alto nivel para médicos generales y especialistas, NUNCA quien diagnostica ni prescribe. El médico es siempre quien decide; tú solo señalas qué mirar, por qué, y con qué respaldo. Tu tono es formal, técnico y preciso — escribes para un lector médico, nunca en lenguaje coloquial.",
+    "Reglas que no puedes romper:",
+    "- Todo lo que digas se basa EXCLUSIVAMENTE en el contexto que recibes en este mensaje. Si algo no está ahí, va en no_puedo_saber — nunca lo inventas ni lo asumes.",
+    "- Nunca sugieras un solo diferencial: cero, o al menos dos, cada uno con a_favor y en_contra. Nunca un diagnóstico definitivo — siempre como diferencial, probable o sospecha diagnóstica.",
+    "- probabilidad_relativa es siempre cualitativa (alta/media/baja) — nunca un porcentaje, sería precisión que no puedes respaldar.",
+    `- Toda fuente que cites en \`fuentes\` debe venir de esta lista cerrada de autoridades clínicas, nunca de otra procedencia: ${AUTHORITY_SOURCES}.`,
+    "- Toda afirmación de plan_sugerido que puedas respaldar con una fuente real de esa lista va con su fuente_id correspondiente en `fuentes`; si no tienes fuente de esa lista, fuente_id es null — nunca inventes una referencia ni cites una fuente fuera de la lista.",
+    "- Cada entrada de `fuentes` lleva su propio id (\"f1\", \"f2\"...) y un afirmacion_id que DEBE ser el id de un elemento que ya emitiste en esta misma respuesta (un hallazgo_clave, una bandera_roja, un diferencial, una pregunta/maniobra pendiente, un estudio sugerido o una intervención de plan_sugerido) — nunca un id inventado ni el nombre del campo. Si no hay ningún elemento al que asociar una fuente, no emitas esa fuente.",
+    "- plan_sugerido describe la intervención a nivel conceptual (qué hacer y por qué), NUNCA con una dosis, vía o duración numérica específica — la verificación de dosis contra catálogo licenciado todavía no existe en este sistema, así que una dosis exacta tuya no se puede verificar antes de llegar al médico.",
+    "- Cuando el contexto incluya medicación vigente o alergias del paciente, razona explícitamente sobre interacciones, contraindicaciones o riesgos relevantes de comorbilidades en hallazgos_clave o banderas_rojas — no lo omitas por brevedad.",
+    "- Cada analito de laboratorio ya trae su `estado` (normal/low/high/critical) decidido por el servidor contra el rango de referencia correcto — nunca lo recalcules ni lo contradigas comparando el valor tú mismo; correlaciona e interpreta sobre ese estado ya dado.",
+    "- confianza_global y por_que_esa_confianza son tu propia autoevaluación honesta, no una formalidad.",
+    CONTEXT_USAGE_RULE,
+    BREVITY_RULE,
+    `- ${PASS_INSTRUCTIONS[pase]}`,
+    OUTPUT_LANGUAGE_RULE[locale],
+    "Respondes ÚNICAMENTE llamando a la herramienta emitir_lectura_clinica — nunca con texto.",
+  ].join("\n");
+}
+
+function buildUserMessage(input: AssistantModelCallInput): string {
+  return [
+    `Contexto de la consulta (paciente ya seudonimizado por el servidor; hash_contexto=${input.hashContexto}):`,
+    "```json",
+    JSON.stringify(input.context, null, 2),
+    "```",
+    "Emite tu lectura para este pase llamando a la herramienta.",
+  ].join("\n");
+}
+
+function validateModelOutput(rawInput: unknown): AssistantModelOutput | null {
+  const parsed = assistantModelOutputSchema.safeParse(rawInput);
+  return parsed.success ? parsed.data : null;
+}
+
+// "Resumen objetivo" — a petición explícita del usuario (2026-09-02):
+// "un espacio estratégico donde en cualquier momento de la consulta
+// se pueda identificar" y "debe durar menos". Deliberadamente una
+// llamada aparte y mucho más pequeña que generateReading(): un solo
+// campo de salida, max_tokens bajo, sin pase — nunca sustituye a la
+// lectura completa (diferenciales/banderas rojas siguen viviendo solo
+// ahí, en la pestaña Asistente), solo refleja objetivamente lo ya
+// escrito, rápido.
+const SUMMARY_TOOL_NAME = "emitir_resumen_objetivo";
+const SUMMARY_MAX_OUTPUT_TOKENS = 500;
+
+const untypedZodToJsonSchemaForSummary = zodToJsonSchema as (schema: unknown, options: unknown) => Record<string, unknown>;
+
+function buildSummaryInputSchema(): Anthropic.Tool.InputSchema {
+  const { $schema: _omit, ...schema } = untypedZodToJsonSchemaForSummary(assistantSummarySchema, {
+    $refStrategy: "none",
+    target: "jsonSchema7",
+  });
+  return schema as Anthropic.Tool.InputSchema;
+}
+
+const SUMMARY_TOOL: Anthropic.Tool = {
+  name: SUMMARY_TOOL_NAME,
+  description: "Emite el resumen objetivo de la consulta. Es la ÚNICA forma de responder.",
+  input_schema: buildSummaryInputSchema(),
+};
+
+export function buildSummarySystemPrompt(locale: Locale): string {
+  return [
+    "Eres el 'Resumen objetivo' de Medicfy: un espejo de lo que el médico ya escribió en esta consulta, NUNCA un diagnóstico ni una sugerencia.",
+    "Resume en 3 a 5 líneas, en tono formal y neutral, exactamente lo que está capturado hasta ahora (motivo de consulta, padecimiento actual, signos vitales con sus valores, escalas, exploración física, diagnósticos, análisis, plan y recetas/estudios emitidos — los que existan).",
+    "No agregues interpretación clínica, no sugieras diferenciales, no falta_por_preguntar, no señales lo que falta — eso vive en la lectura completa de la pestaña Asistente, esto es solo un espejo objetivo de lo ya escrito.",
+    "Si el contexto no tiene nada capturado todavía en la nota actual, dilo en una sola línea breve.",
+    OUTPUT_LANGUAGE_RULE[locale].replace(/^- /, ""),
+    "Respondes ÚNICAMENTE llamando a la herramienta emitir_resumen_objetivo — nunca con texto.",
+  ].join("\n");
+}
+
+function buildSummaryUserMessage(input: AssistantSummaryCallInput): string {
+  return [
+    `Contexto de la consulta (paciente ya seudonimizado por el servidor; hash_contexto=${input.hashContexto}):`,
+    "```json",
+    JSON.stringify(input.context, null, 2),
+    "```",
+    "Emite el resumen objetivo llamando a la herramienta.",
+  ].join("\n");
+}
+
+// Solo lo que estas funciones registran (Nest Logger en el API,
+// console en el mock). R2: nunca contenido clínico, solo la forma del
+// fallo.
+export interface AssistantModelLogger {
+  warn(message: string): void;
+  error(message: string): void;
+}
+
+// ANTHROPIC_API_KEY se lee de forma PEREZOSA (al llamar, no al
+// arrancar): sin clave, el resto de la aplicación funciona y solo el
+// asistente se degrada a NOT_CONFIGURED.
+export function createClaudeClient(): Anthropic | null {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  return apiKey ? new Anthropic({ apiKey }) : null;
+}
+
+export async function generateReadingWithClaude(
+  client: Anthropic,
+  input: AssistantModelCallInput,
+  logger: AssistantModelLogger
+): Promise<AssistantModelOutcome> {
+  const modelId = process.env.ASSISTANT_MODEL_ID ?? DEFAULT_MODEL_ID;
+  const system = buildSystemPrompt(input.pase, input.locale);
+  const messages: Anthropic.MessageParam[] = [{ role: "user", content: buildUserMessage(input) }];
+
+  let totalInputTokens = 0;
+  let totalOutputTokens = 0;
+
+  // Un reintento: si el modelo emite algo que no cumple el
+  // contrato (Prompt 49), se lo decimos y le damos una sola
+  // oportunidad más — "un prompt bien escrito reduce el riesgo, no
+  // lo elimina" (Prompt 52). A la segunda falla, degradación
+  // honesta en vez de mostrar algo inválido.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    let message: Anthropic.Message;
+    try {
+      message = await client.messages.create(
+        {
+          model: modelId,
+          max_tokens: MAX_OUTPUT_TOKENS,
+          system,
+          messages,
+          tools: [READING_TOOL],
+          tool_choice: { type: "tool", name: TOOL_NAME, disable_parallel_tool_use: true },
+          thinking: THINKING,
+          output_config: { effort: EFFORT },
+        },
+        { signal: input.signal }
+      );
+    } catch (error) {
+      if (error instanceof Anthropic.APIUserAbortError) return { kind: "cancelled" };
+      logger.error(`Claude call failed for pase=${input.pase}: ${(error as Error).message}`);
+      return { kind: "unavailable", reason: "PROVIDER_ERROR" };
+    }
+
+    totalInputTokens += message.usage.input_tokens;
+    totalOutputTokens += message.usage.output_tokens;
+
+    const toolUse = message.content.find(
+      (block): block is Anthropic.ToolUseBlock => block.type === "tool_use" && block.name === TOOL_NAME
+    );
+    const modelOutput = toolUse ? validateModelOutput(toolUse.input) : null;
+    if (!modelOutput) {
+      // R2: nunca el contenido, solo la FORMA del fallo — rutas y
+      // códigos de Zod, nunca un valor de campo. stop_reason/
+      // output_tokens ayudan a distinguir un corte por max_tokens
+      // de un problema real del contrato (fue justo así como se
+      // encontraron ambos bugs reales de Prompt 51: el primero era
+      // truncamiento por max_tokens, el segundo un afirmacion_id
+      // mal construido).
+      const parsed = toolUse ? assistantModelOutputSchema.safeParse(toolUse.input) : null;
+      const issues = parsed && !parsed.success ? parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.code}`) : ["no toolUse"];
+      logger.warn(
+        `Model output failed validation (pase=${input.pase}, attempt=${attempt}, stop_reason=${message.stop_reason}, output_tokens=${message.usage.output_tokens}): ${issues.join(", ")}`
+      );
+    }
+
+    if (modelOutput) {
+      const reading = {
+        meta: {
+          version_modelo: modelId,
+          version_prompt: PROMPT_VERSION,
+          pase: input.pase,
+          momento: new Date().toISOString(),
+          hash_contexto: input.hashContexto,
+          confianza_global: modelOutput.confianza_global,
+          por_que_esa_confianza: modelOutput.por_que_esa_confianza,
+        },
+        resumen: modelOutput.resumen,
+        hallazgos_clave: modelOutput.hallazgos_clave,
+        banderas_rojas: modelOutput.banderas_rojas,
+        diferenciales: modelOutput.diferenciales,
+        falta_por_preguntar: modelOutput.falta_por_preguntar,
+        falta_por_explorar: modelOutput.falta_por_explorar,
+        estudios_sugeridos: modelOutput.estudios_sugeridos,
+        plan_sugerido: modelOutput.plan_sugerido,
+        no_puedo_saber: modelOutput.no_puedo_saber,
+        fuentes: modelOutput.fuentes,
+      };
+      return {
+        kind: "ok",
+        result: {
+          reading,
+          modelVersion: modelId,
+          promptVersion: PROMPT_VERSION,
+          inputTokens: totalInputTokens,
+          outputTokens: totalOutputTokens,
+        },
+      };
+    }
+
+    if (attempt === 0 && toolUse) {
+      const parseErrors = assistantModelOutputSchema.safeParse(toolUse.input);
+      const errorDetail = !parseErrors.success ? parseErrors.error.message : "salida vacía";
+      // La API exige que todo tool_use tenga su tool_result
+      // correspondiente en el siguiente mensaje — un user turn de
+      // solo texto después de un tool_use es rechazado (400,
+      // confirmado con una llamada real). is_error:true es la forma
+      // estándar de decirle al modelo "tu llamada falló, intenta de
+      // nuevo" dentro del protocolo de tool-use.
+      messages.push(
+        { role: "assistant", content: message.content },
+        {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: toolUse.id,
+              is_error: true,
+              content: `Tu respuesta no cumplió el contrato: ${errorDetail}. Vuelve a llamar a emitir_lectura_clinica corrigiendo exactamente eso.`,
+            },
+          ],
+        }
+      );
+    }
+  }
+
+  return { kind: "unavailable", reason: "INVALID_OUTPUT" };
+}
+
+export async function generateSummaryWithClaude(
+  client: Anthropic,
+  input: AssistantSummaryCallInput,
+  logger: AssistantModelLogger
+): Promise<AssistantSummaryOutcome> {
+  const modelId = process.env.ASSISTANT_MODEL_ID ?? DEFAULT_MODEL_ID;
+  let message: Anthropic.Message;
+  try {
+    message = await client.messages.create(
+      {
+        model: modelId,
+        max_tokens: SUMMARY_MAX_OUTPUT_TOKENS,
+        system: buildSummarySystemPrompt(input.locale),
+        messages: [{ role: "user", content: buildSummaryUserMessage(input) }],
+        tools: [SUMMARY_TOOL],
+        tool_choice: { type: "tool", name: SUMMARY_TOOL_NAME, disable_parallel_tool_use: true },
+        thinking: THINKING,
+        output_config: { effort: "low" },
+      },
+      { signal: input.signal }
+    );
+  } catch (error) {
+    if (error instanceof Anthropic.APIUserAbortError) return { kind: "cancelled" };
+    logger.error(`Claude summary call failed: ${(error as Error).message}`);
+    return { kind: "unavailable", reason: "PROVIDER_ERROR" };
+  }
+
+  const toolUse = message.content.find(
+    (block): block is Anthropic.ToolUseBlock => block.type === "tool_use" && block.name === SUMMARY_TOOL_NAME
+  );
+  const parsed = toolUse ? assistantSummarySchema.safeParse(toolUse.input) : null;
+  if (!parsed?.success) {
+    logger.warn(`Summary output failed validation (stop_reason=${message.stop_reason}, output_tokens=${message.usage.output_tokens})`);
+    return { kind: "unavailable", reason: "INVALID_OUTPUT" };
+  }
+  return { kind: "ok", resumen: parsed.data.resumen };
+}

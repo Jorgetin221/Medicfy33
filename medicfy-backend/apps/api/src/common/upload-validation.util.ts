@@ -1,6 +1,7 @@
 import { HttpStatus } from "@nestjs/common";
 import type { Request } from "express";
 import type { Express } from "express";
+import { MEDICAL_FILE_FORMATS, resolveMedicalFileFormat } from "@medicfy/contracts";
 import { ApiException } from "./api-exception";
 
 // M10 "Casos límite" (especificación §14, línea 985): "Estudios de
@@ -37,4 +38,31 @@ export function labResultFileFilter(
     return;
   }
   callback(null, true);
+}
+
+// Resultados que el médico sube en "Órdenes y resultados" (§6.7): todos
+// los formatos clínicos del catálogo compartido (MEDICAL_FILE_FORMATS —
+// PDF, imágenes, DICOM, Office, texto, HL7, video), a petición explícita
+// del usuario (2026-10-16). labResultFileFilter (PDF/JPG/PNG) se queda
+// para la lectura automática de hojas, que solo entiende esos formatos.
+// Decide por extensión además del tipo MIME: varios navegadores mandan
+// application/octet-stream para .dcm, .heic o .hl7.
+export function medicalFileFilter(
+  _req: Request,
+  file: Express.Multer.File,
+  callback: (error: Error | null, acceptFile: boolean) => void
+): void {
+  if (resolveMedicalFileFormat(file.originalname, file.mimetype)) {
+    callback(null, true);
+    return;
+  }
+  callback(
+    new ApiException(
+      "LAB_RESULT_FILE_TYPE_NOT_ALLOWED",
+      "Formato no permitido. Se aceptan PDF, imágenes (JPG, PNG, HEIC, TIFF…), DICOM, Word, Excel, texto, HL7 y video.",
+      HttpStatus.BAD_REQUEST,
+      { allowed: MEDICAL_FILE_FORMATS.map((f) => f.label), received: file.mimetype }
+    ),
+    false
+  );
 }

@@ -27,7 +27,7 @@ export class ClinicalNoteCancellationService {
     input: ClinicalNoteCancelInput
   ): Promise<ClinicalNoteCancellation> {
     // "más firma" — mismo mecanismo que firmar/corregir.
-    await this.signatureVerification.verify(doctorUserId, input.password, input.totpCode);
+    await this.signatureVerification.verify(doctorUserId, input.password);
 
     const note = await this.prisma.clinicalNote.findUnique({ where: { id: noteId }, include: { cancellation: true } });
     if (!note || note.encounterId !== encounterId) {

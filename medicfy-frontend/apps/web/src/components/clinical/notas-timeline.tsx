@@ -115,7 +115,7 @@ function NoteBody({ note }: { note: NoteBodyFields }) {
 // Fase 6 · Prompt 44B: "motivo obligatorio tomado de catálogo, más
 // firma. El registro se marca cancelado, NUNCA se elimina, y sigue
 // siendo consultable." Mismo mecanismo de reautenticación
-// (password+TOTP, SignatureVerificationService) que firmar/corregir.
+// (contraseña, SignatureVerificationService) que firmar/corregir.
 function CancelNoteForm({
   encounterId,
   noteId,
@@ -134,7 +134,6 @@ function CancelNoteForm({
   const [reasonTermId, setReasonTermId] = useState("");
   const [reasonFreeText, setReasonFreeText] = useState("");
   const [password, setPassword] = useState("");
-  const [totpCode, setTotpCode] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
@@ -159,11 +158,11 @@ function CancelNoteForm({
       await apiFetch(`/records/encounters/${encounterId}/notes/${noteId}/cancel`, {
         method: "POST",
         accessToken,
-        body: { reasonTermId, ...(reasonFreeText.trim() ? { reasonFreeText: reasonFreeText.trim() } : {}), password, totpCode },
+        body: { reasonTermId, ...(reasonFreeText.trim() ? { reasonFreeText: reasonFreeText.trim() } : {}), password },
       });
       onCancelled();
     } catch (err) {
-      if (err instanceof ApiError && err.code === "SIGNATURE_MFA_REQUIRED") setTotpCode("");
+      if (err instanceof ApiError && err.code === "SIGNATURE_MFA_REQUIRED") setPassword("");
       setError(err);
     } finally {
       setIsSubmitting(false);
@@ -192,21 +191,10 @@ function CancelNoteForm({
       <FieldWrapper label={t("clinico.notasTimeline.contrasena")} htmlFor={`cancel-password-${noteId}`}>
         <PasswordInput id={`cancel-password-${noteId}`} autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
       </FieldWrapper>
-      <FieldWrapper label={t("clinico.notasTimeline.totp")} htmlFor={`cancel-totp-${noteId}`}>
-        <TextInput
-          id={`cancel-totp-${noteId}`}
-          inputMode="numeric"
-          autoComplete="one-time-code"
-          maxLength={6}
-          required
-          value={totpCode}
-          onChange={(e) => setTotpCode(e.target.value)}
-        />
-      </FieldWrapper>
       {error ? <ErrorState error={error} /> : null}
       <div className="flex gap-3">
         {/* `danger` (relleno rojo) justificado: es el punto de no retorno de una
-            cancelación de nota firmada, tras contraseña y TOTP — la intención ya
+            cancelación de nota firmada, tras motivo y contraseña — la intención ya
             está expresada dos veces. Ver ui/button.tsx. */}
         <Button type="submit" variant="danger" isLoading={isSubmitting}>
           {t("clinico.notasTimeline.confirmarCancelacion")}

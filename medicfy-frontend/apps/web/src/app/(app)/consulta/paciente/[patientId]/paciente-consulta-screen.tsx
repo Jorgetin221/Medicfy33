@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { apiFetch, expectArray } from "@/lib/api-client";
+import { apiFetch } from "@/lib/api-client";
+import { ensureOpenEncounter } from "@/lib/ensure-open-encounter";
 import { tokenSubject } from "@/lib/jwt-claims";
 import { usePatientClinical } from "@/lib/use-patient-clinical";
 import { LoadingState, ErrorState, Card } from "@/components/ui/states";
@@ -15,12 +16,6 @@ import { ConsultaReadonly } from "../../[appointmentId]/consulta-readonly";
 import { patientFullName, type EncounterDetail } from "../../[appointmentId]/types";
 
 type Phase = "loading" | "ready" | "readonly" | "abandoned" | "error";
-
-interface EncounterListItem {
-  id: string;
-  status: "DRAFT" | "SIGNED";
-  appointmentId: string | null;
-}
 
 // Consulta sin cita — el médico puede documentar a un paciente que ya
 // tiene expediente sin haber reservado una cita primero (pedido
@@ -44,22 +39,7 @@ export function PacienteConsultaScreen({ patientId, accessToken }: { patientId: 
     setPhase("loading");
     setError(null);
     try {
-      const encounters = expectArray<EncounterListItem>(await apiFetch<unknown>(`/records/patients/${patientId}/encounters`, { accessToken }));
-      const existingDraft = encounters.find((e) => e.status === "DRAFT" && !e.appointmentId);
-
-      let encounterId: string;
-      if (existingDraft) {
-        encounterId = existingDraft.id;
-      } else {
-        const hasSignedBefore = encounters.some((e) => e.status === "SIGNED");
-        const created = await apiFetch<{ id: string }>(`/records/patients/${patientId}/encounters`, {
-          method: "POST",
-          accessToken,
-          body: { patientId, encounterType: hasSignedBefore ? "FOLLOW_UP" : "FIRST_VISIT" },
-        });
-        encounterId = created.id;
-      }
-
+      const encounterId = await ensureOpenEncounter(patientId, accessToken);
       const encounterDetail = await apiFetch<EncounterDetail>(`/records/encounters/${encounterId}`, { accessToken });
       setEncounter(encounterDetail);
       setPhase(encounterDetail.status === "SIGNED" ? "readonly" : "ready");

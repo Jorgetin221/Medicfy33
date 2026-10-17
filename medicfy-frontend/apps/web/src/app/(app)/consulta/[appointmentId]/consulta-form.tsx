@@ -12,9 +12,8 @@ import { apiFetch, ApiError } from "@/lib/api-client";
 import { useEncounterAutosave } from "@/lib/use-encounter-autosave";
 import { loadDraftLocally, clearDraftLocally } from "@/lib/offline-draft-store";
 import { FieldWrapper, Textarea, TextInput } from "@/components/ui/field";
-import { PasswordInput } from "@/components/ui/password-input";
 import { Button } from "@/components/ui/button";
-import { Panel } from "@/components/ui/panel";
+import { Modal } from "@/components/ui/modal";
 import { Aviso } from "@/components/ui/alert";
 import { IndicadorGuardado } from "@/components/ui/save-indicator";
 import { VitalsFields } from "@/components/clinical/vitals-fields";
@@ -36,7 +35,20 @@ function formatElapsed(totalSeconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-const RAW_VITALS_KEYS = ["bpSystolic", "bpDiastolic", "heartRate", "respiratoryRate", "tempC", "spo2", "weightKg", "heightCm"] as const;
+// Mismos campos que VitalsFields: los perímetros faltaban aquí y se
+// perdían al recargar el borrador.
+const RAW_VITALS_KEYS = [
+  "bpSystolic",
+  "bpDiastolic",
+  "heartRate",
+  "respiratoryRate",
+  "tempC",
+  "spo2",
+  "weightKg",
+  "heightCm",
+  "headCircumferenceCm",
+  "abdominalCircumferenceCm",
+] as const;
 
 // El draftContent que guarda el servidor trae vitals con bmi/bmiFormula/
 // bmiFormulaVersion ya mezclados (withComputedVitals, backend) —
@@ -91,12 +103,16 @@ export function ConsultaForm({
   const [activeField, setActiveField] = useState<FreeTextField>("plan");
   const [signError, setSignError] = useState<unknown>(null);
   const [isSigning, setIsSigning] = useState(false);
-  // Fase 6 · Prompt 43: firmar exige reautenticación (password+TOTP,
-  // SignatureVerificationService en servidor). El panel de reauth ES
-  // la confirmación — reemplaza el window.confirm() que había antes,
-  // porque escribir contraseña+código es una confirmación más fuerte
-  // que un diálogo nativo.
-  const [showReauthPanel, setShowReauthPanel] = useState(false);
+  // Cerrar la consulta: confirmación explícita "¿Desea cerrar la
+  // consulta?" (sin contraseña desde 2026-10-16, decisión del usuario)
+  // y, al firmar, el aviso "Consulta terminada" antes de salir de la
+  // pantalla.
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [isFinished, setIsFinished] = useState(false);
+  const [missingFields, setMissingFields] = useState(false);
+  // La barra fija de firma publica su altura (--consulta-footer-height)
+  // para que los paneles laterales terminen encima de ella y no debajo.
+  const footerRef = useRef<HTMLDivElement | null>(null);
   // Fase 4b: receta/estudios ya se pueden emitir contra la nota en
   // borrador (encounter-editable.util.ts, backend) — mientras el
   // panel de EmisionDocumentos esté abierto con edición sin guardar,
@@ -121,10 +137,22 @@ export function ConsultaForm({
       plan: "",
       prognosis: "",
       diagnoses: [],
-      password: "",
-      totpCode: "",
     },
   });
+
+  useEffect(() => {
+    const footer = footerRef.current;
+    if (!footer) return undefined;
+    const root = document.documentElement;
+    const publish = () => root.style.setProperty("--consulta-footer-height", `${footer.offsetHeight}px`);
+    publish();
+    const observer = new ResizeObserver(publish);
+    observer.observe(footer);
+    return () => {
+      observer.disconnect();
+      root.style.removeProperty("--consulta-footer-height");
+    };
+  }, []);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -173,12 +201,17 @@ export function ConsultaForm({
         // también sobreviven en el borrador.
         ...(base.patientInstructions !== undefined ? { patientInstructions: base.patientInstructions } : {}),
         ...(base.suggestedFollowUpDays !== undefined ? { suggestedFollowUpDays: base.suggestedFollowUpDays } : {}),
-        diagnoses: encounter.diagnoses.map((d) => ({
-          description: d.description,
-          diagnosisType: d.diagnosisType,
-          certainty: d.certainty,
-          ...(d.icd10Code ? { icd10Code: d.icd10Code } : { codeAbsentReason: d.codeAbsentReason ?? "" }),
-        })),
+        // Los diagnósticos del borrador (autoguardados) mandan; si no
+        // hay, los ya guardados del encuentro.
+        diagnoses:
+          base.diagnoses && base.diagnoses.length > 0
+            ? (base.diagnoses as EncounterDiagnosisInput[])
+            : encounter.diagnoses.map((d) => ({
+                description: d.description,
+                diagnosisType: d.diagnosisType,
+                certainty: d.certainty,
+                ...(d.icd10Code ? { icd10Code: d.icd10Code } : { codeAbsentReason: d.codeAbsentReason ?? "" }),
+              })),
       });
       setIsHydrated(true);
       // Prompt 15: restaurar el punto de scroll tras recargar.
@@ -210,6 +243,9 @@ export function ConsultaForm({
     assessment: watched.assessment,
     plan: watched.plan,
     prognosis: watched.prognosis,
+    // También se autoguardan: sobreviven una recarga y el asistente
+    // clínico los ve antes de firmar.
+    diagnoses: watched.diagnoses,
     ...(watched.patientInstructions !== undefined && watched.patientInstructions !== "" ? { patientInstructions: watched.patientInstructions } : {}),
     ...(watched.suggestedFollowUpDays !== undefined && !Number.isNaN(watched.suggestedFollowUpDays) ? { suggestedFollowUpDays: watched.suggestedFollowUpDays } : {}),
   };
@@ -310,17 +346,10 @@ export function ConsultaForm({
     try {
       await apiFetch(`/records/encounters/${encounter.id}/sign`, { method: "POST", accessToken, body: values });
       await clearDraftLocally(encounter.id);
-      onSigned();
+      finishConsultation();
     } catch (error) {
       if (error instanceof ApiError && error.code === "ENCOUNTER_ABANDONED") {
         onAbandoned();
-      } else if (error instanceof ApiError && error.code === "SIGNATURE_MFA_REQUIRED") {
-        // Contraseña/código incorrectos o MFA sin activar — se queda en
-        // el panel de reauth, nunca en el resto de la nota, y limpia
-        // el código (no la contraseña: un solo dígito mal tecleado no
-        // debería obligar a reescribir todo).
-        form.resetField("totpCode");
-        setSignError(error);
       } else if (error instanceof ApiError && error.code === "VITALS_CRITICAL_CONFIRMATION_REQUIRED") {
         // Prompt 26: un signo vital CRÍTICO exige confirmación
         // explícita del médico — se le muestra cuáles y confirma.
@@ -336,7 +365,7 @@ export function ConsultaForm({
               body: { ...values, criticalVitalsConfirmed: true },
             });
             await clearDraftLocally(encounter.id);
-            onSigned();
+            finishConsultation();
             return;
           } catch (retryError) {
             setSignError(retryError);
@@ -349,18 +378,30 @@ export function ConsultaForm({
     }
   }
 
-  const handleSignSubmit = form.handleSubmit(onSign);
-
-  function handleSignClick() {
-    if (planPanelOpen) return;
-    setShowReauthPanel(true);
+  function finishConsultation() {
+    setShowConfirm(false);
+    setIsSigning(false);
+    setIsFinished(true);
   }
 
-  function closeReauthPanel() {
-    setShowReauthPanel(false);
+  // Si falta un campo obligatorio, se cierra la confirmación para que el
+  // médico vea en la nota qué campo marcó la validación.
+  const handleSignSubmit = form.handleSubmit(onSign, () => {
+    setShowConfirm(false);
+    setMissingFields(true);
+  });
+
+  function handleSignClick() {
+    if (planPanelOpen || isFinished) return;
     setSignError(null);
-    form.resetField("password");
-    form.resetField("totpCode");
+    setMissingFields(false);
+    setShowConfirm(true);
+  }
+
+  function closeConfirm() {
+    if (isSigning) return;
+    setShowConfirm(false);
+    setSignError(null);
   }
 
   useEffect(() => {
@@ -569,12 +610,19 @@ export function ConsultaForm({
 
       </form>
 
-      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-gray-300 bg-white p-4">
+      {/* Empieza donde termina el rail (app-nav.tsx, --app-rail-width):
+          con inset-x-0 tapaba Perfil, idioma y Cerrar sesión. */}
+      <div ref={footerRef} className="fixed bottom-0 left-0 right-0 z-20 border-t border-gray-300 bg-white p-4 md:left-[var(--app-rail-width,0px)]">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-2">
           <div className="flex items-center gap-3">
             <IndicadorGuardado state={saveState} lastSavedAt={lastSavedAt} />
             {planPanelOpen ? (
               <span className="text-sm text-warn-600">{t("consulta.firma.cierraPanel")}</span>
+            ) : null}
+            {missingFields && !planPanelOpen ? (
+              <span role="alert" className="text-sm text-warn-600">
+                {t("consulta.firma.faltanDatos")}
+              </span>
             ) : null}
           </div>
           <Button type="button" isLoading={isSigning} disabled={planPanelOpen} onClick={handleSignClick} className="px-6">
@@ -583,53 +631,35 @@ export function ConsultaForm({
         </div>
       </div>
 
-      {/* Fase 6 · Prompt 43: reautenticación obligatoria para firmar —
-          el panel ES la confirmación (reemplaza el window.confirm()
-          que había antes). Los campos password/totpCode viven en el
-          MISMO form de react-hook-form que el resto de la nota —
-          register() no depende de dónde en el DOM se monte el campo,
-          así que handleSignSubmit (form.handleSubmit(onSign)) los
-          incluye igual que cualquier otro campo de la nota. */}
-      <Panel open={showReauthPanel} onClose={closeReauthPanel} title={t("consulta.firma.panelTitulo")}>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void handleSignSubmit();
-          }}
-          className="flex flex-col gap-4"
-          noValidate
-        >
-          <p className="text-base text-gray-700">
-            {t("consulta.firma.advertencia")}
-          </p>
-          <FieldWrapper label={t("consulta.firma.contrasena")} htmlFor="sign-password" error={form.formState.errors.password?.message}>
-            <PasswordInput id="sign-password" autoComplete="current-password" error={!!form.formState.errors.password} {...form.register("password")} />
-          </FieldWrapper>
-          <FieldWrapper label={t("consulta.firma.totp")} htmlFor="sign-totp-code" error={form.formState.errors.totpCode?.message}>
-            <TextInput
-              id="sign-totp-code"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              maxLength={6}
-              error={!!form.formState.errors.totpCode}
-              {...form.register("totpCode")}
-            />
-          </FieldWrapper>
+      <Modal open={showConfirm} onClose={closeConfirm} title={t("consulta.firma.confirmarTitulo")} size="dialog">
+        <div className="flex flex-col gap-4">
+          <p className="text-base text-gray-700">{t("consulta.firma.advertencia")}</p>
           {signError ? (
             <Aviso variant="critico" title={t("consulta.firma.errorTitulo")}>
               {signError instanceof ApiError ? signError.message : t("consulta.firma.intentaDeNuevo")}
             </Aviso>
           ) : null}
-          <div className="flex gap-3">
-            <Button type="submit" isLoading={isSigning} className="px-6">
-              {t("consulta.firma.firmar")}
+          <div className="flex flex-wrap gap-3">
+            <Button type="button" isLoading={isSigning} onClick={() => void handleSignSubmit()} className="px-6">
+              {t("consulta.firma.siCerrar")}
             </Button>
-            <Button type="button" variant="secondary" onClick={closeReauthPanel}>
+            <Button type="button" variant="secondary" disabled={isSigning} onClick={closeConfirm}>
               {t("common.acciones.cancelar")}
             </Button>
           </div>
-        </form>
-      </Panel>
+        </div>
+      </Modal>
+
+      <Modal open={isFinished} onClose={onSigned} title={t("consulta.firma.terminadaTitulo")} size="dialog">
+        <div className="flex flex-col gap-4">
+          <Aviso variant="exito" title={t("consulta.firma.terminadaTitulo")}>
+            {t("consulta.firma.terminadaCuerpo")}
+          </Aviso>
+          <Button type="button" onClick={onSigned} className="w-fit px-6">
+            {t("consulta.firma.aceptar")}
+          </Button>
+        </div>
+      </Modal>
     </div>
   );
 }

@@ -43,6 +43,21 @@ export const clinicalEncounterCreateSchema = z
   .strict();
 export type ClinicalEncounterCreateInput = z.infer<typeof clinicalEncounterCreateSchema>;
 
+// Diagnósticos tal como el médico los va capturando, sin las reglas de
+// firma (encounterDiagnosisSchema exige código CIE-10 O razón de 10+
+// caracteres): un borrador a medio escribir no puede tumbar el
+// autoguardado. Se autoguardan para que sobrevivan una recarga y para
+// que el asistente clínico los vea antes de firmar.
+const encounterDiagnosisDraftSchema = z
+  .object({
+    icd10Code: z.string().max(10).optional(),
+    codeAbsentReason: z.string().max(500).optional(),
+    description: z.string().max(500),
+    diagnosisType: z.enum(["PRINCIPAL", "SECONDARY"]),
+    certainty: z.enum(["SUSPECTED", "CONFIRMED"]),
+  })
+  .strict();
+
 // M8-RN-002: el draft se autoguarda cada 10s, editable libremente —
 // todos los campos opcionales aquí. La validación completa (obligatoria
 // para poder firmar) vive en clinicalNoteSignSchema.
@@ -76,6 +91,7 @@ export const clinicalNoteDraftUpdateSchema = z
     // (ids de catálogo, nunca texto libre). El servidor congela cada
     // uno en note_lab_results al firmar, con su estado ya calculado.
     labResultAnalyteIds: z.array(z.string().uuid()).optional(),
+    diagnoses: z.array(encounterDiagnosisDraftSchema).max(20).optional(),
   })
   .strict();
 export type ClinicalNoteDraftUpdateInput = z.infer<typeof clinicalNoteDraftUpdateSchema>;
@@ -85,13 +101,15 @@ export type ClinicalNoteDraftUpdateInput = z.infer<typeof clinicalNoteDraftUpdat
 // explícita del usuario (2026-08-24, confirmó apartarse de la regla a
 // sabiendas tras ofrecerle la alternativa que sí la cumple —
 // códigos CIE-10 de síntoma/causa no especificada, capítulo R00-R99),
-// existe una segunda ruta: sin icd10Code, pero con codeAbsentReason
-// obligatorio como justificación auditable. Exactamente uno de los
-// dos, nunca ambos ni ninguno.
+// existe una segunda ruta: sin icd10Code. La justificación escrita
+// (codeAbsentReason) dejó de ser obligatoria el 2026-10-17, también a
+// petición explícita del usuario ("ese cuadro de texto quítalo"): un
+// diagnóstico sin código queda solo con su descripción. Si se manda una
+// razón se guarda, pero nunca junto con un código.
 export const encounterDiagnosisSchema = z
   .object({
     icd10Code: z.string().min(1).max(10).optional(),
-    codeAbsentReason: z.string().min(10, "Explica en al menos 10 caracteres por qué no hay código CIE-10.").max(500).optional(),
+    codeAbsentReason: z.string().max(500).optional(),
     // P4 §6.2: tope explícito — era el único campo clínico sin .max(),
     // y el sitio natural donde acabaría pegado un párrafo narrativo.
     description: z.string().min(1).max(500),
@@ -99,9 +117,9 @@ export const encounterDiagnosisSchema = z
     certainty: z.enum(["SUSPECTED", "CONFIRMED"]),
   })
   .strict()
-  .refine((d) => (d.icd10Code !== undefined) !== (d.codeAbsentReason !== undefined), {
-    message: "Cada diagnóstico necesita exactamente uno: un código CIE-10 o una razón de por qué no lo tiene.",
-    path: ["icd10Code"],
+  .refine((d) => d.icd10Code === undefined || d.codeAbsentReason === undefined, {
+    message: "Un diagnóstico con código CIE-10 no lleva razón de ausencia de código.",
+    path: ["codeAbsentReason"],
   });
 export type EncounterDiagnosisInput = z.infer<typeof encounterDiagnosisSchema>;
 
@@ -110,9 +128,13 @@ export type EncounterDiagnosisInput = z.infer<typeof encounterDiagnosisSchema>;
 // la forma completa exigida al firmar (M8-CA-006 depende de que las
 // alergias ya estén conciliadas, verificado en el servicio, no aquí).
 //
-// Fase 6 · Prompt 43: password+totpCode — reautenticación obligatoria
-// para firmar, mismo mecanismo (SignatureVerificationService) que ya
-// usan recetas/órdenes en su ruta ELECTRONIC. A diferencia de esas dos,
+// Fase 6 · Prompt 43 pedía reautenticación (contraseña + TOTP) para
+// firmar. Por decisión explícita del usuario (2026-10-16), cerrar la
+// consulta ya no pide contraseña: la confirmación es un diálogo
+// explícito en la pantalla ("¿Desea cerrar la consulta?") y la sesión
+// autenticada del médico. La firma sigue sellada con hash, snapshot
+// del firmante y bitácora. Cancelar una nota firmada sí sigue pidiendo
+// contraseña (clinicalNoteCancelSchema). A diferencia de esas dos,
 // la nota clínica no tiene ruta "impresa a mano": siempre es firma
 // interna, así que aquí van directo como campos requeridos, sin
 // discriminated union. clinicalNoteCorrectionSchema (abajo) extiende
@@ -140,8 +162,6 @@ export const clinicalNoteSignSchema = z
     // próxima cita sugerida desde el plan.
     patientInstructions: z.string().max(2000).optional(),
     suggestedFollowUpDays: z.number().int().min(1).max(365).optional(),
-    password: z.string().min(1, "Confirma tu contraseña para firmar."),
-    totpCode: z.string().length(6, "El código de verificación debe tener 6 dígitos."),
   })
   .strict();
 export type ClinicalNoteSignInput = z.infer<typeof clinicalNoteSignSchema>;
@@ -162,7 +182,6 @@ export const clinicalNoteCancelSchema = z
     reasonTermId: z.string().uuid(),
     reasonFreeText: z.string().max(500).optional(),
     password: z.string().min(1, "Confirma tu contraseña para cancelar."),
-    totpCode: z.string().length(6, "El código de verificación debe tener 6 dígitos."),
   })
   .strict();
 export type ClinicalNoteCancelInput = z.infer<typeof clinicalNoteCancelSchema>;

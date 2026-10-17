@@ -4,18 +4,26 @@ import { useEffect, useId, useRef, type ReactNode } from "react";
 import { useT } from "@/lib/i18n/context";
 
 // Ventana emergente centrada. Hermano de Panel (mismo manejo de Esc,
-// foco y fondo), pero centrada y amplia — pensada para VISORES que
-// necesitan toda la pantalla (p. ej. el atlas anatómico 3D), nunca para
-// formularios clínicos: §3.5 del doc de UX los manda a Panel.
+// foco y fondo), pero centrada. Dos tamaños: "full" para VISORES que
+// necesitan toda la pantalla (atlas anatómico 3D, documentos PDF) y
+// "dialog" para confirmaciones y elecciones cortas (cerrar consulta,
+// elegir la lectura del asistente). Nunca para formularios clínicos:
+// §3.5 del doc de UX los manda a Panel.
+const SIZE_CLASS = {
+  full: "h-full max-h-[920px] max-w-[1400px]",
+  dialog: "max-h-full max-w-lg",
+} as const;
 export function Modal({
   open,
   onClose,
   title,
+  size = "full",
   children,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
+  size?: keyof typeof SIZE_CLASS;
   children: ReactNode;
 }) {
   const t = useT();
@@ -54,7 +62,7 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="relative flex h-full max-h-[920px] w-full max-w-[1400px] flex-col overflow-hidden rounded-lg bg-white shadow-card"
+        className={`relative flex w-full flex-col overflow-hidden rounded-lg bg-white shadow-card ${SIZE_CLASS[size]}`}
       >
         <div className="flex items-center justify-between gap-4 border-b border-gray-300 px-4 py-3 sm:px-6">
           <h2 id={titleId} className="font-heading text-lg text-brand-900">
@@ -70,7 +78,7 @@ export function Modal({
             ✕
           </button>
         </div>
-        <div className="relative min-h-0 flex-1">{children}</div>
+        <div className={`relative min-h-0 flex-1 ${size === "dialog" ? "overflow-y-auto p-6" : ""}`}>{children}</div>
       </section>
     </div>
   );

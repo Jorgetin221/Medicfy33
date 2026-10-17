@@ -13,6 +13,7 @@ import GROWTH_LMS from "./data/growth-lms.json";
 import { PrismaClient } from "@prisma/client";
 import * as argon2 from "argon2";
 import cie10Dgis from "./data/cie10-dgis.json" with { type: "json" };
+import { LAB_STUDIES, LAB_STUDY_MOTIVES, LAB_STUDY_TYPES } from "../packages/contracts/src/catalogs/lab-studies";
 
 const prisma = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL });
 
@@ -586,30 +587,12 @@ async function seedEscalasFase3(): Promise<void> {
 // también en el schema). Listas clínicas comunes PENDIENTES de
 // validación médica, como todo lo clínico sembrado.
 async function seedEstudiosFase4(): Promise<void> {
-  await seedDomain("TIPO_ESTUDIO", "operación clínica común", true, [
-    { key: "laboratorio", term: "Laboratorio" },
-    { key: "imagen", term: "Imagenología" },
-    { key: "gabinete", term: "Gabinete" },
-  ]);
-  await seedDomain("MOTIVO_ESTUDIO", "operación clínica común", true, [
-    { key: "diagnostico_inicial", term: "Diagnóstico inicial" },
-    { key: "control_seguimiento", term: "Control / seguimiento" },
-    { key: "tamizaje", term: "Tamizaje" },
-    { key: "preoperatorio", term: "Valoración preoperatoria" },
-    { key: "urgencia", term: "Urgencia" },
-  ]);
+  // Catálogo compartido con el mock y el frontend
+  // (packages/contracts/src/catalogs/lab-studies.ts); ampliado 2026-10-17.
+  await seedDomain("TIPO_ESTUDIO", "operación clínica común", true, LAB_STUDY_TYPES.map((t) => ({ key: t.key, term: t.term })));
+  await seedDomain("MOTIVO_ESTUDIO", "operación clínica común", true, LAB_STUDY_MOTIVES.map((m) => ({ key: m.key, term: m.term })));
   // Estudios concretos, con su tipo en externalCode.
-  const estudios: { key: string; term: string; tipo: string; synonyms?: string[] }[] = [
-    { key: "bh", term: "Biometría hemática completa", tipo: "laboratorio", synonyms: ["BH", "BHC", "Citometría hemática"] },
-    { key: "qs6", term: "Química sanguínea de 6 elementos", tipo: "laboratorio", synonyms: ["QS", "QS6"] },
-    { key: "ego", term: "Examen general de orina", tipo: "laboratorio", synonyms: ["EGO"] },
-    { key: "perfil_lipidico", term: "Perfil de lípidos", tipo: "laboratorio" },
-    { key: "hba1c", term: "Hemoglobina glucosilada (HbA1c)", tipo: "laboratorio" },
-    { key: "tsh", term: "Perfil tiroideo (TSH)", tipo: "laboratorio" },
-    { key: "tele_torax", term: "Telerradiografía de tórax", tipo: "imagen", synonyms: ["Tele de tórax"] },
-    { key: "usg_abdominal", term: "Ultrasonido abdominal", tipo: "imagen", synonyms: ["USG abdominal"] },
-    { key: "ecg", term: "Electrocardiograma de reposo", tipo: "gabinete", synonyms: ["ECG", "EKG"] },
-  ];
+  const estudios = LAB_STUDIES;
   let inserted = 0;
   for (const e of estudios) {
     const existing = await prisma.clinicalCatalogTerm.findFirst({ where: { domain: "ESTUDIO_LABORATORIO", key: e.key } });
@@ -622,7 +605,7 @@ async function seedEstudiosFase4(): Promise<void> {
         normalizedTerm: normalizeTerm(e.term),
         codingSystem: "PROPIETARIO",
         externalCode: e.tipo,
-        synonyms: e.synonyms ?? [],
+        synonyms: [...(e.synonyms ?? [])],
         pendingMedicalReview: true,
       },
     });

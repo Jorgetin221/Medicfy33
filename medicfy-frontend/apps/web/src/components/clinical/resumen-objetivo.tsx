@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { apiFetch } from "@/lib/api-client";
+import { flushEncounterDraft } from "@/lib/use-encounter-autosave";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/lib/i18n/context";
 import { INTL_LOCALE } from "@/lib/i18n/config";
@@ -39,6 +40,7 @@ export function ResumenObjetivo({ encounterId, accessToken }: { encounterId: str
     setLoading(true);
     setError(null);
     try {
+      await flushEncounterDraft(encounterId);
       const outcome = await apiFetch<SummaryOutcome>(`/records/encounters/${encounterId}/assistant/summary`, {
         method: "POST",
         accessToken,

@@ -2,15 +2,35 @@ import { z } from "zod";
 
 // Prompt 37A: el estudio viene del CATÁLOGO en dos niveles (el tipo
 // filtra los concretos) y el motivo es OBLIGATORIO y de catálogo
-// cerrado — "no existe la opción de dejarlo vacío". studyName ya no
-// viaja del cliente: se resuelve del término en el servidor.
+// cerrado — "no existe la opción de dejarlo vacío". studyName no viaja
+// del cliente para estudios de catálogo: se resuelve del término en el
+// servidor.
+//
+// 2026-10-17, a petición explícita del usuario: el médico puede
+// escribir un estudio que no está en el catálogo (customStudyName). Es
+// una desviación consciente del "sin texto libre" de Prompt 37; el
+// motivo sigue siendo obligatorio y de catálogo. Exactamente uno de
+// studyKey o customStudyName.
+export const LAB_CUSTOM_STUDY_MIN_LENGTH = 3;
+export const LAB_CUSTOM_STUDY_MAX_LENGTH = 200;
+
 export const labOrderItemCreateSchema = z
   .object({
-    studyKey: z.string().min(1).max(100).regex(/^[a-z0-9_]+$/),
+    studyKey: z.string().min(1).max(100).regex(/^[a-z0-9_]+$/).optional(),
+    customStudyName: z
+      .string()
+      .trim()
+      .min(LAB_CUSTOM_STUDY_MIN_LENGTH, "Escribe el nombre del estudio (mínimo 3 caracteres).")
+      .max(LAB_CUSTOM_STUDY_MAX_LENGTH)
+      .optional(),
     motiveKey: z.string().min(1, "El motivo de solicitud es obligatorio.").max(100).regex(/^[a-z0-9_]+$/),
     notes: z.string().max(500).optional(),
   })
-  .strict();
+  .strict()
+  .refine((item) => (item.studyKey !== undefined) !== (item.customStudyName !== undefined), {
+    message: "Cada estudio es del catálogo o escrito por el médico, no ambos.",
+    path: ["studyKey"],
+  });
 export type LabOrderItemCreateInput = z.infer<typeof labOrderItemCreateSchema>;
 
 // encounterId va en la URL (POST /lab-orders/encounters/:encounterId).
@@ -21,7 +41,8 @@ const labOrderCreateBaseSchema = z.object({
 });
 
 // A diferencia de recetas (M9-RN-009), ninguna regla M10 exige
-// contraseña+TOTP — la firma electrónica es opcional. Misma forma de
+// reautenticación — la firma electrónica es opcional; si se elige,
+// pide la contraseña. Misma forma de
 // dos rutas ya usada en prescriptionCreateSchema.
 export const labOrderCreateHandwrittenSchema = labOrderCreateBaseSchema
   .extend({ signatureRoute: z.literal("HANDWRITTEN_AFTER_PRINT") })
@@ -32,7 +53,6 @@ export const labOrderCreateElectronicSchema = labOrderCreateBaseSchema
   .extend({
     signatureRoute: z.literal("ELECTRONIC"),
     password: z.string().min(1, "Confirma tu contraseña para firmar."),
-    totpCode: z.string().length(6, "El código de verificación debe tener 6 dígitos."),
   })
   .strict();
 export type LabOrderCreateElectronicInput = z.infer<typeof labOrderCreateElectronicSchema>;

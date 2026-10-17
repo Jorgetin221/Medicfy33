@@ -1,11 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
-import { apiFetch, apiFetchBlob } from "@/lib/api-client";
+import { apiFetch } from "@/lib/api-client";
+import { ensureOpenEncounter } from "@/lib/ensure-open-encounter";
+import { PrescriptionPanel } from "@/components/clinical/prescription-panel";
 import type { TimelinePrescription } from "@/lib/use-patient-clinical";
 import { Card, EmptyState, ErrorState } from "@/components/ui/states";
 import { Button } from "@/components/ui/button";
+import { DocumentViewer } from "@/components/clinical/document-tile";
 import { useI18n } from "@/lib/i18n/context";
 import { formatDateLong } from "@/lib/i18n/format";
 import type { MessageKey } from "@/lib/i18n/dictionaries";
@@ -38,8 +40,11 @@ export function TabRecetas({
   const { t, locale } = useI18n();
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
-  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<{ id: string; title: string; path: string; downloadName: string } | null>(null);
   const [error, setError] = useState<unknown>(null);
+  // Consulta a la que se liga la receta nueva (ver ensureOpenEncounter).
+  const [rxEncounterId, setRxEncounterId] = useState<string | null>(null);
+  const [isOpeningRx, setIsOpeningRx] = useState(false);
 
   async function cancelPrescription(id: string) {
     const reason = window.prompt(t("pacientes.recetas.motivoCancelacion"));
@@ -74,36 +79,63 @@ export function TabRecetas({
     }
   }
 
-  async function downloadPdf(id: string) {
+  // La receta se abre en el visor del sistema; descargarla o imprimirla
+  // desde ahí queda en la bitácora de impresión (Prompt 38A).
+  function openPrescription(prescription: TimelinePrescription) {
+    setViewing({
+      id: prescription.id,
+      title: t("pacientes.recetas.recetaTitulo", { folio: prescription.folio }),
+      path: `/prescriptions/${prescription.id}/pdf`,
+      downloadName: `receta-${prescription.folio}.pdf`,
+    });
+  }
+
+  function registerPrinted() {
+    if (!viewing) return;
+    void apiFetch(`/prescriptions/${viewing.id}/register-printed`, { method: "POST", accessToken }).catch(() => undefined);
+  }
+
+  // "Emitir receta" abre el panel de receta aquí mismo (2026-10-17: antes
+  // llevaba a una consulta nueva). M9-RN-002 — "toda receta pertenece a
+  // un encuentro" — se cumple ligándola a la consulta abierta sin cita
+  // del paciente, que se crea en segundo plano si no existe.
+  async function openNewPrescription() {
     setError(null);
-    setDownloadingId(id);
+    setIsOpeningRx(true);
     try {
-      const blob = await apiFetchBlob(`/prescriptions/${id}/pdf`, { accessToken });
-      if (blob) window.open(URL.createObjectURL(blob), "_blank");
+      setRxEncounterId(await ensureOpenEncounter(patientId, accessToken));
     } catch (err) {
       setError(err);
     } finally {
-      setDownloadingId(null);
+      setIsOpeningRx(false);
     }
   }
 
-  // M9-RN-002: "toda receta pertenece a un encuentro — no hay recetas
-  // sin consulta documentada". No se puede emitir una desde aquí
-  // directamente; el botón abre (o continúa) una consulta, que es
-  // donde vive el panel real de emisión.
   const nuevaRecetaButton = (
-    <Link href={`/consulta/paciente/${patientId}`}>
-      <Button type="button" variant="secondary" className="min-h-11 px-3 text-sm">
-        {t("pacientes.recetas.emitirReceta")}
-      </Button>
-    </Link>
+    <Button type="button" variant="secondary" isLoading={isOpeningRx} onClick={() => void openNewPrescription()} className="min-h-11 px-3 text-sm">
+      {t("pacientes.recetas.emitirReceta")}
+    </Button>
   );
+
+  const prescriptionPanel = rxEncounterId ? (
+    <PrescriptionPanel
+      open
+      onClose={() => setRxEncounterId(null)}
+      accessToken={accessToken}
+      encounterId={rxEncounterId}
+      patientId={patientId}
+      defaultDiagnosis=""
+      onIssued={onChanged}
+    />
+  ) : null;
 
   if (prescriptions.length === 0) {
     return (
       <div className="flex flex-col gap-3">
         <div>{nuevaRecetaButton}</div>
+        {error ? <ErrorState error={error} /> : null}
         <EmptyState title={t("pacientes.recetas.sinRecetas")} description={t("pacientes.recetas.sinRecetasAyuda")} />
+        {prescriptionPanel}
       </div>
     );
   }
@@ -141,14 +173,8 @@ export function TabRecetas({
               )}
               {p.prescriptionType === "ELECTRONIC" && (
                 <div className="mt-3 flex flex-wrap gap-3">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    isLoading={downloadingId === p.id}
-                    onClick={() => void downloadPdf(p.id)}
-                    className="min-h-11 px-3 text-sm"
-                  >
-                    {t("pacientes.recetas.descargarPdf")}
+                  <Button type="button" variant="secondary" onClick={() => openPrescription(p)} className="min-h-11 px-3 text-sm">
+                    {t("pacientes.recetas.verReceta")}
                   </Button>
                   {p.status === "PENDING_HANDWRITTEN_SIGNATURE" && (
                     <Button
@@ -177,6 +203,8 @@ export function TabRecetas({
           </li>
         ))}
       </ul>
+      <DocumentViewer document={viewing} accessToken={accessToken} onClose={() => setViewing(null)} onDownload={registerPrinted} />
+      {prescriptionPanel}
     </div>
   );
 }

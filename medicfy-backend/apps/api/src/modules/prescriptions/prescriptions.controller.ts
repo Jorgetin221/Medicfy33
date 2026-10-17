@@ -31,7 +31,7 @@ export class PrescriptionsController {
 
   @Post("prescriptions/encounters/:encounterId")
   @UseGuards(DoctorVerifiedGuard)
-  @ApiOperation({ summary: "M9-RN-001/002: emite receta ligada al encuentro; M9-CA-007 firma con contraseña+TOTP" })
+  @ApiOperation({ summary: "M9-RN-001/002: emite receta ligada al encuentro; M9-CA-007 firma con contraseña" })
   async create(
     @Param("encounterId") encounterId: string,
     @Body(new ZodValidationPipe(prescriptionCreateSchema)) body: PrescriptionCreateInput,

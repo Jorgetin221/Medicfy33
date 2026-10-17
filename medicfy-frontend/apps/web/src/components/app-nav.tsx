@@ -12,7 +12,6 @@ import {
   IconPulse,
   IconCalendarNav,
   IconFolderNav,
-  IconPersonPlus,
   IconClockNav,
   IconUserCircle,
   IconShieldNav,
@@ -26,10 +25,11 @@ import {
 
 // La etiqueta se guarda como clave, no como texto: el rail se pinta en
 // el idioma que el médico haya elegido.
+// "Nuevo paciente" no va aquí (2026-10-16): ya está como acción dentro de
+// Pacientes, y en el rail solo ocupaba espacio.
 const NAV_LINKS: { href: string; labelKey: MessageKey; Icon: IconComponent }[] = [
   { href: "/agenda", labelKey: "nav.rail.agenda", Icon: IconCalendarNav },
   { href: "/pacientes", labelKey: "nav.rail.pacientes", Icon: IconFolderNav },
-  { href: "/pacientes/nuevo", labelKey: "nav.rail.nuevoPaciente", Icon: IconPersonPlus },
   { href: "/disponibilidad", labelKey: "nav.rail.disponibilidad", Icon: IconClockNav },
   // Fase 6 · Prompt 45: bitácora de acceso — "panel de auditoría para
   // el médico titular: quién ha visto a sus pacientes".
@@ -70,6 +70,13 @@ export function isNavLinkActive(
 // pestaña abierta del panel de consulta (consulta-zona3.tsx).
 const COLLAPSE_STORAGE_KEY = "medicfy:nav-collapsed";
 
+// Ancho del rail en escritorio (md:w-56 / md:w-16), publicado como
+// variable CSS para que lo fijo a la pantalla (la barra de firma de la
+// consulta) empiece donde termina el rail en vez de taparle la parte
+// de abajo. Bajo `md` el rail no ocupa espacio: la variable no aplica.
+export const RAIL_WIDTH_CSS_VAR = "--app-rail-width";
+const RAIL_WIDTH = { expanded: "14rem", collapsed: "4rem" } as const;
+
 type IconComponent = (props: { className?: string }) => ReactNode;
 
 // Rail de navegación lateral persistente para todas las pantallas
@@ -102,6 +109,16 @@ export function AppNav() {
       // dato clínico, no es fatal perderla.
     }
   }, []);
+
+  const railVisible = !isLoading && Boolean(accessToken);
+  useEffect(() => {
+    if (!railVisible) return undefined;
+    const root = document.documentElement;
+    root.style.setProperty(RAIL_WIDTH_CSS_VAR, collapsed ? RAIL_WIDTH.collapsed : RAIL_WIDTH.expanded);
+    return () => {
+      root.style.removeProperty(RAIL_WIDTH_CSS_VAR);
+    };
+  }, [collapsed, railVisible]);
 
   // Navegar cierra el panel: en móvil tapa el contenido al que se acaba
   // de llegar.
@@ -171,7 +188,7 @@ export function AppNav() {
     mobileOpen ? "fixed inset-y-0 left-0 z-50 flex w-64" : "hidden",
     "md:sticky md:top-0 md:z-auto md:flex md:h-screen md:shrink-0",
     collapsed ? "md:w-16 md:items-center" : "md:w-56",
-    "h-screen flex-col gap-2 overflow-y-auto bg-rail-bg px-2 py-4",
+    "h-screen flex-col gap-2 overflow-y-auto bg-rail-bg px-2 py-3",
   ].join(" ");
 
   return (
@@ -263,28 +280,37 @@ export function AppNav() {
             solo desde Perfil: es una preferencia de lectura, y quien la
             necesita es porque no está entendiendo lo que ve ahora. */}
         <li className={collapsed ? "md:flex md:justify-center" : ""}>
-          <LanguageSwitcher tone="rail" showLabel={!collapsed} align="left" />
+          <LanguageSwitcher tone="rail" showLabel={!collapsed} align="side" />
         </li>
         <li>
           <button type="button" onClick={handleLogout} aria-label={t("nav.rail.cerrarSesion")} title={collapsed ? t("nav.rail.cerrarSesion") : undefined} className={itemClassName(false)}>
             <NavLabel Icon={IconLogout} label={t("nav.rail.cerrarSesion")} />
           </button>
         </li>
-        {/* Plegar el rail no tiene sentido en el panel móvil: ahí se cierra. */}
-        <li className="hidden md:block">
-          <button
-            type="button"
-            onClick={toggleCollapsed}
-            aria-label={collapsed ? t("nav.rail.expandirBarra") : t("nav.rail.colapsarBarra")}
-            title={collapsed ? t("nav.rail.expandir") : undefined}
-            className={itemClassName(false)}
-          >
-            <IconChevronNav className={`h-5 w-5 shrink-0 transition-transform ${collapsed ? "rotate-180" : ""}`} />
-            {!collapsed ? <span className="truncate text-sm">{t("nav.rail.colapsar")}</span> : null}
-          </button>
-        </li>
       </ul>
       </nav>
+
+      {/* Plegar/desplegar: pestaña redonda montada sobre el borde derecho
+          del rail, a media altura. Va FUERA del <nav> y con posición fija
+          porque el rail tiene scroll propio (overflow-y-auto) y recortaría
+          cualquier cosa que sobresalga de su borde. Se ancla con el mismo
+          --app-rail-width que publica este componente. Área táctil de
+          44x44 (§5) con un círculo visible más pequeño al centro. Solo
+          escritorio: en móvil el panel se cierra, no se pliega. */}
+      <button
+        type="button"
+        onClick={toggleCollapsed}
+        aria-label={collapsed ? t("nav.rail.expandirBarra") : t("nav.rail.colapsarBarra")}
+        aria-controls="nav-principal"
+        aria-expanded={!collapsed}
+        title={collapsed ? t("nav.rail.expandirBarra") : t("nav.rail.colapsarBarra")}
+        className="group fixed top-1/2 z-30 hidden h-11 w-11 -translate-y-1/2 items-center justify-center md:flex"
+        style={{ left: `calc(var(${RAIL_WIDTH_CSS_VAR}, 0px) - 22px)` }}
+      >
+        <span className="flex h-7 w-7 items-center justify-center rounded-full border border-gray-300 bg-white text-gray-700 shadow-card transition-colors group-hover:bg-brand-100 group-hover:text-brand-900">
+          <IconChevronNav className={`h-4 w-4 shrink-0 transition-transform ${collapsed ? "rotate-180" : ""}`} />
+        </span>
+      </button>
     </>
   );
 }

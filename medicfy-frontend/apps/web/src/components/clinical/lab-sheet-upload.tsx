@@ -5,6 +5,10 @@ import { apiFetch, apiUpload } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { FieldWrapper, TextInput } from "@/components/ui/field";
 import { ErrorState } from "@/components/ui/states";
+import { FileFormatNotice, useAcceptedFile } from "@/components/ui/accepted-file";
+
+// La lectura automática solo entiende PDF e imágenes (claude-lab-ocr).
+const LAB_SHEET_ACCEPT = "image/jpeg,image/png,application/pdf";
 import { useT } from "@/lib/i18n/context";
 
 // Capa 1 (v2.5) — "Debe estar en un espacio más estratégico..." no
@@ -74,6 +78,7 @@ export function LabSheetUpload({
   const [measuredAt, setMeasuredAt] = useState("");
   const [labName, setLabName] = useState("");
   const [error, setError] = useState<unknown>(null);
+  const sheetFormat = useAcceptedFile(LAB_SHEET_ACCEPT);
 
   function applyExtraction(extraction: Extraction) {
     setExtractionId(extraction.id);
@@ -88,7 +93,7 @@ export function LabSheetUpload({
   async function handleFileSelected(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = "";
-    if (!file) return;
+    if (!file || !sheetFormat.check(file)) return;
     setError(null);
     setPhase("uploading");
     try {
@@ -176,9 +181,10 @@ export function LabSheetUpload({
       {phase === "idle" && (
         <label className="flex min-h-11 w-fit cursor-pointer items-center rounded-md border border-brand-700 px-3 text-base font-medium text-brand-700">
           {t("clinico.hojaLab.elegirArchivo")}
-          <input type="file" accept="image/jpeg,image/png,application/pdf" className="sr-only" onChange={(e) => void handleFileSelected(e)} />
+          <input type="file" className="sr-only" onChange={(e) => void handleFileSelected(e)} />
         </label>
       )}
+      {phase === "idle" ? <FileFormatNotice notice={sheetFormat.notice} /> : null}
 
       {phase === "uploading" && <p className="text-base text-gray-700">{t("clinico.hojaLab.extrayendo")}</p>}
 

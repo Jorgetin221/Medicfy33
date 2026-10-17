@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import type { EncounterDiagnosisInput } from "@medicfy/contracts";
 import { apiFetch } from "@/lib/api-client";
-import { TextInput, Textarea } from "@/components/ui/field";
+import { TextInput } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/lib/i18n/context";
 
@@ -43,7 +43,6 @@ export function Icd10Picker({
   const [isSearching, setIsSearching] = useState(false);
   const [showManualForm, setShowManualForm] = useState(false);
   const [manualDescription, setManualDescription] = useState("");
-  const [manualReason, setManualReason] = useState("");
 
   useEffect(() => {
     if (query.trim().length < 2) {
@@ -82,11 +81,12 @@ export function Icd10Picker({
   }
 
   function addManualDiagnosis() {
-    if (manualDescription.trim().length === 0 || manualReason.trim().length < 10) return;
+    if (manualDescription.trim().length === 0) return;
     const diagnosisType = selected.length === 0 ? "PRINCIPAL" : "SECONDARY";
-    onChange([...selected, { codeAbsentReason: manualReason.trim(), description: manualDescription.trim(), diagnosisType, certainty: "CONFIRMED" }]);
+    // Sin código CIE-10 basta la descripción (2026-10-17: sin cuadro de
+    // justificación, a petición del usuario).
+    onChange([...selected, { description: manualDescription.trim(), diagnosisType, certainty: "CONFIRMED" }]);
     setManualDescription("");
-    setManualReason("");
     setShowManualForm(false);
   }
 
@@ -179,13 +179,6 @@ export function Icd10Picker({
             onChange={(e) => setManualDescription(e.target.value)}
             aria-label={t("clinico.diagnosticoPicker.descripcionEtiqueta")}
           />
-          <Textarea
-            placeholder={t("clinico.diagnosticoPicker.razon")}
-            rows={2}
-            value={manualReason}
-            onChange={(e) => setManualReason(e.target.value)}
-            aria-label={t("clinico.diagnosticoPicker.razonEtiqueta")}
-          />
           <div className="flex gap-3">
             <Button
               type="button"
@@ -193,12 +186,11 @@ export function Icd10Picker({
               onClick={() => {
                 setShowManualForm(false);
                 setManualDescription("");
-                setManualReason("");
               }}
             >
               {t("common.acciones.cancelar")}
             </Button>
-            <Button type="button" disabled={manualDescription.trim().length === 0 || manualReason.trim().length < 10} onClick={addManualDiagnosis}>
+            <Button type="button" disabled={manualDescription.trim().length === 0} onClick={addManualDiagnosis}>
               {t("clinico.diagnosticoPicker.agregarSinCodigo")}
             </Button>
           </div>
@@ -219,7 +211,7 @@ export function Icd10Picker({
                 ) : (
                   <>
                     <p className="text-base font-medium text-warn-600">Sin código CIE-10 — {d.description}</p>
-                    <p className="text-sm text-gray-500">Razón: {d.codeAbsentReason}</p>
+                    {d.codeAbsentReason ? <p className="text-sm text-gray-500">Razón: {d.codeAbsentReason}</p> : null}
                   </>
                 )}
                 <p className="text-sm text-gray-500">

@@ -303,7 +303,11 @@ describe("ContextAssemblerService — El Segundo Lector (Prompt 50)", () => {
     const draftPatch = await request(app.getHttpServer())
       .patch(`/records/encounters/${currentEncounterId}/note`)
       .set("Authorization", `Bearer ${doctor.accessToken}`)
-      .send({ chiefComplaint: "Cefalea de 3 días de evolución", assessment: "Probable cefalea tensional." });
+      .send({
+        chiefComplaint: "Cefalea de 3 días de evolución",
+        assessment: "Probable cefalea tensional.",
+        vitals: { bpSystolic: 185, bpDiastolic: 95, heartRate: 88, weightKg: 70, heightCm: 170 },
+      });
     expect(draftPatch.status).toBe(200);
 
     const doctorRow = await prisma.doctor.findUniqueOrThrow({
@@ -333,6 +337,7 @@ describe("ContextAssemblerService — El Segundo Lector (Prompt 50)", () => {
     expect(context.antecedentes[0]).toEqual({
       categoria: "HEREDOFAMILIAR",
       subtipo: "diabetes_mellitus",
+      estado: "PRESENTE",
       parentesco: "MADRE",
       comentario: "Diagnosticada a los 50 años.",
     });
@@ -350,6 +355,23 @@ describe("ContextAssemblerService — El Segundo Lector (Prompt 50)", () => {
 
     expect(context.actual).toEqual({ motivoConsulta: "Cefalea de 3 días de evolución", valoracion: "Probable cefalea tensional." });
     expect(context.encuadre).toEqual({ especialidad: doctorRow.primarySpecialty?.nameEs ?? null, tipoConsulta: "FIRST_VISIT" });
+
+    // "La IA no está tomando los signos vitales" (2026-10-16): los del
+    // borrador viajan, con IMC/superficie corporal y marcas de rango
+    // calculados por el servidor.
+    expect(context.signosVitales).toMatchObject({
+      presionSistolicaMmHg: 185,
+      presionDiastolicaMmHg: 95,
+      frecuenciaCardiacaLpm: 88,
+      pesoKg: 70,
+      tallaCm: 170,
+      imc: 24.2,
+      superficieCorporalM2: 1.82,
+    });
+    expect(context.signosVitales.fueraDeRango).toContain("bpSystolic");
+    expect(context.signosVitales.criticos).toContain("bpSystolic");
+    expect(context.signosVitalesPrevios.length).toBeGreaterThan(0);
+    expect(context.documentosConsulta).toEqual({ recetas: [], ordenesEstudio: [] });
 
     // ── El hash existe y es un SHA-256 hex ──────────────────────
     expect(result.hashContexto).toMatch(/^[0-9a-f]{64}$/);

@@ -11,6 +11,7 @@ export const ui = {
   },
   archivo: {
     sinArchivo: "Sin archivo",
+    formatoNoPermitido: "«{nombre}» no se puede subir aquí. Formatos permitidos: {permitidos}.",
     reemplazar: "Reemplazar",
     subirImagen: "Subir imagen",
     restriccion: "JPG o PNG, máximo 5 MB.",
