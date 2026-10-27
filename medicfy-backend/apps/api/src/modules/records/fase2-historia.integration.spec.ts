@@ -291,7 +291,7 @@ describe("Fase 2 · Historia clínica estructurada (prompt 24)", () => {
 
   it("24.5 — aplicar una plantilla y firmar sin revisar devuelve error indicando los campos heredados pendientes", async () => {
     const doctor = await registerDoctor();
-    const otpauthUri = await enrollMfa(doctor.accessToken);
+    await enrollMfa(doctor.accessToken);
     const patientId = await createPatient(doctor.accessToken, "F");
 
     // Plantilla con subtipo inventado: se rechaza AL CREARLA.
@@ -333,7 +333,7 @@ describe("Fase 2 · Historia clínica estructurada (prompt 24)", () => {
     const blockedSign = await request(app.getHttpServer())
       .post(`/records/encounters/${encounter.body.id}/sign`)
       .set("Authorization", `Bearer ${doctor.accessToken}`)
-      .send({ ...VALID_NOTE, diagnoses, password: STRONG_PASSWORD, totpCode: totpFromUri(otpauthUri) });
+      .send({ ...VALID_NOTE, diagnoses });
     expect(blockedSign.status).toBe(422);
     expect(blockedSign.body.error.code).toBe("ENCOUNTER_INHERITED_UNREVIEWED");
     expect(blockedSign.body.error.details.pendingItems).toHaveLength(2);
@@ -357,7 +357,7 @@ describe("Fase 2 · Historia clínica estructurada (prompt 24)", () => {
     await request(app.getHttpServer())
       .post(`/records/encounters/${encounter.body.id}/sign`)
       .set("Authorization", `Bearer ${doctor.accessToken}`)
-      .send({ ...VALID_NOTE, diagnoses, password: STRONG_PASSWORD, totpCode: totpFromUri(otpauthUri) })
+      .send({ ...VALID_NOTE, diagnoses })
       .expect(201);
   });
 

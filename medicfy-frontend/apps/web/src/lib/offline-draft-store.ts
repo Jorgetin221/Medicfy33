@@ -15,6 +15,10 @@ import { openDB, type IDBPDatabase } from "idb";
 const DB_NAME = "medicfy-offline";
 const DB_VERSION = 1;
 const KEY_RECORD_ID = "draft-encryption-key";
+// M-21: un respaldo local que nadie sincronizó en una semana ya no es
+// una red de seguridad sino texto clínico olvidado en un equipo que
+// puede ser compartido.
+const DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 interface DraftRecord {
   encounterId: string;
@@ -69,11 +73,26 @@ export async function saveDraftLocally(encounterId: string, draft: Record<string
 }
 
 export async function loadDraftLocally(encounterId: string): Promise<Record<string, unknown> | null> {
+  return (await loadDraftRecordLocally(encounterId))?.draft ?? null;
+}
+
+// A-20: con la fecha del respaldo, para que la pantalla decida si es
+// más nuevo que lo que tiene el servidor (antes el local ganaba
+// siempre, aunque fuera de hace días).
+export async function loadDraftRecordLocally(
+  encounterId: string
+): Promise<{ draft: Record<string, unknown>; updatedAt: Date } | null> {
   if (!isSupported()) return null;
   try {
     const db = await openDatabase();
     const record = (await db.get("drafts", encounterId)) as DraftRecord | undefined;
     if (!record) {
+      db.close();
+      return null;
+    }
+    const updatedAt = new Date(record.updatedAt);
+    if (Date.now() - updatedAt.getTime() > DRAFT_TTL_MS) {
+      await db.delete("drafts", encounterId);
       db.close();
       return null;
     }
@@ -84,9 +103,38 @@ export async function loadDraftLocally(encounterId: string): Promise<Record<stri
     // no solo el tipo correcto.
     const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv: new Uint8Array(record.iv) }, key, record.ciphertext);
     db.close();
-    return JSON.parse(new TextDecoder().decode(plaintext)) as Record<string, unknown>;
+    return { draft: JSON.parse(new TextDecoder().decode(plaintext)) as Record<string, unknown>, updatedAt };
   } catch {
     return null;
+  }
+}
+
+// M-21: encuentros con respaldo local aún sin sincronizar — se usan al
+// cerrar sesión, antes de borrar.
+export async function listLocalDraftEncounterIds(): Promise<string[]> {
+  if (!isSupported()) return [];
+  try {
+    const db = await openDatabase();
+    const ids = (await db.getAllKeys("drafts")).map(String);
+    db.close();
+    return ids;
+  } catch {
+    return [];
+  }
+}
+
+// M-21: al cerrar sesión no queda texto clínico en el equipo (que puede
+// ser compartido en el consultorio), y la llave se regenera: aunque
+// alguien copiara el IndexedDB, los respaldos viejos ya no descifran.
+export async function clearAllDraftsLocally(): Promise<void> {
+  if (!isSupported()) return;
+  try {
+    const db = await openDatabase();
+    await db.clear("drafts");
+    await db.delete("keys", KEY_RECORD_ID);
+    db.close();
+  } catch {
+    // Sin IndexedDB no había nada guardado.
   }
 }
 

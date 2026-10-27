@@ -11,6 +11,7 @@ import { ApiExceptionFilter } from "../../common/api-exception.filter";
 import { PrismaService } from "../../prisma/prisma.service";
 import { NOTIFICATION_PORT, type NotificationPort } from "../identity/services/notification.port";
 import { TokenService } from "../identity/services/token.service";
+import { givePrimaryPracticeLocation } from "../../testing/practice-location.fixture";
 
 class TestNotificationAdapter implements NotificationPort {
   async sendEmailVerificationCode(): Promise<void> {}
@@ -145,6 +146,7 @@ describe("Orden de laboratorio — rutas de firma (autógrafa post-impresión vs
     const userId = res.body.userId as string;
     // DoctorVerifiedGuard (M1-RN-002) ahora protege lab-orders.create.
     await prisma.doctor.update({ where: { userId }, data: { verificationStatus: "VERIFIED" } });
+    await givePrimaryPracticeLocation(prisma, userId);
     const accessToken = tokenService.signAccessToken({ sub: userId, primaryRole: "DOCTOR" });
     return { userId, email, accessToken };
   }
@@ -296,7 +298,7 @@ describe("Orden de laboratorio — rutas de firma (autógrafa post-impresión vs
   describe("Ruta ELECTRONIC — comportamiento existente", () => {
     it("sigue exigiendo password+TOTP reales, y ahora también genera un PDF", async () => {
       const doctor = await registerDoctor();
-      const otpauthUri = await enrollMfa(doctor.accessToken);
+      await enrollMfa(doctor.accessToken);
       const patientId = await createPatient(doctor.accessToken);
       const encounterId = await createEncounter(doctor.accessToken, patientId);
 
@@ -308,7 +310,6 @@ describe("Orden de laboratorio — rutas de firma (autógrafa post-impresión vs
           clinicalIndication: "Dx",
           items: [labOrderItem()],
           password: "contraseña-incorrecta-Segura123!",
-          totpCode: totpFromUri(otpauthUri),
         });
       expect(wrongPassword.status).toBe(428);
 
@@ -320,7 +321,6 @@ describe("Orden de laboratorio — rutas de firma (autógrafa post-impresión vs
           clinicalIndication: "Dx",
           items: [labOrderItem()],
           password: STRONG_PASSWORD,
-          totpCode: totpFromUri(otpauthUri),
         });
       expect(res.status).toBe(201);
       expect(res.body.signatureMethod).toBe("INTERNAL_SYSTEM");

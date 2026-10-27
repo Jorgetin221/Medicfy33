@@ -151,6 +151,8 @@ model User {
   // backoff (15min * 2^lockoutCount), and resets on a successful login.
   failedLoginAttempts    Int        @default(0)
   lockedUntil            DateTime?  @db.Timestamptz(3)
+  // M-01: último paso TOTP aceptado (anti-repetición).
+  mfaLastTotpStep        Int?
   lockoutCount           Int        @default(0)
   lastLoginAt            DateTime?  @db.Timestamptz(3)
   lastLoginIp            String?
@@ -218,6 +220,8 @@ model Consent {
 
   user User @relation(fields: [userId], references: [id])
 
+  // M-17: llave foránea de lectura frecuente, sin índice propio.
+  @@index([userId])
   @@map("consents")
 }
 
@@ -230,6 +234,9 @@ model Session {
   id                String    @id @default(uuid())
   userId            String
   refreshTokenHash  String    @unique
+  // M-04: hash previo a la última rotación, para detectar reúso.
+  previousRefreshTokenHash String?
+  rotatedAt                DateTime? @db.Timestamptz(3)
   deviceFingerprint String?
   ip                String?
   userAgent         String?
@@ -240,6 +247,9 @@ model Session {
 
   user User @relation(fields: [userId], references: [id])
 
+  // M-17: llave foránea de lectura frecuente, sin índice propio.
+  @@index([userId])
+  @@index([previousRefreshTokenHash])
   @@map("sessions")
 }
 
@@ -412,6 +422,8 @@ model PracticeLocation {
   availabilityRules AvailabilityRule[]
   appointments      Appointment[]
 
+  // M-17: llave foránea de lectura frecuente, sin índice propio.
+  @@index([doctorId])
   @@map("practice_locations")
 }
 
@@ -453,6 +465,8 @@ model DoctorService {
   location     PracticeLocation? @relation(fields: [locationId], references: [id])
   appointments Appointment[]
 
+  // M-17: llave foránea de lectura frecuente, sin índice propio.
+  @@index([doctorId])
   @@map("doctor_services")
 }
 
@@ -575,6 +589,8 @@ model AvailabilityRule {
   doctor   Doctor            @relation(fields: [doctorId], references: [id])
   location PracticeLocation? @relation(fields: [locationId], references: [id])
 
+  // M-17: llave foránea de lectura frecuente, sin índice propio.
+  @@index([doctorId])
   @@map("availability_rules")
 }
 
@@ -592,6 +608,8 @@ model AvailabilityException {
 
   doctor Doctor @relation(fields: [doctorId], references: [id])
 
+  // M-17: llave foránea de lectura frecuente, sin índice propio.
+  @@index([doctorId])
   @@map("availability_exceptions")
 }
 
@@ -707,6 +725,8 @@ model PatientGuardian {
 
   patient Patient @relation(fields: [patientId], references: [id])
 
+  // M-17: llave foránea de lectura frecuente, sin índice propio.
+  @@index([patientId])
   @@map("patient_guardians")
 }
 
@@ -744,6 +764,8 @@ model CareRelationship {
   patient Patient @relation(fields: [patientId], references: [id])
   doctor  Doctor  @relation(fields: [doctorId], references: [id])
 
+  // M-17: llave foránea de lectura frecuente, sin índice propio.
+  @@index([patientId, doctorId])
   @@map("care_relationships")
 }
 
@@ -826,6 +848,12 @@ model Appointment {
   statusHistory   AppointmentStatusHistory[]
   encounter       ClinicalEncounter?
 
+  // A-14: Idempotency-Key del cliente; un reintento devuelve esta fila.
+  idempotencyKey String?
+
+  @@unique([doctorId, idempotencyKey])
+  // M-17: llave foránea de lectura frecuente, sin índice propio.
+  @@index([patientId])
   @@map("appointments")
 }
 
@@ -846,6 +874,8 @@ model AppointmentStatusHistory {
 
   appointment Appointment @relation(fields: [appointmentId], references: [id])
 
+  // M-17: llave foránea de lectura frecuente, sin índice propio.
+  @@index([appointmentId])
   @@map("appointment_status_history")
 }
 
@@ -875,10 +905,14 @@ model VerificationCode {
   codeHash   String
   expiresAt  DateTime            @db.Timestamptz(3)
   consumedAt DateTime?           @db.Timestamptz(3)
+  // M-02: intentos fallidos contra este código.
+  attempts   Int       @default(0)
   createdAt  DateTime            @default(now()) @db.Timestamptz(3)
 
   user User @relation(fields: [userId], references: [id])
 
+  // M-17: llave foránea de lectura frecuente, sin índice propio.
+  @@index([userId])
   @@map("verification_codes")
 }
 
@@ -1075,6 +1109,9 @@ model ClinicalEncounter {
   contentHashSha256  String?
   previousHashSha256 String?
   abandonedAt        DateTime?        @db.Timestamptz(3)
+  // M-13: control optimista del autoguardado (se incrementa en cada
+  // PATCH del borrador).
+  draftVersion       Int              @default(0)
   createdAt          DateTime         @default(now()) @db.Timestamptz(3)
   updatedAt          DateTime         @updatedAt @db.Timestamptz(3)
 
@@ -1091,6 +1128,9 @@ model ClinicalEncounter {
   assistantReadings AssistantReading[]
   redFlagEvents RedFlagEvent[]
 
+  // M-17: llave foránea de lectura frecuente, sin índice propio.
+  @@index([patientId, startedAt])
+  @@index([doctorId])
   @@map("clinical_encounters")
 }
 
@@ -1131,6 +1171,12 @@ model ClinicalNote {
   plan                 String
   prognosis            String?
   isCorrectionOfNoteId String?
+  // A-10: quién escribió la nota (original o adenda) y, solo en una
+  // adenda, su propio sello SHA-256 encadenado al sello de la nota
+  // original (el de la original vive en ClinicalEncounter). NULL en
+  // filas previas a 2026-10-22.
+  authorUserId         String?
+  contentHashSha256    String?
   createdAt            DateTime @default(now()) @db.Timestamptz(3)
 
   encounter          ClinicalEncounter    @relation(fields: [encounterId], references: [id])
@@ -1340,11 +1386,17 @@ model EncounterDiagnosis {
   certainty          DiagnosisCertainty
   discardedAt        DateTime?          @db.Timestamptz(3)
   discardedByUserId  String?
+  // A-09: posición con la que el médico capturó el diagnóstico — el
+  // orden que entra al hash de la nota. NULL en filas previas a
+  // 2026-10-22.
+  ordinal            Int?
   createdAt          DateTime           @default(now()) @db.Timestamptz(3)
 
   encounter ClinicalEncounter @relation(fields: [encounterId], references: [id])
   icd10Ref  Icd10Code?        @relation(fields: [icd10CodeId], references: [code])
 
+  // M-17: llave foránea de lectura frecuente, sin índice propio.
+  @@index([encounterId])
   @@map("encounter_diagnoses")
 }
 
@@ -1383,6 +1435,8 @@ model ClinicalAttachment {
   patient   Patient            @relation(fields: [patientId], references: [id])
   encounter ClinicalEncounter? @relation(fields: [encounterId], references: [id])
 
+  // M-17: llave foránea de lectura frecuente, sin índice propio.
+  @@index([patientId])
   @@map("clinical_attachments")
 }
 
@@ -1451,6 +1505,8 @@ model PatientAllergy {
   catalogTerm       ClinicalCatalogTerm? @relation("AllergyTerm", fields: [catalogTermId], references: [id])
   medicationCatalog MedicationCatalog?   @relation(fields: [medicationCatalogId], references: [id])
 
+  // M-17: llave foránea de lectura frecuente, sin índice propio.
+  @@index([patientId])
   @@map("patient_allergies")
 }
 
@@ -1484,6 +1540,8 @@ model PatientMedication {
 
   patient Patient @relation(fields: [patientId], references: [id])
 
+  // M-17: llave foránea de lectura frecuente, sin índice propio.
+  @@index([patientId])
   @@map("patient_medications")
 }
 
@@ -2134,6 +2192,13 @@ model Prescription {
   cancellation           PrescriptionCancellation?
   handwrittenDelivery    PrescriptionHandwrittenDelivery?
 
+  // A-14: Idempotency-Key del cliente; un reintento devuelve esta fila.
+  idempotencyKey String?
+
+  @@unique([doctorId, idempotencyKey])
+  // M-17: llave foránea de lectura frecuente, sin índice propio.
+  @@index([patientId])
+  @@index([encounterId])
   @@map("prescriptions")
 }
 
@@ -2199,6 +2264,8 @@ model PrescriptionItem {
   prescription      Prescription       @relation(fields: [prescriptionId], references: [id])
   medicationCatalog MedicationCatalog? @relation(fields: [medicationCatalogId], references: [id])
 
+  // M-17: llave foránea de lectura frecuente, sin índice propio.
+  @@index([prescriptionId])
   @@map("prescription_items")
 }
 
@@ -2262,6 +2329,13 @@ model LabOrder {
   resultAnalytes LabResultAnalyte[]
   cancellation   LabOrderCancellation?
 
+  // A-14: Idempotency-Key del cliente; un reintento devuelve esta fila.
+  idempotencyKey String?
+
+  @@unique([doctorId, idempotencyKey])
+  // M-17: llave foránea de lectura frecuente, sin índice propio.
+  @@index([patientId])
+  @@index([encounterId])
   @@map("lab_orders")
 }
 
@@ -2321,6 +2395,8 @@ model LabOrderItem {
   studyTerm  ClinicalCatalogTerm? @relation("LabStudyTerm", fields: [studyTermId], references: [id])
   motiveTerm ClinicalCatalogTerm? @relation("LabMotiveTerm", fields: [motiveTermId], references: [id])
 
+  // M-17: llave foránea de lectura frecuente, sin índice propio.
+  @@index([labOrderId])
   @@map("lab_order_items")
 }
 
@@ -2354,6 +2430,9 @@ model LabResult {
   labOrder LabOrder? @relation(fields: [labOrderId], references: [id])
   patient  Patient   @relation(fields: [patientId], references: [id])
 
+  // M-17: llave foránea de lectura frecuente, sin índice propio.
+  @@index([patientId])
+  @@index([labOrderId])
   @@map("lab_results")
 }
 

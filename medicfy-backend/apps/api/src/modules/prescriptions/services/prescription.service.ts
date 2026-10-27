@@ -1,7 +1,9 @@
 import { HttpStatus, Inject, Injectable } from "@nestjs/common";
+import type { Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import type { ExternalPhysicalPrescriptionCreateInput, PrescriptionCreateInput } from "@medicfy/contracts";
 import { ApiException } from "../../../common/api-exception";
+import { isIdempotencyKeyConflict } from "../../../common/idempotency";
 import { AuditService } from "../../identity/services/audit.service";
 import { PrismaService } from "../../../prisma/prisma.service";
 import { sha256Hex } from "../../../common/content-hash.util";
@@ -48,10 +50,22 @@ export class PrescriptionService {
   // ELECTRONIC — el discriminated union de PrescriptionCreateInput ya
   // garantiza que password ni siquiera existe en el input cuando la
   // ruta es HANDWRITTEN_AFTER_PRINT.
-  async create(encounterId: string, doctorId: string, doctorUserId: string, patientId: string, input: PrescriptionCreateInput) {
+  async create(
+    encounterId: string,
+    doctorId: string,
+    doctorUserId: string,
+    patientId: string,
+    input: PrescriptionCreateInput,
+    idempotencyKey?: string
+  ) {
     if (input.signatureRoute === "ELECTRONIC") {
       await this.signatureVerification.verify(doctorUserId, input.password);
     }
+
+    // A-14: un reintento con la misma llave devuelve la receta ya
+    // emitida — nunca un segundo folio imborrable.
+    const replay = await this.findByIdempotencyKey(doctorId, idempotencyKey, patientId);
+    if (replay) return this.replayResult(replay);
 
     // Fase 4b: la receta se compone y EMITE (folio, snapshot legal,
     // PDF) contra un encuentro DRAFT o SIGNED — ya no exige firma
@@ -114,7 +128,8 @@ export class PrescriptionService {
         resourceType: "PRESCRIPTION_ATTEMPT",
         patientId,
         result: "DENIED",
-        metadata: { medications: allergyCheck.matches.map((m) => m.genericName) },
+        // B-11 / R2: identificadores de catálogo, no nombres de medicamento.
+        metadata: { medicationCatalogIds: allergyCheck.matches.map((m) => m.medicationCatalogId), basis: allergyCheck.matches.map((m) => m.basis) },
       });
     }
     if (allergyCheck.matches.length > 0 && !input.allergyOverrideJustification) {
@@ -152,7 +167,8 @@ export class PrescriptionService {
         patientId,
         result: "SUCCESS",
         justification: input.allergyOverrideJustification,
-        metadata: { medications: allergyCheck.matches.map((m) => m.genericName) },
+        // B-11 / R2: identificadores de catálogo, no nombres de medicamento.
+        metadata: { medicationCatalogIds: allergyCheck.matches.map((m) => m.medicationCatalogId), basis: allergyCheck.matches.map((m) => m.basis) },
       });
     }
 
@@ -201,9 +217,11 @@ export class PrescriptionService {
       }
     }
 
+    // El snapshot legal (que puede rechazar la emisión) va antes del
+    // folio: un rechazo no debe dejar un hueco en la numeración.
+    const snapshot = buildLegalSnapshot(doctor, patient);
     const folio = await nextPrescriptionFolio(this.prisma);
     const signatureTimestamp = new Date();
-    const snapshot = buildLegalSnapshot(doctor, patient);
 
     // Prompt 36: si una línea declara procedencia heredada, la receta
     // de origen debe existir, ser de ESTE paciente y este médico — y
@@ -276,57 +294,75 @@ export class PrescriptionService {
     const pdfFileKey = `prescriptions/${folio}/receta.pdf`;
     await this.fileStorage.store({ fileKey: pdfFileKey, buffer: pdfBuffer, contentType: "application/pdf" });
 
-    const prescription = await this.prisma.prescription.create({
-      data: {
-        encounterId,
-        patientId,
-        doctorId,
-        folio,
-        ...snapshot,
-        diagnosisSnapshot: input.diagnosisSnapshot,
-        signatureRoute: input.signatureRoute,
-        contentHashSha256,
-        qrVerificationToken,
-        pdfFileKey,
-        ...omitUndefined({
-          generalInstructions: input.generalInstructions,
-          allergyOverrideJustification: input.allergyOverrideJustification,
-          signatureMethod: input.signatureRoute === "ELECTRONIC" ? ("INTERNAL_SYSTEM" as const) : undefined,
-          signatureTimestamp: input.signatureRoute === "ELECTRONIC" ? signatureTimestamp : undefined,
-        }),
-        items: { create: items },
-      },
-      include: { items: true },
-    });
-
-    // Prompt 32: "la medicación vigente del paciente se actualiza
-    // automáticamente con cada receta emitida" — es lo que la barra de
-    // contexto (Zona 1) muestra. Anclada al catálogo (P4 #11).
-    for (const item of items) {
-      const existing = await this.prisma.patientMedication.findFirst({
-        where: { patientId, genericName: item.genericName, status: "ACTIVE" },
-      });
-      const doseText = item.doseUnit ? `${item.dose} ${item.doseUnit}` : item.dose;
-      if (existing) {
-        await this.prisma.patientMedication.update({
-          where: { id: existing.id },
-          data: { dose: doseText, route: item.route, frequency: item.frequency, prescriber: "Receta Medicfy", source: "MEDICO" },
-        });
-      } else {
-        await this.prisma.patientMedication.create({
+    // M-10: receta y medicación vigente en UNA transacción — si algo
+    // falla a medias, ni la receta queda emitida sin reflejarse en la
+    // medicación del paciente, ni al revés. Si el INSERT no ocurre, el
+    // PDF ya guardado se borra (compensación).
+    let prescription;
+    try {
+      prescription = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.prescription.create({
           data: {
+            encounterId,
             patientId,
-            genericName: item.genericName,
-            dose: doseText,
-            route: item.route,
-            frequency: item.frequency,
-            status: "ACTIVE",
-            source: "MEDICO",
-            prescriber: "Receta Medicfy",
-            startedAt: signatureTimestamp,
+            doctorId,
+            folio,
+            ...snapshot,
+            diagnosisSnapshot: input.diagnosisSnapshot,
+            signatureRoute: input.signatureRoute,
+            contentHashSha256,
+            qrVerificationToken,
+            pdfFileKey,
+            ...omitUndefined({
+              generalInstructions: input.generalInstructions,
+              allergyOverrideJustification: input.allergyOverrideJustification,
+              signatureMethod: input.signatureRoute === "ELECTRONIC" ? ("INTERNAL_SYSTEM" as const) : undefined,
+              signatureTimestamp: input.signatureRoute === "ELECTRONIC" ? signatureTimestamp : undefined,
+            }),
+            idempotencyKey: idempotencyKey ?? null,
+            items: { create: items },
           },
+          include: { items: true },
         });
+
+        // Prompt 32: "la medicación vigente del paciente se actualiza
+        // automáticamente con cada receta emitida" — es lo que la barra de
+        // contexto (Zona 1) muestra. Anclada al catálogo (P4 #11).
+        for (const item of items) {
+          const existing = await tx.patientMedication.findFirst({
+            where: { patientId, genericName: item.genericName, status: "ACTIVE" },
+          });
+          const doseText = item.doseUnit ? `${item.dose} ${item.doseUnit}` : item.dose;
+          if (existing) {
+            await tx.patientMedication.update({
+              where: { id: existing.id },
+              data: { dose: doseText, route: item.route, frequency: item.frequency, prescriber: "Receta Medicfy", source: "MEDICO" },
+            });
+          } else {
+            await tx.patientMedication.create({
+              data: {
+                patientId,
+                genericName: item.genericName,
+                dose: doseText,
+                route: item.route,
+                frequency: item.frequency,
+                status: "ACTIVE",
+                source: "MEDICO",
+                prescriber: "Receta Medicfy",
+                startedAt: signatureTimestamp,
+              },
+            });
+          }
+        }
+        return created;
+      });
+    } catch (error) {
+      await this.fileStorage.remove(pdfFileKey).catch(() => undefined);
+      if (isIdempotencyKeyConflict(error)) {
+        const existing = await this.findByIdempotencyKey(doctorId, idempotencyKey, patientId);
+        if (existing) return this.replayResult(existing);
       }
+      throw error;
     }
 
     // Prompt 38A: bitácora de emisión por documento — quién, cuándo,
@@ -380,6 +416,29 @@ export class PrescriptionService {
         // contra catálogo (Fase 4, R3).
         unverifiableAllergies: allergyCheck.unverifiable,
       },
+    };
+  }
+
+  private async findByIdempotencyKey(doctorId: string, idempotencyKey: string | undefined, patientId: string) {
+    if (!idempotencyKey) return null;
+    const existing = await this.prisma.prescription.findUnique({
+      where: { doctorId_idempotencyKey: { doctorId, idempotencyKey } },
+      include: { items: true },
+    });
+    if (existing && existing.patientId !== patientId) {
+      throw new ApiException("IDEMPOTENCY_KEY_REUSED", "Esta Idempotency-Key ya se usó para otra solicitud.", HttpStatus.CONFLICT);
+    }
+    return existing;
+  }
+
+  // Misma forma que la respuesta original; las advertencias ya se
+  // mostraron (y quedaron en bitácora) la primera vez.
+  private replayResult(prescription: Prisma.PrescriptionGetPayload<{ include: { items: true } }>) {
+    return {
+      interactionWarnings: [],
+      prescription,
+      warnings: { therapeuticDuplicates: [], therapeuticClassDuplicates: [], unverifiableAllergies: [] },
+      replayed: true,
     };
   }
 
@@ -438,8 +497,8 @@ export class PrescriptionService {
     if (!doctor || !patient) {
       throw new ApiException("PRESCRIPTION_MISSING_LEGAL_FIELD", "No se pudo resolver médico o paciente para el registro.", HttpStatus.UNPROCESSABLE_ENTITY);
     }
-    const folio = await nextPrescriptionFolio(this.prisma);
     const snapshot = buildLegalSnapshot(doctor, patient);
+    const folio = await nextPrescriptionFolio(this.prisma);
 
     return this.prisma.prescription.create({
       data: {
@@ -511,7 +570,7 @@ export class PrescriptionService {
     doctorUserId: string,
     prescribed: { id: string; genericName: string }[],
     overrideConfirmed: boolean
-  ): Promise<{ severity: string; medications: [string, string]; description: string; source: string }[]> {
+  ): Promise<{ severity: string; medications: [string, string]; description: string; source: string; pendingMedicalReview: boolean }[]> {
     // Universo: lo prescrito + la medicación vigente anclable al catálogo.
     const activeMeds = await this.prisma.patientMedication.findMany({ where: { patientId, status: "ACTIVE" } });
     const activeCatalog = await this.prisma.medicationCatalog.findMany({
@@ -535,6 +594,8 @@ export class PrescriptionService {
       medications: [universe.get(i.medicationAId) ?? "?", universe.get(i.medicationBId) ?? "?"] as [string, string],
       description: i.description,
       source: i.source,
+      // A-15: el médico ve si la interacción ya tiene revisión médica.
+      pendingMedicalReview: i.pendingMedicalReview,
     });
     const grave = relevant.filter((i) => i.severity === "GRAVE");
     const moderada = relevant.filter((i) => i.severity === "MODERADA");
@@ -546,7 +607,8 @@ export class PrescriptionService {
         resourceType: "PRESCRIPTION_ATTEMPT",
         patientId,
         result: i.severity === "GRAVE" && !overrideConfirmed ? "DENIED" : "SUCCESS",
-        metadata: describe(i),
+        // B-11 / R2: identificadores, no nombres ni descripción clínica.
+        metadata: { interactionId: i.id, severity: i.severity, medicationCatalogIds: [i.medicationAId, i.medicationBId] },
       });
     }
     if (grave.length > 0 && !overrideConfirmed) {
@@ -564,7 +626,7 @@ export class PrescriptionService {
         resourceType: "PRESCRIPTION_ATTEMPT",
         patientId,
         result: "SUCCESS",
-        metadata: { interactions: grave.map(describe) },
+        metadata: { interactionIds: grave.map((i) => i.id) },
       });
     }
     return [...grave, ...moderada].map(describe);

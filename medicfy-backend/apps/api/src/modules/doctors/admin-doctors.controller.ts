@@ -2,13 +2,17 @@ import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query, Req, U
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from "@nestjs/swagger";
 import type { Request } from "express";
 import { rejectDoctorSchema, verifyDoctorSchema, type RejectDoctorInput, type VerifyDoctorInput } from "@medicfy/contracts";
-import type { DoctorVerificationStatus } from "@prisma/client";
+import { DoctorVerificationStatus } from "@prisma/client";
+import { z } from "zod";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { JwtAuthGuard } from "../identity/guards/jwt-auth.guard";
 import { AdminGuard } from "../identity/guards/admin.guard";
 import type { AuthenticatedRequest } from "../identity/guards/jwt-auth.guard";
 import { getRequestMeta } from "../identity/request-meta";
 import { DoctorVerificationService } from "./services/doctor-verification.service";
+
+// B-04: el filtro llegaba como string y se casteaba al enum sin validar.
+const verificationStatusQueryPipe = new ZodValidationPipe(z.nativeEnum(DoctorVerificationStatus).optional());
 
 // Minimal admin surface built ahead of M13 — see
 // DoctorVerificationService for why M2-CA-003/004 need it now.
@@ -22,7 +26,7 @@ export class AdminDoctorsController {
   @Get()
   @ApiQuery({ name: "verification_status", required: false })
   @ApiOperation({ summary: "M2-CA-003: cola de verificación, opcionalmente filtrada por estado" })
-  async list(@Query("verification_status") status?: DoctorVerificationStatus) {
+  async list(@Query("verification_status", verificationStatusQueryPipe) status?: DoctorVerificationStatus) {
     return this.verificationService.listQueue(status);
   }
 

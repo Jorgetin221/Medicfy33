@@ -72,10 +72,11 @@ export function DocumentosTab({ patientId, accessToken }: { patientId: string; a
     setError(null);
     setIsUploading(true);
     try {
-      const params = new URLSearchParams({ category });
-      if (studyDate) params.set("studyDate", studyDate);
-      if (description.trim()) params.set("description", description.trim());
-      await apiUpload(`/records/patients/${patientId}/documents?${params.toString()}`, file, { accessToken });
+      // M-23: metadatos como campos del formulario, no en la URL.
+      const fields: Record<string, string> = { category };
+      if (studyDate) fields.studyDate = studyDate;
+      if (description.trim()) fields.description = description.trim();
+      await apiUpload(`/records/patients/${patientId}/documents`, file, { accessToken, fields });
       setStudyDate("");
       setDescription("");
       loadDocuments();
@@ -202,7 +203,7 @@ export function DocumentosTab({ patientId, accessToken }: { patientId: string; a
                 </p>
               </div>
               <Button type="button" variant="secondary" isLoading={viewingId === doc.id} onClick={() => void viewDocument(doc.id)} className="min-h-11 px-3 text-sm">
-                Ver documento
+                {t("clinico.documentos.verDocumento")}
               </Button>
             </li>
           ))}

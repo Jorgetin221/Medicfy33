@@ -3,6 +3,13 @@ import { buildAuditLogChainHashInput, sha256Hex } from "../../../common/content-
 import { AuditService } from "./audit.service";
 import { Prisma } from "@prisma/client";
 
+// Acceso por índice que falla con un mensaje claro en vez de usar `!`.
+function at<T>(items: readonly T[], index: number): T {
+  const item = items[index];
+  if (item === undefined) throw new Error(`Se esperaba un elemento en la posición ${index}.`);
+  return item;
+}
+
 // M15-RN-002: estas pruebas cubren el encadenamiento de hashes, no la
 // persistencia real (no hay Postgres en este entorno) — se mockea
 // PrismaService reproduciendo el contrato exacto que AuditService.log()
@@ -56,7 +63,7 @@ describe("AuditService.log — encadenamiento de hashes (M15-RN-002)", () => {
     await service.log({ action: "test.action", resourceType: "test_resource", result: "SUCCESS" });
 
     expect(mock.createdRows).toHaveLength(1);
-    const row = mock.createdRows[0]!;
+    const row = at(mock.createdRows, 0);
     expect(row.sequence).toBe(1n);
     expect(row.previousHashSha256).toBeNull();
     expect(typeof row.hashSha256).toBe("string");
@@ -65,10 +72,10 @@ describe("AuditService.log — encadenamiento de hashes (M15-RN-002)", () => {
 
   it("la segunda fila encadena con el hashSha256 de la primera y avanza la secuencia", async () => {
     await service.log({ action: "first", resourceType: "r", result: "SUCCESS" });
-    const firstHash = mock.createdRows[0]!.hashSha256 as string;
+    const firstHash = at(mock.createdRows, 0).hashSha256 as string;
 
     await service.log({ action: "second", resourceType: "r", result: "SUCCESS" });
-    const second = mock.createdRows[1]!;
+    const second = at(mock.createdRows, 1);
 
     expect(second.sequence).toBe(2n);
     expect(second.previousHashSha256).toBe(firstHash);
@@ -89,7 +96,7 @@ describe("AuditService.log — encadenamiento de hashes (M15-RN-002)", () => {
       metadata: { note: "sin contenido clínico" },
     });
 
-    const row = mock.createdRows[0]!;
+    const row = at(mock.createdRows, 0);
     const recomputed = sha256Hex(
       buildAuditLogChainHashInput({
         id: row.id as string,
@@ -121,15 +128,15 @@ describe("AuditService.log — encadenamiento de hashes (M15-RN-002)", () => {
     // viaja al create es el centinela JsonNull, no un `null` crudo.
     // Equivalen en la base: ambos escriben json 'null' (no SQL NULL),
     // que es lo que las filas encadenadas ya contenían antes del cambio.
-    expect(mock.createdRows[0]!.metadata).toBe(Prisma.JsonNull);
+    expect(at(mock.createdRows, 0).metadata).toBe(Prisma.JsonNull);
     // Lo que esta prueba cuida de verdad: nunca `undefined`, porque
     // Prisma lo interpretaría como "no toques esta columna".
-    expect(mock.createdRows[0]!.metadata).not.toBeUndefined();
+    expect(at(mock.createdRows, 0).metadata).not.toBeUndefined();
   });
 
   it("bloquea la fila puntero con FOR UPDATE antes de calcular el hash (no lee sin bloquear)", async () => {
     await service.log({ action: "a", resourceType: "r", result: "SUCCESS" });
-    const strings = mock.tx.$queryRaw.mock.calls[0]![0] as unknown as string[];
+    const strings = at(mock.tx.$queryRaw.mock.calls, 0)[0] as unknown as string[];
     const sql = strings.join(" ");
     expect(sql.toUpperCase()).toContain("FOR UPDATE");
   });

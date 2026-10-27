@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { tokenPrimaryRole } from "@/lib/jwt-claims";
-import { Button } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { useT } from "@/lib/i18n/context";
 import { LanguageSwitcher } from "@/components/ui/language-switcher";
 
@@ -47,17 +47,9 @@ export function SiteHeader() {
           {isLoading ? null : accessToken ? (
             <>
               {role === "PATIENT" ? (
-                <Link href="/mi-cuenta">
-                  <Button variant="secondary" className="px-3 sm:px-4">
-                    {t("nav.publico.miCuenta")}
-                  </Button>
-                </Link>
+                <ButtonLink href="/mi-cuenta" variant="secondary" className="px-3 sm:px-4">{t("nav.publico.miCuenta")}</ButtonLink>
               ) : (
-                <Link href="/agenda">
-                  <Button variant="secondary" className="px-3 sm:px-4">
-                    {t("nav.publico.miAgenda")}
-                  </Button>
-                </Link>
+                <ButtonLink href="/agenda" variant="secondary" className="px-3 sm:px-4">{t("nav.publico.miAgenda")}</ButtonLink>
               )}
               <button type="button" onClick={() => void handleLogout()} className="text-sm font-medium text-gray-500 underline">
                 {t("nav.publico.salir")}

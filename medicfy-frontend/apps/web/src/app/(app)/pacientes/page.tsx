@@ -7,9 +7,10 @@ import { apiFetch, expectArray } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
 import { Card, LoadingState, EmptyState, ErrorState } from "@/components/ui/states";
 import { TextInput } from "@/components/ui/field";
-import { Button } from "@/components/ui/button";
+import { ButtonLink } from "@/components/ui/button";
 import { useT } from "@/lib/i18n/context";
 import { patientAgeYears, patientFullName } from "../consulta/[appointmentId]/types";
+import { sexAtBirthLabel } from "@/lib/sex-label";
 
 interface PatientListItem {
   id: string;
@@ -78,9 +79,7 @@ function PacientesContent({ accessToken }: { accessToken: string }) {
           <h1 className="font-heading text-2xl text-brand-900">{t("pacientes.titulo")}</h1>
           <p className="text-base text-gray-500">{t("pacientes.subtitulo")}</p>
         </div>
-        <Link href="/pacientes/nuevo">
-          <Button type="button">{t("pacientes.nuevoPaciente")}</Button>
-        </Link>
+        <ButtonLink href="/pacientes/nuevo">{t("pacientes.nuevoPaciente")}</ButtonLink>
       </div>
 
       {error ? <ErrorState error={error} onRetry={load} /> : null}
@@ -109,7 +108,7 @@ function PacientesContent({ accessToken }: { accessToken: string }) {
                       <p className="text-base font-medium text-gray-900">{patientFullName(p)}</p>
                       <p className="text-sm text-gray-500">
                         {p.medicfyId} · {t("pacientes.anios", { n: patientAgeYears(p.birthDate) })} ·{" "}
-                        {p.sexAtBirth === "F" ? t("pacientes.mujer") : t("pacientes.hombre")}
+                        {sexAtBirthLabel(t, p.sexAtBirth)}
                       </p>
                     </Card>
                   </Link>

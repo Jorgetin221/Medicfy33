@@ -12,6 +12,13 @@ import { NOTIFICATION_PORT, type NotificationPort } from "../identity/services/n
 import { TokenService } from "../identity/services/token.service";
 import { ContextAssemblerService } from "./services/context-assembler.service";
 
+// Acceso por índice que falla con un mensaje claro en vez de usar `!`.
+function at<T>(items: readonly T[], index: number): T {
+  const item = items[index];
+  if (item === undefined) throw new Error(`Se esperaba un elemento en la posición ${index}.`);
+  return item;
+}
+
 class TestNotificationAdapter implements NotificationPort {
   async sendEmailVerificationCode(): Promise<void> {}
   async sendPhoneVerificationCode(): Promise<void> {}
@@ -162,7 +169,7 @@ describe("ContextAssemblerService — El Segundo Lector (Prompt 50)", () => {
     const signed = await request(app.getHttpServer())
       .post(`/records/encounters/${encounterId}/sign`)
       .set("Authorization", `Bearer ${accessToken}`)
-      .send({ ...note, diagnoses, password: STRONG_PASSWORD, totpCode: totpFromUri(otpauthUri) });
+      .send({ ...note, diagnoses });
     expect(signed.status).toBe(201);
     return encounterId;
   }
@@ -174,12 +181,17 @@ describe("ContextAssemblerService — El Segundo Lector (Prompt 50)", () => {
     const icd10Code = (await prisma.icd10Code.findFirstOrThrow()).code;
 
     // Problemas + Trayectoria: 4 consultas firmadas (solo las últimas
-    // 3 deben llegar a Trayectoria).
+    // 3 deben llegar a Trayectoria). Llevan signos vitales para que el
+    // bloque signosVitalesPrevios tenga qué mostrar.
     const encounterIds: string[] = [];
     for (let i = 0; i < 4; i += 1) {
-      const encounterId = await signEncounter(doctor.accessToken, otpauthUri, patientId, [
-        { icd10Code, description: "Hipertensión arterial", diagnosisType: "PRINCIPAL", certainty: "CONFIRMED" },
-      ]);
+      const encounterId = await signEncounter(
+        doctor.accessToken,
+        otpauthUri,
+        patientId,
+        [{ icd10Code, description: "Hipertensión arterial", diagnosisType: "PRINCIPAL", certainty: "CONFIRMED" }],
+        { ...VALID_NOTE, vitals: { bpSystolic: 130, bpDiastolic: 85 } }
+      );
       encounterIds.push(encounterId);
     }
     const lastSignedEncounterId = encounterIds[encounterIds.length - 1];
@@ -236,7 +248,9 @@ describe("ContextAssemblerService — El Segundo Lector (Prompt 50)", () => {
     });
 
     // Antecedentes: un PRESENTE (heredofamiliar, con parentesco) y un
-    // NEGADO — solo el presente debe llegar al contexto.
+    // NEGADO. Desde 2026-10-17 ambos llegan al contexto con su estado
+    // (un negado pertinente también es información clínica); un
+    // antecedente sin estado capturado no llega.
     await prisma.patientHistoryItem.create({
       data: {
         patientId,
@@ -333,7 +347,7 @@ describe("ContextAssemblerService — El Segundo Lector (Prompt 50)", () => {
     expect(context.medicacion).toHaveLength(1);
     expect(context.medicacion[0]).toEqual({ nombreGenerico: "Losartán", dosis: "50 mg", via: "Oral", frecuencia: "Cada 24 horas" });
 
-    expect(context.antecedentes).toHaveLength(1);
+    expect(context.antecedentes).toHaveLength(2);
     expect(context.antecedentes[0]).toEqual({
       categoria: "HEREDOFAMILIAR",
       subtipo: "diabetes_mellitus",
@@ -341,16 +355,23 @@ describe("ContextAssemblerService — El Segundo Lector (Prompt 50)", () => {
       parentesco: "MADRE",
       comentario: "Diagnosticada a los 50 años.",
     });
+    expect(context.antecedentes[1]).toEqual({
+      categoria: "PERSONAL_PATOLOGICO",
+      subtipo: "tuberculosis",
+      estado: "NEGADO",
+      parentesco: null,
+      comentario: null,
+    });
 
     expect(context.laboratorio).toHaveLength(1);
-    expect(context.laboratorio[0]!.analito).toBe("Glucosa");
-    expect(context.laboratorio[0]!.valor).toBe("98");
+    expect(at(context.laboratorio, 0).analito).toBe("Glucosa");
+    expect(at(context.laboratorio, 0).valor).toBe("98");
     // v2.5 · Capa 4: el estado ya viene decidido por el servidor
     // (Capa 2), nunca lo redecide el modelo — 98 está dentro de 70-100.
-    expect(context.laboratorio[0]!.estado).toBe("normal");
+    expect(at(context.laboratorio, 0).estado).toBe("normal");
 
     expect(context.trayectoria).toHaveLength(3);
-    expect(context.trayectoria[0]!.motivoConsulta).toBe(VALID_NOTE.chiefComplaint);
+    expect(at(context.trayectoria, 0).motivoConsulta).toBe(VALID_NOTE.chiefComplaint);
     expect(context.trayectoria.map((t) => t.valoracion)).toEqual(["Evolución estable.", "Evolución estable.", "Evolución estable."]);
 
     expect(context.actual).toEqual({ motivoConsulta: "Cefalea de 3 días de evolución", valoracion: "Probable cefalea tensional." });

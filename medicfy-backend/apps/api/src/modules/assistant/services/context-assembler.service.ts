@@ -254,7 +254,14 @@ export class ContextAssemblerService {
               : null;
           // Capa 2 (M10-RN-008), NUNCA el modelo — el bloque de
           // contexto solo lleva el estado ya decidido por el servidor.
-          const evaluation = await this.labReferenceRanges.evaluateForAnalyte(analyte.analyteName, Number(analyte.value), sex, ageYears, printedRange);
+          const evaluation = await this.labReferenceRanges.evaluateForAnalyte(
+            analyte.analyteName,
+            Number(analyte.value),
+            sex,
+            ageYears,
+            printedRange,
+            analyte.unit
+          );
           return {
             analito: analyte.analyteName,
             valor: analyte.value.toString(),

@@ -11,6 +11,7 @@ import { DocumentViewer } from "@/components/clinical/document-tile";
 import { useI18n } from "@/lib/i18n/context";
 import { formatDateLong } from "@/lib/i18n/format";
 import type { MessageKey } from "@/lib/i18n/dictionaries";
+import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 
 const STATUS_LABEL_KEY: Record<TimelinePrescription["status"], MessageKey> = {
   ISSUED: "pacientes.recetas.vigente",
@@ -38,6 +39,7 @@ export function TabRecetas({
   onChanged: () => void;
 }) {
   const { t, locale } = useI18n();
+  const { confirm, askReason, dialog } = useConfirmDialog();
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [viewing, setViewing] = useState<{ id: string; title: string; path: string; downloadName: string } | null>(null);
@@ -47,7 +49,7 @@ export function TabRecetas({
   const [isOpeningRx, setIsOpeningRx] = useState(false);
 
   async function cancelPrescription(id: string) {
-    const reason = window.prompt(t("pacientes.recetas.motivoCancelacion"));
+    const reason = await askReason({ title: t("pacientes.recetas.cancelarTitulo"), label: t("pacientes.recetas.motivoCancelacion"), destructive: true });
     if (!reason) return;
     setError(null);
     setCancellingId(id);
@@ -66,7 +68,7 @@ export function TabRecetas({
   // automática. Vive aquí (no en el panel de emisión) porque el
   // médico puede cerrar ese panel antes de firmar físicamente.
   async function confirmHandwrittenDelivery(id: string) {
-    if (!window.confirm(t("pacientes.recetas.confirmarEntrega"))) return;
+    if (!(await confirm({ title: t("pacientes.recetas.confirmarEntrega") }))) return;
     setError(null);
     setConfirmingId(id);
     try {
@@ -141,70 +143,73 @@ export function TabRecetas({
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      <div>{nuevaRecetaButton}</div>
-      {error ? <ErrorState error={error} /> : null}
-      <ul className="flex flex-col gap-3">
-        {prescriptions.map((p) => (
-          <li key={p.id}>
-            <Card>
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-base font-medium text-gray-900">
-                    {t("pacientes.recetas.folio", { folio: p.folio, fecha: formatDateLong(locale, p.issuedAt) })}
+    <>
+      {dialog}
+      <div className="flex flex-col gap-3">
+        <div>{nuevaRecetaButton}</div>
+        {error ? <ErrorState error={error} /> : null}
+        <ul className="flex flex-col gap-3">
+          {prescriptions.map((p) => (
+            <li key={p.id}>
+              <Card>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-base font-medium text-gray-900">
+                      {t("pacientes.recetas.folio", { folio: p.folio, fecha: formatDateLong(locale, p.issuedAt) })}
+                    </p>
+                    <p className="text-base text-gray-500">{p.diagnosisSnapshot}</p>
+                  </div>
+                  <span className={`whitespace-nowrap rounded-full border px-3 py-1 text-sm font-medium ${STATUS_CLASS[p.status]}`}>
+                    {t(STATUS_LABEL_KEY[p.status])}
+                  </span>
+                </div>
+                <ul className="mt-2 flex flex-col gap-1">
+                  {p.items.map((item, i) => (
+                    <li key={i} className="text-base text-gray-900">
+                      {item.genericName} — {item.dose}, {item.route}, {item.frequency}, {item.duration}
+                    </li>
+                  ))}
+                </ul>
+                {p.qrVerificationToken && (
+                  <p className="mt-2 break-all text-sm text-gray-500">
+                    {t("pacientes.recetas.verificacion")} <span className="font-mono">/verificar/{p.qrVerificationToken}</span>
                   </p>
-                  <p className="text-sm text-gray-500">{p.diagnosisSnapshot}</p>
-                </div>
-                <span className={`whitespace-nowrap rounded-full border px-3 py-1 text-sm font-medium ${STATUS_CLASS[p.status]}`}>
-                  {t(STATUS_LABEL_KEY[p.status])}
-                </span>
-              </div>
-              <ul className="mt-2 flex flex-col gap-1">
-                {p.items.map((item, i) => (
-                  <li key={i} className="text-base text-gray-900">
-                    {item.genericName} — {item.dose}, {item.route}, {item.frequency}, {item.duration}
-                  </li>
-                ))}
-              </ul>
-              {p.qrVerificationToken && (
-                <p className="mt-2 break-all text-sm text-gray-500">
-                  {t("pacientes.recetas.verificacion")} <span className="font-mono">/verificar/{p.qrVerificationToken}</span>
-                </p>
-              )}
-              {p.prescriptionType === "ELECTRONIC" && (
-                <div className="mt-3 flex flex-wrap gap-3">
-                  <Button type="button" variant="secondary" onClick={() => openPrescription(p)} className="min-h-11 px-3 text-sm">
-                    {t("pacientes.recetas.verReceta")}
-                  </Button>
-                  {p.status === "PENDING_HANDWRITTEN_SIGNATURE" && (
-                    <Button
-                      type="button"
-                      isLoading={confirmingId === p.id}
-                      onClick={() => void confirmHandwrittenDelivery(p.id)}
-                      className="min-h-11 px-3 text-sm"
-                    >
-                      {t("pacientes.recetas.marcarFirmada")}
+                )}
+                {p.prescriptionType === "ELECTRONIC" && (
+                  <div className="mt-3 flex flex-wrap gap-3">
+                    <Button type="button" variant="secondary" onClick={() => openPrescription(p)} className="min-h-11 px-3 text-sm">
+                      {t("pacientes.recetas.verReceta")}
                     </Button>
-                  )}
-                  {p.status !== "CANCELLED" && (
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      isLoading={cancellingId === p.id}
-                      onClick={() => void cancelPrescription(p.id)}
-                      className="min-h-11 px-3 text-sm"
-                    >
-                      {t("pacientes.recetas.cancelarReceta")}
-                    </Button>
-                  )}
-                </div>
-              )}
-            </Card>
-          </li>
-        ))}
-      </ul>
-      <DocumentViewer document={viewing} accessToken={accessToken} onClose={() => setViewing(null)} onDownload={registerPrinted} />
-      {prescriptionPanel}
-    </div>
+                    {p.status === "PENDING_HANDWRITTEN_SIGNATURE" && (
+                      <Button
+                        type="button"
+                        isLoading={confirmingId === p.id}
+                        onClick={() => void confirmHandwrittenDelivery(p.id)}
+                        className="min-h-11 px-3 text-sm"
+                      >
+                        {t("pacientes.recetas.marcarFirmada")}
+                      </Button>
+                    )}
+                    {p.status !== "CANCELLED" && (
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        isLoading={cancellingId === p.id}
+                        onClick={() => void cancelPrescription(p.id)}
+                        className="min-h-11 px-3 text-sm"
+                      >
+                        {t("pacientes.recetas.cancelarReceta")}
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </Card>
+            </li>
+          ))}
+        </ul>
+        <DocumentViewer document={viewing} accessToken={accessToken} onClose={() => setViewing(null)} onDownload={registerPrinted} />
+        {prescriptionPanel}
+      </div>
+    </>
   );
 }

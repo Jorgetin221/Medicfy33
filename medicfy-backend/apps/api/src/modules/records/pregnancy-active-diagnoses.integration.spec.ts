@@ -140,7 +140,7 @@ describe("Fase 1 · Zona 1 — embarazo (#18) y diagnósticos vigentes (#19)", (
     const signed = await request(app.getHttpServer())
       .post(`/records/encounters/${encounterId}/sign`)
       .set("Authorization", `Bearer ${accessToken}`)
-      .send({ ...VALID_NOTE, diagnoses, password: STRONG_PASSWORD, totpCode: totpFromUri(otpauthUri) });
+      .send({ ...VALID_NOTE, diagnoses });
     expect(signed.status).toBe(201);
     return encounterId;
   }

@@ -12,6 +12,13 @@ import { TokenService } from "../identity/services/token.service";
 import { ASSISTANT_MODEL_PORT, type AssistantModelCallInput, type AssistantModelOutcome, type AssistantModelPort } from "./services/assistant-model.port";
 import { AssistantPassOrchestratorService } from "./services/assistant-pass-orchestrator.service";
 
+// Acceso por índice que falla con un mensaje claro en vez de usar `!`.
+function at<T>(items: readonly T[], index: number): T {
+  const item = items[index];
+  if (item === undefined) throw new Error(`Se esperaba un elemento en la posición ${index}.`);
+  return item;
+}
+
 class TestNotificationAdapter implements NotificationPort {
   async sendEmailVerificationCode(): Promise<void> {}
   async sendPhoneVerificationCode(): Promise<void> {}
@@ -200,7 +207,7 @@ describe("AssistantController — Prompt 51 (Los cuatro pases)", () => {
     expect(posted.body.kind).toBe("ok");
     expect(posted.body.reading.resumen).toBe("Resumen de prueba.");
     expect(fakePort.calls).toHaveLength(1);
-    expect(fakePort.calls[0]!.pase).toBe("SUBJETIVO");
+    expect(at(fakePort.calls, 0).pase).toBe("SUBJETIVO");
 
     const row = await prisma.assistantReading.findUniqueOrThrow({ where: { id: posted.body.readingId } });
     expect(row.encounterId).toBe(encounterId);

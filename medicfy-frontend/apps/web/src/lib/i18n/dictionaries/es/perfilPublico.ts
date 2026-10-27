@@ -1,5 +1,6 @@
 // Perfil público del médico (/dr/[slug]) y categorías de publicación.
 export const perfilPublico = {
+  compartirPerfil: "Compartir perfil",
   noEncontradoTitulo: "Médico no encontrado",
   noEncontradoCuerpo: "Este enlace no corresponde a ningún perfil publicado en Medicfy.",
   acercaDe: "Acerca de",

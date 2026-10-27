@@ -12,8 +12,13 @@ const emailSchema = z
   .email("Ingresa un correo electrónico válido.")
   .transform(normalizeEmail);
 
+// B-02 (auditoría 2026-10-21): sin tope, una "contraseña" de 100 kB
+// obligaba al servidor a correr argon2 sobre ella en cada intento.
+export const PASSWORD_MAX_LENGTH = 128;
+
 const passwordSchema = z
   .string()
+  .max(PASSWORD_MAX_LENGTH, "La contraseña no puede pasar de 128 caracteres.")
   .refine(isStrongPassword, "Usa al menos 8 caracteres (letras, números o símbolos).");
 
 const mxPhoneSchema = z.string().refine(isValidMxPhoneE164, "Ingresa un teléfono a 10 dígitos.");
@@ -85,7 +90,7 @@ export type RegisterDoctorInput = z.infer<typeof registerDoctorSchema>;
 
 export const loginSchema = z.object({
   email: emailSchema,
-  password: z.string().min(1),
+  password: z.string().min(1).max(PASSWORD_MAX_LENGTH, "La contraseña no puede pasar de 128 caracteres."),
 });
 export type LoginInput = z.infer<typeof loginSchema>;
 
@@ -96,7 +101,12 @@ export type MfaEnrollVerifyInput = z.infer<typeof mfaEnrollVerifySchema>;
 
 export const mfaLoginVerifySchema = z.object({
   mfaSessionToken: z.string().min(1),
-  code: z.string().regex(/^\d{6}$/, "El código debe tener 6 dígitos."),
+  // M-01: también un código de respaldo (10 caracteres hexadecimales);
+  // antes el formato los rechazaba y la recuperación era imposible.
+  code: z
+    .string()
+    .trim()
+    .regex(/^(\d{6}|[0-9a-fA-F]{10})$/, "Escribe el código de 6 dígitos de tu app o un código de respaldo de 10 caracteres."),
 });
 export type MfaLoginVerifyInput = z.infer<typeof mfaLoginVerifySchema>;
 

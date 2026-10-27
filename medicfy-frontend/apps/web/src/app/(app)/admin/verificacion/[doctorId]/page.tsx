@@ -15,6 +15,7 @@ import { useI18n } from "@/lib/i18n/context";
 import { formatDateTimeMedium } from "@/lib/i18n/format";
 import type { MessageKey } from "@/lib/i18n/dictionaries";
 import { translateKeyed } from "@/lib/i18n/keyed";
+import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 
 interface AdminDoctorDocument {
   id: string;
@@ -81,6 +82,7 @@ export default function AdminVerificacionDetailPage() {
 
 function VerificacionDetail({ accessToken, doctorId }: { accessToken: string; doctorId: string }) {
   const { t, locale } = useI18n();
+  const { confirm, dialog } = useConfirmDialog();
   const { specialties } = useSpecialties();
   const [doctor, setDoctor] = useState<AdminDoctorDetail | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -143,7 +145,7 @@ function VerificacionDetail({ accessToken, doctorId }: { accessToken: string; do
   }
 
   async function onSuspend() {
-    if (!window.confirm(t("admin.detalle.confirmarSuspender"))) return;
+    if (!(await confirm({ title: t("admin.detalle.confirmarSuspender"), destructive: true }))) return;
     setActionError(null);
     setResultMessage(null);
     setIsSuspending(true);
@@ -180,113 +182,116 @@ function VerificacionDetail({ accessToken, doctorId }: { accessToken: string; do
   }
 
   return (
-    <main className="mx-auto flex max-w-3xl flex-col gap-6 p-6">
-      <div>
-        <Link href="/admin/verificacion" className="text-sm font-medium text-brand-700 underline">
-          ← Cola de verificación
-        </Link>
-        <h1 className="mt-2 font-heading text-2xl text-brand-900">
-          {doctor.legalFirstName} {doctor.legalLastName}
-        </h1>
-        <p className="text-base text-gray-500">
-          {t("admin.usuarios.cedula", { numero: doctor.professionalLicense })} · {specialty?.nameEs ?? t("catalogos.especialidades.GENERAL")}
-        </p>
-      </div>
-
-      <Card>
-        <h2 className="font-heading text-xl text-brand-900">{t("admin.detalle.estadoActual")}</h2>
-        <p className="mt-2 text-base font-medium text-gray-900">{t(STATUS_LABEL_KEYS[doctor.verificationStatus])}</p>
-        {doctor.verificationStatus === "REJECTED" && doctor.verificationNotes ? (
-          <p className="mt-1 text-sm text-gray-500">{t("admin.detalle.motivoRechazo", { motivo: doctor.verificationNotes })}</p>
-        ) : null}
-      </Card>
-
-      <Card>
-        <h2 className="font-heading text-xl text-brand-900">{t("admin.detalle.documentos")}</h2>
-        {doctor.documents.length === 0 ? (
-          <div className="mt-4">
-            <EmptyState title={t("admin.detalle.sinDocumentos")} />
-          </div>
-        ) : (
-          <ul className="mt-4 flex flex-col gap-2">
-            {doctor.documents.map((doc) => (
-              <li key={doc.id} className="rounded-md border border-gray-300 p-3">
-                <p className="text-base text-gray-900">{translateKeyed(t, DOC_TYPE_LABEL_KEYS, doc.docType)}</p>
-                <p className="mt-1 font-mono text-sm text-gray-500">{t("admin.detalle.hash", { hash: doc.fileHashSha256.slice(0, 16) })}</p>
-                <p className="text-sm text-gray-500">{t("admin.detalle.subido", { fecha: formatDateTimeMedium(locale, doc.uploadedAt) })}</p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
-
-      <Card>
-        <h2 className="font-heading text-xl text-brand-900">{t("admin.detalle.decision")}</h2>
-
-        {actionError ? (
-          <div className="mt-4">
-            <ErrorState error={actionError} />
-          </div>
-        ) : null}
-        {resultMessage && !actionError ? (
-          <div className="mt-4">
-            <Aviso variant="exito" title={resultMessage} />
-          </div>
-        ) : null}
-
-        <div className="mt-4 flex flex-col gap-6">
-          <div>
-            {specialty?.requiresSpecialtyLicense ? (
-              <label className="mb-2 flex items-center gap-2 text-base text-gray-900">
-                <input
-                  type="checkbox"
-                  className="h-5 w-5"
-                  checked={specialtyConfirmed}
-                  onChange={(e) => setSpecialtyConfirmed(e.target.checked)}
-                />
-                {t("admin.detalle.confirmoCedula")}
-              </label>
-            ) : null}
-            <Button type="button" isLoading={isVerifying} onClick={() => void onVerify()}>
-              {t("admin.detalle.aprobar")}
-            </Button>
-            {specialty?.requiresSpecialtyLicense && !specialtyConfirmed ? (
-              <p className="mt-1 text-sm text-gray-500">{t("admin.detalle.quedaraSinConfirmar")}</p>
-            ) : null}
-          </div>
-
-          <div className="border-t border-gray-300 pt-6">
-            <FieldWrapper label={t("admin.detalle.etiquetaMotivoRechazo")} htmlFor="reject-reason">
-              <Textarea id="reject-reason" rows={3} value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} />
-            </FieldWrapper>
-            {/* `danger` (relleno rojo) justificado: revocación administrativa, y
-                está deshabilitado hasta que el admin escribe el motivo — la
-                intención ya está expresada. Ver ui/button.tsx. */}
-            <Button
-              type="button"
-              variant="danger"
-              className="mt-3"
-              isLoading={isRejecting}
-              disabled={!rejectReason.trim()}
-              onClick={() => void onReject()}
-            >
-              {t("admin.detalle.rechazar")}
-            </Button>
-          </div>
-
-          <div className="border-t border-gray-300 pt-6">
-            <p className="mb-3 text-sm text-gray-500">
-              {t("admin.detalle.suspenderAviso")}
-            </p>
-            {/* `danger` (relleno rojo) justificado: suspender cancela citas pagadas y
-                notifica a pacientes — revocación administrativa irreversible, y el
-                párrafo de arriba enumera la consecuencia. Ver ui/button.tsx. */}
-            <Button type="button" variant="danger" isLoading={isSuspending} onClick={() => void onSuspend()}>
-              {t("admin.detalle.suspender")}
-            </Button>
-          </div>
+    <>
+      {dialog}
+      <main className="mx-auto flex max-w-3xl flex-col gap-6 p-6">
+        <div>
+          <Link href="/admin/verificacion" className="text-sm font-medium text-brand-700 underline">
+            ← Cola de verificación
+          </Link>
+          <h1 className="mt-2 font-heading text-2xl text-brand-900">
+            {doctor.legalFirstName} {doctor.legalLastName}
+          </h1>
+          <p className="text-base text-gray-500">
+            {t("admin.usuarios.cedula", { numero: doctor.professionalLicense })} · {specialty?.nameEs ?? t("catalogos.especialidades.GENERAL")}
+          </p>
         </div>
-      </Card>
-    </main>
+
+        <Card>
+          <h2 className="font-heading text-xl text-brand-900">{t("admin.detalle.estadoActual")}</h2>
+          <p className="mt-2 text-base font-medium text-gray-900">{t(STATUS_LABEL_KEYS[doctor.verificationStatus])}</p>
+          {doctor.verificationStatus === "REJECTED" && doctor.verificationNotes ? (
+            <p className="mt-1 text-sm text-gray-500">{t("admin.detalle.motivoRechazo", { motivo: doctor.verificationNotes })}</p>
+          ) : null}
+        </Card>
+
+        <Card>
+          <h2 className="font-heading text-xl text-brand-900">{t("admin.detalle.documentos")}</h2>
+          {doctor.documents.length === 0 ? (
+            <div className="mt-4">
+              <EmptyState title={t("admin.detalle.sinDocumentos")} />
+            </div>
+          ) : (
+            <ul className="mt-4 flex flex-col gap-2">
+              {doctor.documents.map((doc) => (
+                <li key={doc.id} className="rounded-md border border-gray-300 p-3">
+                  <p className="text-base text-gray-900">{translateKeyed(t, DOC_TYPE_LABEL_KEYS, doc.docType)}</p>
+                  <p className="mt-1 font-mono text-sm text-gray-500">{t("admin.detalle.hash", { hash: doc.fileHashSha256.slice(0, 16) })}</p>
+                  <p className="text-sm text-gray-500">{t("admin.detalle.subido", { fecha: formatDateTimeMedium(locale, doc.uploadedAt) })}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+
+        <Card>
+          <h2 className="font-heading text-xl text-brand-900">{t("admin.detalle.decision")}</h2>
+
+          {actionError ? (
+            <div className="mt-4">
+              <ErrorState error={actionError} />
+            </div>
+          ) : null}
+          {resultMessage && !actionError ? (
+            <div className="mt-4">
+              <Aviso variant="exito" title={resultMessage} />
+            </div>
+          ) : null}
+
+          <div className="mt-4 flex flex-col gap-6">
+            <div>
+              {specialty?.requiresSpecialtyLicense ? (
+                <label className="mb-2 flex items-center gap-2 text-base text-gray-900">
+                  <input
+                    type="checkbox"
+                    className="h-5 w-5"
+                    checked={specialtyConfirmed}
+                    onChange={(e) => setSpecialtyConfirmed(e.target.checked)}
+                  />
+                  {t("admin.detalle.confirmoCedula")}
+                </label>
+              ) : null}
+              <Button type="button" isLoading={isVerifying} onClick={() => void onVerify()}>
+                {t("admin.detalle.aprobar")}
+              </Button>
+              {specialty?.requiresSpecialtyLicense && !specialtyConfirmed ? (
+                <p className="mt-1 text-sm text-gray-500">{t("admin.detalle.quedaraSinConfirmar")}</p>
+              ) : null}
+            </div>
+
+            <div className="border-t border-gray-300 pt-6">
+              <FieldWrapper label={t("admin.detalle.etiquetaMotivoRechazo")} htmlFor="reject-reason">
+                <Textarea id="reject-reason" rows={3} value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} />
+              </FieldWrapper>
+              {/* `danger` (relleno rojo) justificado: revocación administrativa, y
+                  está deshabilitado hasta que el admin escribe el motivo — la
+                  intención ya está expresada. Ver ui/button.tsx. */}
+              <Button
+                type="button"
+                variant="danger"
+                className="mt-3"
+                isLoading={isRejecting}
+                disabled={!rejectReason.trim()}
+                onClick={() => void onReject()}
+              >
+                {t("admin.detalle.rechazar")}
+              </Button>
+            </div>
+
+            <div className="border-t border-gray-300 pt-6">
+              <p className="mb-3 text-sm text-gray-500">
+                {t("admin.detalle.suspenderAviso")}
+              </p>
+              {/* `danger` (relleno rojo) justificado: suspender cancela citas pagadas y
+                  notifica a pacientes — revocación administrativa irreversible, y el
+                  párrafo de arriba enumera la consecuencia. Ver ui/button.tsx. */}
+              <Button type="button" variant="danger" isLoading={isSuspending} onClick={() => void onSuspend()}>
+                {t("admin.detalle.suspender")}
+              </Button>
+            </div>
+          </div>
+        </Card>
+      </main>
+    </>
   );
 }

@@ -159,7 +159,7 @@ describe("Resultados de laboratorio — listar y descargar lo ya subido", () => 
     const jpgAccepted = await request(app.getHttpServer())
       .post(`/lab-results/patients/${patientId}`)
       .set("Authorization", `Bearer ${doctor.accessToken}`)
-      .attach("file", Buffer.from("contenido de imagen simulado"), { filename: "foto-resultado.jpg", contentType: "image/jpeg" });
+      .attach("file", Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from("contenido de imagen simulado")]), { filename: "foto-resultado.jpg", contentType: "image/jpeg" });
     expect(jpgAccepted.status).toBe(201);
   });
 
@@ -169,7 +169,7 @@ describe("Resultados de laboratorio — listar y descargar lo ya subido", () => 
     const upload = await request(app.getHttpServer())
       .post(`/lab-results/patients/${ownerPatientId}`)
       .set("Authorization", `Bearer ${ownerDoctor.accessToken}`)
-      .attach("file", Buffer.from("contenido privado"), { filename: "r.pdf", contentType: "application/pdf" });
+      .attach("file", Buffer.from("%PDF-1.4 contenido privado"), { filename: "r.pdf", contentType: "application/pdf" });
     const resultId = upload.body.id as string;
 
     const otherDoctor = await registerDoctor();
@@ -192,7 +192,7 @@ describe("Resultados de laboratorio — listar y descargar lo ya subido", () => 
     const upload = await request(app.getHttpServer())
       .post(`/lab-results/patients/${patientId}`)
       .set("Authorization", `Bearer ${doctor.accessToken}`)
-      .attach("file", Buffer.from("otro resultado"), { filename: "r2.pdf", contentType: "application/pdf" });
+      .attach("file", Buffer.from("%PDF-1.4 otro resultado"), { filename: "r2.pdf", contentType: "application/pdf" });
     const resultId = upload.body.id as string;
 
     const review = await request(app.getHttpServer())
@@ -205,7 +205,7 @@ describe("Resultados de laboratorio — listar y descargar lo ya subido", () => 
     const auditEntry = await prisma.auditLog.findFirst({ where: { action: "lab_results.review", resourceId: resultId } });
     expect(auditEntry).not.toBeNull();
 
-    const fileHash = createHash("sha256").update(Buffer.from("otro resultado")).digest("hex");
+    const fileHash = createHash("sha256").update(Buffer.from("%PDF-1.4 otro resultado")).digest("hex");
     const stored = await prisma.labResult.findUniqueOrThrow({ where: { id: resultId } });
     expect(stored.fileHashSha256).toBe(fileHash);
   });
@@ -221,7 +221,7 @@ describe("Resultados de laboratorio — listar y descargar lo ya subido", () => 
     const upload = await request(app.getHttpServer())
       .post(`/lab-results/patients/${pacienteVictima}`)
       .set("Authorization", `Bearer ${doctorVictima.accessToken}`)
-      .attach("file", Buffer.from("resultado ajeno"), { filename: "ajeno.pdf", contentType: "application/pdf" });
+      .attach("file", Buffer.from("%PDF-1.4 resultado ajeno"), { filename: "ajeno.pdf", contentType: "application/pdf" });
     const resultIdAjeno = upload.body.id as string;
 
     // El atacante tiene vínculo con SU paciente, así que el guard lo

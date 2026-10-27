@@ -1,9 +1,10 @@
-import { Body, Controller, HttpStatus, Param, Post, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Headers, HttpStatus, Param, Post, Req, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
 import type { Request } from "express";
 import { publicAppointmentCreateSchema, type PublicAppointmentCreateInput } from "@medicfy/contracts";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { ApiException } from "../../common/api-exception";
+import { parseIdempotencyKey } from "../../common/idempotency";
 import { JwtAuthGuard } from "../identity/guards/jwt-auth.guard";
 import type { AuthenticatedRequest } from "../identity/guards/jwt-auth.guard";
 import { PatientService } from "./services/patient.service";
@@ -36,9 +37,11 @@ export class PublicBookingController {
   async book(
     @Param("id") doctorId: string,
     @Body(new ZodValidationPipe(publicAppointmentCreateSchema)) body: PublicAppointmentCreateInput,
+    @Headers("idempotency-key") idempotencyKeyHeader: string | undefined,
     @Req() req: Request
   ) {
     const { user } = req as AuthenticatedRequest;
+    const idempotencyKey = parseIdempotencyKey(idempotencyKeyHeader);
     const patient = await this.patientService.findByUserId(user.sub);
     if (!patient) {
       throw new ApiException(
@@ -47,6 +50,6 @@ export class PublicBookingController {
         HttpStatus.FORBIDDEN
       );
     }
-    return this.appointments.createFromPublicBooking(doctorId, patient.id, user.sub, body);
+    return this.appointments.createFromPublicBooking(doctorId, patient.id, user.sub, body, idempotencyKey);
   }
 }

@@ -172,10 +172,29 @@ interface State {
   pregnancy: PatientPregnancy | null;
   activeDiagnoses: ActiveDiagnosis[];
   isLoading: boolean;
+  // C-04: true solo cuando el servidor ya respondió 200 para ESTE
+  // paciente. Mientras sea false, las listas vacías no significan "no
+  // tiene" sino "todavía no sabemos".
+  hasLoaded: boolean;
+  loadedPatientId: string | null;
   error: unknown;
 }
 
-const EMPTY_STATE: State = { patient: null, allergies: [], medications: [], historyItems: [], timeline: null, pregnancy: null, activeDiagnoses: [], isLoading: true, error: null };
+const EMPTY_STATE: State = {
+  patient: null,
+  allergies: [],
+  medications: [],
+  historyItems: [],
+  timeline: null,
+  pregnancy: null,
+  activeDiagnoses: [],
+  isLoading: true,
+  hasLoaded: false,
+  loadedPatientId: null,
+  error: null,
+};
+
+export type ClinicalLoadState = "loading" | "error" | "ready";
 
 // Compartido por /consulta/[appointmentId] (antecedentes visibles sin
 // scroll/clic — CLAUDE.md §6) y /pacientes/[id] (expediente completo)
@@ -188,7 +207,10 @@ export function usePatientClinical(patientId: string | null, accessToken: string
   const load = useCallback(() => {
     if (!patientId || !accessToken) return undefined;
     let cancelled = false;
-    setState((prev) => ({ ...prev, isLoading: true, error: null }));
+    // Otro paciente: nunca mostrar, ni un instante, los datos del anterior.
+    setState((prev) =>
+      prev.loadedPatientId === patientId ? { ...prev, isLoading: true, error: null } : { ...EMPTY_STATE, isLoading: true }
+    );
 
     Promise.all([
       apiFetch<PatientSummary>(`/patients/${patientId}`, { accessToken }),
@@ -214,6 +236,8 @@ export function usePatientClinical(patientId: string | null, accessToken: string
             pregnancy: pregnancyRes.pregnancy,
             activeDiagnoses,
             isLoading: false,
+            hasLoaded: true,
+            loadedPatientId: patientId,
             error: null,
           });
       })
@@ -228,5 +252,6 @@ export function usePatientClinical(patientId: string | null, accessToken: string
 
   useEffect(() => load(), [load, version]);
 
-  return { ...state, reload: () => setVersion((v) => v + 1) };
+  const loadState: ClinicalLoadState = state.error ? "error" : state.hasLoaded ? "ready" : "loading";
+  return { ...state, loadState, reload: () => setVersion((v) => v + 1) };
 }

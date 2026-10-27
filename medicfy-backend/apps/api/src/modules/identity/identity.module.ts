@@ -6,6 +6,7 @@ import { CryptoService } from "./services/crypto.service";
 import { ConsentService } from "./services/consent.service";
 import { AuditService } from "./services/audit.service";
 import { AuditChainVerifierService } from "./services/audit-chain-verifier.service";
+import { AuditChainDailyCheckService } from "./services/audit-chain-daily-check.service";
 import { VerificationCodeService } from "./services/verification-code.service";
 import { AuthService } from "./services/auth.service";
 import { MfaService } from "./services/mfa.service";
@@ -32,6 +33,7 @@ import { AssistantInvitationsController } from "./assistant-invitations.controll
     ConsentService,
     AuditService,
     AuditChainVerifierService,
+    AuditChainDailyCheckService,
     VerificationCodeService,
     AuthService,
     MfaService,

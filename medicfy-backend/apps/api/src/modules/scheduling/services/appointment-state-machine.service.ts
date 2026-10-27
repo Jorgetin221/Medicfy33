@@ -3,9 +3,11 @@ import type { Appointment, AppointmentCreatedVia, AppointmentStatus, Doctor, Pri
 import type { AppointmentCreateInput, PublicAppointmentCreateInput } from "@medicfy/contracts";
 import { PrismaService } from "../../../prisma/prisma.service";
 import { ApiException } from "../../../common/api-exception";
+import { isIdempotencyKeyConflict } from "../../../common/idempotency";
 import { modalityForServiceType } from "../service-modality";
 import { todayInTimeZone, zonedDateAndMinutesToUtc, formatAppointmentDateLabel } from "../timezone";
 import { CareRelationshipService } from "./care-relationship.service";
+import { AvailabilitySlotService } from "./availability-slot.service";
 import { DEFAULT_CANCELLATION_POLICY, resolveCancellationPolicy, refundPercentFor, type CancellationPolicy } from "../cancellation-policy";
 import { NotificationsService } from "../../notifications/services/notifications.service";
 import { NotificationLinkService } from "../../notifications/services/notification-link.service";
@@ -73,7 +75,8 @@ export class AppointmentStateMachineService {
     private readonly careRelationshipService: CareRelationshipService,
     private readonly notificationsService: NotificationsService,
     private readonly notificationLinkService: NotificationLinkService,
-    private readonly reminderScheduler: AppointmentReminderSchedulerService
+    private readonly reminderScheduler: AppointmentReminderSchedulerService,
+    private readonly availabilitySlots: AvailabilitySlotService
   ) {}
 
   // M12: los 4 disparadores de ciclo de vida de cita con plantilla
@@ -160,7 +163,13 @@ export class AppointmentStateMachineService {
   // bajo concurrencia real — ver la nota técnica de §6.4). Se
   // intenta el INSERT directamente y se traduce la violación en
   // SLOT_TAKEN.
-  async create(actingDoctorId: string, actorUserId: string, createdVia: AppointmentCreatedVia, input: AppointmentCreateInput): Promise<Appointment> {
+  async create(
+    actingDoctorId: string,
+    actorUserId: string,
+    createdVia: AppointmentCreatedVia,
+    input: AppointmentCreateInput,
+    idempotencyKey?: string
+  ): Promise<Appointment> {
     // R4 — HALLAZGO #1 DEL BLOQUE 0 (26 ago 2026), el más grave del
     // inventario. Esta ruta aceptaba cualquier patientId del cuerpo y
     // createOrRenew(..., "APPOINTMENT") le fabricaba al médico un
@@ -197,16 +206,98 @@ export class AppointmentStateMachineService {
       );
     }
 
-    return this.createAppointmentRecord({
+    const { appointment: created, replayed } = await this.createAppointmentRecord({
       doctorId: actingDoctorId,
       patientId: input.patientId,
       actorUserId,
       createdVia,
       input,
+      idempotencyKey,
+      // A-11: sin pasarela de pago (M6 no existe) una cita que agenda el
+      // propio consultorio nacía en PENDING_PAYMENT y nada la sacaba de
+      // ahí: /confirm y /start daban 409 y no había forma de llegar a
+      // la consulta. El cobro de una cita agendada desde el consultorio
+      // ocurre en el consultorio, así que nace en SCHEDULED.
+      initialStatus: "SCHEDULED",
       // Renovación, no alta: la comprobación de vínculo previo de
       // arriba garantiza que ya existe uno.
       linkCareRelationship: (tx) => this.careRelationshipService.createOrRenew(input.patientId, actingDoctorId, "APPOINTMENT", tx),
     });
+    if (replayed) return created;
+    await this.notifyAppointmentEvent(created, "APPOINTMENT_SCHEDULED", created.startsAt);
+    await this.reminderScheduler.scheduleAppointmentReminders(created);
+    return created;
+  }
+
+  // Pedido explícito del usuario (2026-10-27): "iniciar consulta sin
+  // cita" y "iniciar consulta desde la agenda" deben ser LA MISMA
+  // pantalla, no dos flujos distintos que hay que mantener
+  // sincronizados a mano — y todo lo que vive en DOC-06 (teleconsulta,
+  // cerrar sin nota) ya está construido sobre Appointment, no sobre
+  // ClinicalEncounter. Esto crea una cita real para AHORA MISMO, ya en
+  // IN_PROGRESS, sin pasar por disponibilidad ni antelación mínima
+  // (assertSchedulable/availabilitySlots) — esas reglas existen para
+  // proteger un espacio FUTURO que alguien más podría reservar; un
+  // walk-in no reserva nada, documenta algo que ya está pasando.
+  async startWalkIn(doctorId: string, patientId: string, actorUserId: string): Promise<Appointment> {
+    // Misma regla de R4 que create(): renueva un vínculo existente,
+    // nunca lo crea de cero.
+    const priorRelationship = await this.prisma.careRelationship.findFirst({
+      where: { patientId, doctorId, status: { in: ["ACTIVE", "EXPIRED"] } },
+      select: { id: true },
+    });
+    if (!priorRelationship) {
+      throw new ApiException(
+        "CARE_RELATIONSHIP_REQUIRED",
+        "No tienes un vínculo con este paciente. Regístralo desde tu lista de pacientes, o espera a que agende él mismo.",
+        HttpStatus.FORBIDDEN
+      );
+    }
+
+    const service = await this.prisma.doctorService.findFirst({ where: { doctorId, isActive: true }, orderBy: { createdAt: "asc" } });
+    if (!service) {
+      throw new ApiException(
+        "NO_SERVICE_CONFIGURED",
+        "Configura al menos un servicio en tu perfil antes de iniciar una consulta sin cita.",
+        HttpStatus.UNPROCESSABLE_ENTITY
+      );
+    }
+
+    const doctor = await this.prisma.doctor.findUniqueOrThrow({ where: { id: doctorId } });
+    const policy = resolveCancellationPolicy(doctor.cancellationPolicy);
+    const startsAt = new Date();
+    const endsAt = new Date(startsAt.getTime() + service.durationMinutes * 60_000);
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const appointment = await tx.appointment.create({
+          data: {
+            patientId,
+            doctorId,
+            locationId: service.locationId ?? null,
+            serviceId: service.id,
+            modality: modalityForServiceType(service.serviceType),
+            startsAt,
+            endsAt,
+            status: "IN_PROGRESS",
+            createdByUserId: actorUserId,
+            createdVia: "DOCTOR_PANEL",
+            priceMxnCents: service.priceMxnCents,
+            cancellationPolicySnapshot: policy as unknown as Prisma.InputJsonValue,
+          },
+        });
+        await tx.appointmentStatusHistory.create({
+          data: { appointmentId: appointment.id, fromStatus: null, toStatus: "IN_PROGRESS", changedByUserId: actorUserId, reason: "Consulta sin cita (walk-in)." },
+        });
+        await this.careRelationshipService.createOrRenew(patientId, doctorId, "APPOINTMENT", tx);
+        return appointment;
+      });
+    } catch (error) {
+      if (isExclusionViolation(error)) {
+        throw new ApiException("SLOT_TAKEN", "Este horario ya no está disponible.", HttpStatus.CONFLICT);
+      }
+      throw error;
+    }
   }
 
   // M5-RN-010/M5-RN-011 (spec §7, v2.3) — agendamiento público
@@ -221,16 +312,26 @@ export class AppointmentStateMachineService {
     doctorId: string,
     patientId: string,
     callerUserId: string,
-    input: PublicAppointmentCreateInput
+    input: PublicAppointmentCreateInput,
+    idempotencyKey?: string
   ): Promise<Appointment> {
-    return this.createAppointmentRecord({
+    // A-12: el paciente solo puede reservar un espacio que la propia
+    // disponibilidad del médico ofrece (horario, excepciones, citas,
+    // buffer) — no cualquier hora que mande en el cuerpo.
+    const replay = await this.findByIdempotencyKey(doctorId, idempotencyKey, patientId);
+    if (replay) return replay;
+    await this.availabilitySlots.assertBookableSlot(doctorId, input.serviceId, new Date(input.startsAt));
+    const { appointment } = await this.createAppointmentRecord({
       doctorId,
       patientId,
       actorUserId: callerUserId,
       createdVia: "PATIENT_LINK",
       input,
+      idempotencyKey,
+      initialStatus: "PENDING_PAYMENT",
       linkCareRelationship: (tx) => this.careRelationshipService.createOrRenew(patientId, doctorId, "APPOINTMENT", tx),
     });
+    return appointment;
   }
 
   // Mecánica compartida entre create() y createFromPublicBooking():
@@ -246,9 +347,15 @@ export class AppointmentStateMachineService {
     actorUserId: string;
     createdVia: AppointmentCreatedVia;
     input: PublicAppointmentCreateInput;
+    initialStatus: Extract<AppointmentStatus, "PENDING_PAYMENT" | "SCHEDULED">;
+    idempotencyKey?: string | undefined;
     linkCareRelationship: (tx: Prisma.TransactionClient) => Promise<unknown>;
-  }): Promise<Appointment> {
-    const { doctorId, patientId, actorUserId, createdVia, input, linkCareRelationship } = params;
+  }): Promise<{ appointment: Appointment; replayed: boolean }> {
+    const { doctorId, patientId, actorUserId, createdVia, input, initialStatus, idempotencyKey, linkCareRelationship } = params;
+
+    // A-14: un reintento con la misma llave devuelve la cita ya creada.
+    const replay = await this.findByIdempotencyKey(doctorId, idempotencyKey, patientId);
+    if (replay) return { appointment: replay, replayed: true };
 
     const service = await this.prisma.doctorService.findFirst({
       where: { id: input.serviceId, doctorId, isActive: true },
@@ -283,18 +390,7 @@ export class AppointmentStateMachineService {
 
     const startsAt = new Date(input.startsAt);
     const endsAt = new Date(startsAt.getTime() + service.durationMinutes * 60_000);
-    const earliestAllowed = new Date(Date.now() + doctor.minBookingNoticeMinutes * 60_000);
-    const latestAllowed = new Date(Date.now() + doctor.maxBookingWindowDays * 24 * 60 * 60_000);
-    if (startsAt < earliestAllowed) {
-      throw new ApiException("SLOT_TOO_SOON", "Este horario no respeta la antelación mínima del médico.", HttpStatus.UNPROCESSABLE_ENTITY);
-    }
-    if (startsAt > latestAllowed) {
-      throw new ApiException(
-        "OUTSIDE_BOOKING_WINDOW",
-        "Este horario excede la ventana máxima de agenda del médico.",
-        HttpStatus.UNPROCESSABLE_ENTITY
-      );
-    }
+    await this.assertSchedulable(doctor, startsAt, endsAt);
 
     const policy = resolveCancellationPolicy(doctor.cancellationPolicy);
 
@@ -309,29 +405,73 @@ export class AppointmentStateMachineService {
             modality: modalityForServiceType(service.serviceType),
             startsAt,
             endsAt,
-            status: "PENDING_PAYMENT",
+            status: initialStatus,
             createdByUserId: actorUserId,
             createdVia,
             priceMxnCents: service.priceMxnCents,
-            paymentDeadlineAt: new Date(Date.now() + PAYMENT_WINDOW_MINUTES * 60_000),
+            paymentDeadlineAt: initialStatus === "PENDING_PAYMENT" ? new Date(Date.now() + PAYMENT_WINDOW_MINUTES * 60_000) : null,
             cancellationPolicySnapshot: policy as unknown as Prisma.InputJsonValue,
+            idempotencyKey: idempotencyKey ?? null,
           },
         });
 
         await tx.appointmentStatusHistory.create({
-          data: { appointmentId: appointment.id, fromStatus: null, toStatus: "PENDING_PAYMENT", changedByUserId: actorUserId },
+          data: { appointmentId: appointment.id, fromStatus: null, toStatus: initialStatus, changedByUserId: actorUserId },
         });
 
         await linkCareRelationship(tx);
 
-        return appointment;
+        return { appointment, replayed: false };
       });
     } catch (error) {
+      if (isIdempotencyKeyConflict(error)) {
+        const existing = await this.findByIdempotencyKey(doctorId, idempotencyKey, patientId);
+        if (existing) return { appointment: existing, replayed: true };
+      }
       if (isExclusionViolation(error)) {
         throw new ApiException("SLOT_TAKEN", "Este horario ya no está disponible.", HttpStatus.CONFLICT);
       }
       throw error;
     }
+  }
+
+  // A-12: reglas que aplican a toda hora de inicio, se agende desde el
+  // consultorio o se reagende: nunca en el pasado ni antes de la
+  // antelación mínima, nunca más allá de la ventana de agenda, y nunca
+  // dentro de un bloqueo del médico (vacaciones, congreso). El
+  // consultorio sí puede agendar fuera de la rejilla de horario
+  // (sobrecupo); la reserva pública no (assertBookableSlot).
+  private async assertSchedulable(doctor: Doctor, startsAt: Date, endsAt: Date): Promise<void> {
+    const earliestAllowed = new Date(Date.now() + doctor.minBookingNoticeMinutes * 60_000);
+    const latestAllowed = new Date(Date.now() + doctor.maxBookingWindowDays * 24 * 60 * 60_000);
+    if (startsAt < earliestAllowed) {
+      throw new ApiException("SLOT_TOO_SOON", "Este horario no respeta la antelación mínima del médico.", HttpStatus.UNPROCESSABLE_ENTITY);
+    }
+    if (startsAt > latestAllowed) {
+      throw new ApiException(
+        "OUTSIDE_BOOKING_WINDOW",
+        "Este horario excede la ventana máxima de agenda del médico.",
+        HttpStatus.UNPROCESSABLE_ENTITY
+      );
+    }
+    const blockingException = await this.prisma.availabilityException.findFirst({
+      where: { doctorId: doctor.id, startAt: { lt: endsAt }, endAt: { gt: startsAt } },
+      select: { id: true },
+    });
+    if (blockingException) {
+      throw new ApiException("SLOT_BLOCKED", "El médico bloqueó este horario en su agenda.", HttpStatus.UNPROCESSABLE_ENTITY);
+    }
+  }
+
+  // Una llave reutilizada para OTRO paciente no es un reintento: es un
+  // error del cliente (o un intento de leer la cita ajena) — 409.
+  private async findByIdempotencyKey(doctorId: string, idempotencyKey: string | undefined, patientId: string): Promise<Appointment | null> {
+    if (!idempotencyKey) return null;
+    const existing = await this.prisma.appointment.findUnique({ where: { doctorId_idempotencyKey: { doctorId, idempotencyKey } } });
+    if (existing && existing.patientId !== patientId) {
+      throw new ApiException("IDEMPOTENCY_KEY_REUSED", "Esta Idempotency-Key ya se usó para otra solicitud.", HttpStatus.CONFLICT);
+    }
+    return existing;
   }
 
   async findById(appointmentId: string): Promise<Appointment> {
@@ -384,6 +524,24 @@ export class AppointmentStateMachineService {
     });
   }
 
+  // M-27 / Prompt 16: la siguiente cita CONFIRMADA del mismo día y del
+  // mismo médico, a partir de la hora de ésta — calculado en el
+  // servidor, con el "día" de America/Mexico_City.
+  async findNextConfirmedSameDay(appointment: Appointment): Promise<{ id: string } | null> {
+    const day = todayInTimeZone(undefined, appointment.startsAt);
+    const endOfDay = zonedDateAndMinutesToUtc(day, 24 * 60);
+    return this.prisma.appointment.findFirst({
+      where: {
+        doctorId: appointment.doctorId,
+        status: "CONFIRMED",
+        id: { not: appointment.id },
+        startsAt: { gte: appointment.startsAt, lt: endOfDay },
+      },
+      orderBy: { startsAt: "asc" },
+      select: { id: true },
+    });
+  }
+
   // M5-RN-009 (v2.3): "Mis citas" del portal de paciente — todas las
   // suyas, no acotadas a un día como listForDoctor (una agenda de
   // médico se ve por día; las citas de un paciente se ven todas).
@@ -430,9 +588,11 @@ export class AppointmentStateMachineService {
   // 'consulta sin nota' con justificación." M8 doesn't exist yet, so
   // this exception path is the only path — completedWithoutNoteReason
   // is always populated for now, not conditionally.
+  // B-08: la transición y la justificación en la misma escritura (antes
+  // eran dos, y una falla entre ambas dejaba la cita COMPLETED sin
+  // justificación).
   async complete(appointmentId: string, actorUserId: string, justification: string): Promise<Appointment> {
-    const updated = await this.transition(appointmentId, "COMPLETED", actorUserId, justification);
-    return this.prisma.appointment.update({ where: { id: updated.id }, data: { completedWithoutNoteReason: justification } });
+    return this.transition(appointmentId, "COMPLETED", actorUserId, justification, { completedWithoutNoteReason: justification });
   }
 
   // M8: "cuando M8 exista, la ruta real [a completed] se vuelve la
@@ -452,6 +612,27 @@ export class AppointmentStateMachineService {
     if (current.status !== "IN_PROGRESS") return;
     try {
       await this.transition(appointmentId, "COMPLETED", actorUserId, "Nota clínica firmada.");
+    } catch (error) {
+      if (error instanceof ApiException && error.code === "APPOINTMENT_TRANSITION_INVALID") return;
+      throw error;
+    }
+  }
+
+  // M8-RN-003 (barrido de encuentros abandonados, EncounterSweepService
+  // en records): un borrador sin firmar por más de 72 h se marca
+  // abandonado y no vuelve a ser editable, así que su cita ya no tiene
+  // forma de llegar a completed con nota firmada — se cierra por el
+  // mismo camino de "consulta sin nota" (M5-RN-006), con el motivo
+  // automático como justificación. Sin actor humano (lo dispara un
+  // barrido, no un médico): mismo patrón sin actor que
+  // markExpiredAsNoShow/releaseExpiredPendingPayments. Silenciosa si
+  // la cita ya no está IN_PROGRESS (el médico pudo haberla cerrado a
+  // mano, o cancelado, antes de que corriera el barrido).
+  async completeAbandonedDraft(appointmentId: string, justification: string): Promise<void> {
+    const current = await this.findById(appointmentId);
+    if (current.status !== "IN_PROGRESS") return;
+    try {
+      await this.transition(appointmentId, "COMPLETED", null, justification, { completedWithoutNoteReason: justification });
     } catch (error) {
       if (error instanceof ApiException && error.code === "APPOINTMENT_TRANSITION_INVALID") return;
       throw error;
@@ -529,8 +710,12 @@ export class AppointmentStateMachineService {
     }
 
     const service = await this.prisma.doctorService.findUniqueOrThrow({ where: { id: current.serviceId } });
+    const doctor = await this.prisma.doctor.findUniqueOrThrow({ where: { id: current.doctorId } });
     const startsAt = new Date(newStartsAt);
     const endsAt = new Date(startsAt.getTime() + service.durationMinutes * 60_000);
+    // A-12: reagendar no validaba ni el pasado, ni la antelación, ni los
+    // bloqueos del médico.
+    await this.assertSchedulable(doctor, startsAt, endsAt);
     const cancelToStatus: AppointmentStatus = cancelledAsRole === "DOCTOR" ? "CANCELLED_BY_DOCTOR" : "CANCELLED_BY_PATIENT";
 
     try {
@@ -579,9 +764,12 @@ export class AppointmentStateMachineService {
   }
 
   // M5-CA-002: "Una cita sin pago confirmado libera su espacio a los
-  // 30 minutos exactos." Sin scheduler todavía — barrido invocable
-  // (mismo patrón que PatientGuardian/CareRelationship), listo para
-  // un futuro processor de BullMQ.
+  // 30 minutos exactos." Barrido invocable, todavía NO agendado por
+  // AppointmentSweepService: sin pasarela de pago (M6) el paciente no
+  // tiene cómo pagar en esos 30 minutos y toda reserva pública se
+  // cancelaría sola.
+  // PENDIENTE(jorge): activar este barrido cuando exista M6, o decidir
+  // otra ventana para la confirmación manual del consultorio. Ref: M5-CA-002
   async releaseExpiredPendingPayments(): Promise<number> {
     const expired = await this.prisma.appointment.findMany({
       where: { status: "PENDING_PAYMENT", paymentDeadlineAt: { lt: new Date() } },
@@ -592,6 +780,21 @@ export class AppointmentStateMachineService {
     return expired.length;
   }
 
+  // A-11: una reserva pública que nadie confirmó y cuya hora ya pasó no
+  // puede quedarse en PENDING_PAYMENT para siempre. A diferencia del
+  // barrido de 30 min de arriba, este no le quita a nadie una cita
+  // futura.
+  async releasePastPendingPayments(): Promise<number> {
+    const past = await this.prisma.appointment.findMany({
+      where: { status: "PENDING_PAYMENT", startsAt: { lt: new Date() } },
+      select: { id: true },
+    });
+    for (const appointment of past) {
+      await this.transitionIgnoringRace(appointment.id, "CANCELLED_BY_PATIENT", "Reserva sin confirmar antes de la hora de la cita (automático).");
+    }
+    return past.length;
+  }
+
   // "60 min tras hora de fin sin inicio" — mismo patrón de barrido.
   async markExpiredAsNoShow(): Promise<number> {
     const cutoff = new Date(Date.now() - NO_SHOW_GRACE_MINUTES * 60_000);
@@ -599,9 +802,21 @@ export class AppointmentStateMachineService {
       where: { status: { in: ["SCHEDULED", "CONFIRMED"] }, endsAt: { lt: cutoff } },
     });
     for (const appointment of candidates) {
-      await this.transition(appointment.id, "NO_SHOW", null, "60 minutos tras hora de fin sin inicio (automático).");
+      await this.transitionIgnoringRace(appointment.id, "NO_SHOW", "60 minutos tras hora de fin sin inicio (automático).");
     }
     return candidates.length;
+  }
+
+  // Un barrido compite con acciones humanas (el médico inicia la
+  // consulta justo cuando corre): si la cita ya cambió de estado, se
+  // deja como está en vez de tumbar el resto del barrido.
+  private async transitionIgnoringRace(appointmentId: string, toStatus: AppointmentStatus, reason: string): Promise<void> {
+    try {
+      await this.transition(appointmentId, toStatus, null, reason);
+    } catch (error) {
+      if (error instanceof ApiException && error.code === "APPOINTMENT_TRANSITION_INVALID") return;
+      throw error;
+    }
   }
 
   // M5-CA-001: "Toda transición de estado inválida devuelve 409 y no

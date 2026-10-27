@@ -10,7 +10,7 @@ import {
 } from "@medicfy/contracts";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import { useEncounterAutosave } from "@/lib/use-encounter-autosave";
-import { loadDraftLocally, clearDraftLocally } from "@/lib/offline-draft-store";
+import { loadDraftRecordLocally, clearDraftLocally } from "@/lib/offline-draft-store";
 import { FieldWrapper, Textarea, TextInput } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
@@ -26,6 +26,7 @@ import type { PatientHistoryItem } from "@/lib/use-patient-clinical";
 import { ENCOUNTER_TYPE_LABEL_KEY, patientAgeYears, type EncounterDetail } from "./types";
 import { useT } from "@/lib/i18n/context";
 import { useZodResolver } from "@/lib/i18n/validation";
+import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 
 type FreeTextField = "chiefComplaint" | "currentIllness" | "physicalExam" | "assessment" | "plan" | "prognosis";
 
@@ -82,23 +83,59 @@ function unwrapSpecialtyData(specialtyData: Record<string, unknown>): Record<str
 // insertables por atajo, receta/orden sin salir de la pantalla.
 export function ConsultaForm({
   accessToken,
+  appointmentId,
   encounter,
   historyItems,
   patientBirthDate,
   onHistoryChanged,
   onSigned,
   onAbandoned,
+  onClosedWithoutNote,
 }: {
   accessToken: string;
+  // M5-RN-006 ("cerrar sin nota"): necesita la cita, no solo el
+  // encuentro — la transición que cierra vive en /appointments/:id,
+  // nunca en /records/encounters/:id. Toda consulta tiene una cita
+  // real detrás (incluida "iniciar consulta sin cita", que crea una
+  // al vuelo — ver startWalkInAppointment), así que ya no es opcional.
+  appointmentId: string;
   encounter: EncounterDetail;
   historyItems: PatientHistoryItem[];
   patientBirthDate: string | null;
   onHistoryChanged: () => void;
   onSigned: () => void;
   onAbandoned: () => void;
+  onClosedWithoutNote: () => void;
 }) {
   const t = useT();
+  const { confirm, dialog: confirmDialog } = useConfirmDialog();
   const [isHydrated, setIsHydrated] = useState(false);
+  // M5-RN-006, pedido explícito del usuario (2026-10-27): "cerrar sin
+  // nota" ya existía desde la Agenda (lista de citas) — este es el
+  // mismo camino, expuesto también desde dentro de DOC-06, para no
+  // obligar al médico a salir de la consulta para encontrarlo.
+  const [showCloseWithoutNote, setShowCloseWithoutNote] = useState(false);
+  const [closeJustification, setCloseJustification] = useState("");
+  const [isClosingWithoutNote, setIsClosingWithoutNote] = useState(false);
+  const [closeWithoutNoteError, setCloseWithoutNoteError] = useState<unknown>(null);
+
+  async function closeWithoutNote() {
+    if (closeJustification.trim().length < 10) return;
+    setIsClosingWithoutNote(true);
+    setCloseWithoutNoteError(null);
+    try {
+      await apiFetch(`/appointments/${appointmentId}/complete`, {
+        method: "POST",
+        accessToken,
+        body: { justification: closeJustification.trim() },
+      });
+      onClosedWithoutNote();
+    } catch (error) {
+      setCloseWithoutNoteError(error);
+    } finally {
+      setIsClosingWithoutNote(false);
+    }
+  }
   const [showAntecedentesEditor, setShowAntecedentesEditor] = useState(false);
   const [activeField, setActiveField] = useState<FreeTextField>("plan");
   const [signError, setSignError] = useState<unknown>(null);
@@ -185,7 +222,15 @@ export function ConsultaForm({
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const local = await loadDraftLocally(encounter.id);
+      // A-20: el respaldo local solo gana si es MÁS NUEVO que lo que
+      // tiene el servidor. Antes ganaba siempre: un respaldo viejo de
+      // otro día pisaba lo que el médico ya había guardado después
+      // desde otro equipo.
+      const localRecord = await loadDraftRecordLocally(encounter.id);
+      const serverUpdatedAt = encounter.updatedAt ? new Date(encounter.updatedAt) : null;
+      const localIsNewer = localRecord !== null && (serverUpdatedAt === null || localRecord.updatedAt > serverUpdatedAt);
+      if (localRecord && !localIsNewer) await clearDraftLocally(encounter.id);
+      const local = localIsNewer ? localRecord.draft : null;
       const base = (local ?? encounter.draftContent ?? {}) as ClinicalNoteDraftUpdateInput;
       if (cancelled) return;
       form.reset({
@@ -250,12 +295,14 @@ export function ConsultaForm({
     ...(watched.suggestedFollowUpDays !== undefined && !Number.isNaN(watched.suggestedFollowUpDays) ? { suggestedFollowUpDays: watched.suggestedFollowUpDays } : {}),
   };
 
-  const { saveState, lastSavedAt, saveNow, fatalError } = useEncounterAutosave({
+  const { saveState, lastSavedAt, saveNow, fatalError, resolveConflict } = useEncounterAutosave({
     encounterId: encounter.id,
     accessToken,
     values: draftPatch,
     enabled: isHydrated,
+    initialDraftVersion: encounter.draftVersion,
   });
+  const hasDraftConflict = fatalError instanceof ApiError && fatalError.code === "DRAFT_CONFLICT";
 
   useEffect(() => {
     if (fatalError instanceof ApiError && fatalError.code === "ENCOUNTER_ABANDONED") {
@@ -354,9 +401,12 @@ export function ConsultaForm({
         // Prompt 26: un signo vital CRÍTICO exige confirmación
         // explícita del médico — se le muestra cuáles y confirma.
         const fields = ((error.details as { criticalFields?: string[] } | undefined)?.criticalFields ?? []).join(", ");
-        const confirmed = window.confirm(
-          `⚠ Signos vitales en rango CRÍTICO: ${fields}.\n\n¿Confirmas que los valores capturados son correctos? La nota se firmará con la marca de valor crítico.`
-        );
+        // M-26: diálogo propio (traducido, accesible) en vez de window.confirm.
+        const confirmed = await confirm({
+          title: t("consulta.firma.vitalesCriticosTitulo"),
+          body: t("consulta.firma.vitalesCriticosCuerpo", { campos: fields }),
+          confirmLabel: t("consulta.firma.vitalesCriticosConfirmar"),
+        });
         if (confirmed) {
           try {
             await apiFetch(`/records/encounters/${encounter.id}/sign`, {
@@ -420,246 +470,308 @@ export function ConsultaForm({
   }, [saveNow, handleSignSubmit]);
 
   return (
-    <div className="flex flex-1 flex-col gap-6 pb-24">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-gray-300 bg-white p-3">
-        <div>
-          <p className="text-base font-medium text-brand-900">{t(ENCOUNTER_TYPE_LABEL_KEY[encounter.encounterType])}</p>
-          {/* CLAUDE.md §6: dos modos con tiempo objetivo — Historia
-              Clínica 12–15 min, Nota de Evolución 3–4 min. Rebasado el
-              objetivo lo dice el TEXTO además del color (el color
-              nunca es el único portador de significado). */}
-          <p className={`text-sm ${elapsedSeconds > targetSeconds ? "font-medium text-warn-600" : "text-gray-500"}`}>
-            {t("consulta.tiempo", { transcurrido: formatElapsed(elapsedSeconds), objetivo: targetLabel })}
-            {elapsedSeconds > targetSeconds ? t("consulta.rebasado") : ""}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <IndicadorGuardado state={saveState} lastSavedAt={lastSavedAt} />
-          {/* Prompt 32 (F4): "la receta pertenece a una nota firmada;
-              un borrador no emite recetas" — receta, órdenes e
-              indicaciones se emiten AL FIRMAR, en la vista siguiente. */}
-          <p className="text-sm text-gray-500">{t("consulta.emisionAlFirmar")}</p>
-        </div>
-      </div>
-
-      <NoteTemplateBar accessToken={accessToken} onInsert={insertTemplate} pendingContent={form.getValues(activeField) ?? ""} />
-
-      <form onSubmit={(e) => e.preventDefault()} className="flex flex-col gap-6" noValidate>
-        <FieldWrapper label={t("consulta.campos.motivoConsulta")} htmlFor="chiefComplaint" error={form.formState.errors.chiefComplaint?.message}>
-          <Textarea
-            id="chiefComplaint"
-            rows={2}
-            error={!!form.formState.errors.chiefComplaint}
-            {...chiefComplaintField}
-            ref={(el) => {
-              chiefComplaintField.ref(el);
-              fieldRefs.chiefComplaint.current = el;
-            }}
-            onFocus={() => setActiveField("chiefComplaint")}
-          />
-        </FieldWrapper>
-
-        <FieldWrapper label={t("consulta.campos.padecimientoActual")} htmlFor="currentIllness" error={form.formState.errors.currentIllness?.message}>
-          <Textarea
-            id="currentIllness"
-            rows={4}
-            error={!!form.formState.errors.currentIllness}
-            {...currentIllnessField}
-            ref={(el) => {
-              currentIllnessField.ref(el);
-              fieldRefs.currentIllness.current = el;
-            }}
-            onFocus={() => setActiveField("currentIllness")}
-          />
-        </FieldWrapper>
-
-        <section>
-          <h2 className="mb-2 text-base font-semibold text-gray-900">{t("consulta.campos.antecedentes")}</h2>
-          {encounter.encounterType === "FIRST_VISIT" ? (
-            // M8-RN-012 "Modo Historia Clínica (primera vez)": los
-            // antecedentes se capturan aquí — viven en el paciente, no
-            // en este encuentro, así que se guardan de inmediato por
-            // ítem (AntecedentesEditor), no como parte del draft/firma.
-            <AntecedentesEditor patientId={encounter.patientId} accessToken={accessToken} historyItems={historyItems} onChanged={onHistoryChanged} />
-          ) : (
-            // M8-RN-012 "Modo Nota de Evolución": "se muestran de la
-            // consulta anterior, editables, no se recapturan" — resumen
-            // colapsado por default, el mismo editor queda un clic
-            // atrás si algo cambió.
-            <div className="flex flex-col gap-2">
-              <AntecedentesSummary historyItems={historyItems} />
-              <Button type="button" variant="secondary" className="w-fit" onClick={() => setShowAntecedentesEditor((v) => !v)}>
-                {showAntecedentesEditor ? t("consulta.campos.ocultarAntecedentes") : t("consulta.campos.actualizarAntecedentes")}
-              </Button>
-              {showAntecedentesEditor && (
-                <AntecedentesEditor patientId={encounter.patientId} accessToken={accessToken} historyItems={historyItems} onChanged={onHistoryChanged} />
-              )}
-            </div>
-          )}
-        </section>
-
-        <section>
-          <h2 className="mb-2 text-base font-semibold text-gray-900">{t("consulta.campos.signosVitales")}</h2>
-          <VitalsFields form={form} patientAgeYears={patientBirthDate ? patientAgeYears(patientBirthDate) : null} />
-        </section>
-
-        <EscalasSection
-          accessToken={accessToken}
-          values={watched.specialtyData ?? {}}
-          onChange={(next) => form.setValue("specialtyData", next, { shouldDirty: true })}
-          patientAgeYears={patientBirthDate ? patientAgeYears(patientBirthDate) : null}
-        />
-
-        <FieldWrapper label={t("consulta.campos.exploracionFisica")} htmlFor="physicalExam">
-          <Textarea
-            id="physicalExam"
-            rows={4}
-            {...physicalExamField}
-            ref={(el) => {
-              physicalExamField.ref(el);
-              fieldRefs.physicalExam.current = el;
-            }}
-            onFocus={() => setActiveField("physicalExam")}
-          />
-        </FieldWrapper>
-
-        <section>
-          <h2 className="mb-2 text-base font-semibold text-gray-900">{t("consulta.campos.diagnosticos")}</h2>
-          <Icd10Picker accessToken={accessToken} selected={diagnoses} onChange={handleDiagnosesChange} />
-          {diagnosesErrorMessage ? (
-            <p role="alert" className="mt-1 flex items-center gap-1 text-sm text-danger-600">
-              <span aria-hidden="true">⚠</span> {diagnosesErrorMessage}
+    <>
+      {confirmDialog}
+      <div className="flex flex-1 flex-col gap-6 pb-24">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-gray-300 bg-white p-3">
+          <div>
+            <p className="text-base font-medium text-brand-900">{t(ENCOUNTER_TYPE_LABEL_KEY[encounter.encounterType])}</p>
+            {/* CLAUDE.md §6: dos modos con tiempo objetivo — Historia
+                Clínica 12–15 min, Nota de Evolución 3–4 min. Rebasado el
+                objetivo lo dice el TEXTO además del color (el color
+                nunca es el único portador de significado). */}
+            <p className={`text-sm ${elapsedSeconds > targetSeconds ? "font-medium text-warn-600" : "text-gray-500"}`}>
+              {t("consulta.tiempo", { transcurrido: formatElapsed(elapsedSeconds), objetivo: targetLabel })}
+              {elapsedSeconds > targetSeconds ? t("consulta.rebasado") : ""}
             </p>
-          ) : null}
-        </section>
-
-        <FieldWrapper label={t("consulta.campos.analisis")} htmlFor="assessment" error={form.formState.errors.assessment?.message}>
-          <Textarea
-            id="assessment"
-            rows={3}
-            error={!!form.formState.errors.assessment}
-            {...assessmentField}
-            ref={(el) => {
-              assessmentField.ref(el);
-              fieldRefs.assessment.current = el;
-            }}
-            onFocus={() => setActiveField("assessment")}
-          />
-        </FieldWrapper>
-
-        <FieldWrapper label={t("consulta.campos.plan")} htmlFor="plan" error={form.formState.errors.plan?.message}>
-          <Textarea
-            id="plan"
-            rows={3}
-            error={!!form.formState.errors.plan}
-            {...planField}
-            ref={(el) => {
-              planField.ref(el);
-              fieldRefs.plan.current = el;
-            }}
-            onFocus={() => setActiveField("plan")}
-          />
-        </FieldWrapper>
-
-        <EmisionDocumentos
-          accessToken={accessToken}
-          encounterId={encounter.id}
-          patientId={encounter.patientId}
-          defaultDiagnosis={diagnoses.find((d) => d.diagnosisType === "PRINCIPAL")?.description ?? ""}
-          hasPatientInstructions={false}
-          onOpenStateChange={setPlanPanelOpen}
-        />
-
-        {/* Prompt 37 (F4): lo que el PACIENTE se lleva — lenguaje
-            llano, separado de la nota técnica; se imprime como PDF
-            propio desde la nota firmada. */}
-        <FieldWrapper
-          label={t("consulta.campos.indicaciones")}
-          htmlFor="patientInstructions"
-          hint={t("consulta.campos.indicacionesAyuda")}
-        >
-          <Textarea id="patientInstructions" rows={3} {...form.register("patientInstructions")} />
-        </FieldWrapper>
-
-        <FieldWrapper label={t("consulta.campos.proximaCita")} htmlFor="suggestedFollowUpDays">
-          <TextInput
-            id="suggestedFollowUpDays"
-            type="number"
-            min={1}
-            max={365}
-            inputMode="numeric"
-            className="max-w-40"
-            {...form.register("suggestedFollowUpDays", {
-              setValueAs: (v: string) => (v === "" ? undefined : Number(v)),
-            })}
-          />
-        </FieldWrapper>
-
-        <FieldWrapper label={t("consulta.campos.pronostico")} htmlFor="prognosis">
-          <Textarea
-            id="prognosis"
-            rows={2}
-            {...prognosisField}
-            ref={(el) => {
-              prognosisField.ref(el);
-              fieldRefs.prognosis.current = el;
-            }}
-            onFocus={() => setActiveField("prognosis")}
-          />
-        </FieldWrapper>
-
-      </form>
-
-      {/* Empieza donde termina el rail (app-nav.tsx, --app-rail-width):
-          con inset-x-0 tapaba Perfil, idioma y Cerrar sesión. */}
-      <div ref={footerRef} className="fixed bottom-0 left-0 right-0 z-20 border-t border-gray-300 bg-white p-4 md:left-[var(--app-rail-width,0px)]">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-2">
-          <div className="flex items-center gap-3">
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
             <IndicadorGuardado state={saveState} lastSavedAt={lastSavedAt} />
-            {planPanelOpen ? (
-              <span className="text-sm text-warn-600">{t("consulta.firma.cierraPanel")}</span>
-            ) : null}
-            {missingFields && !planPanelOpen ? (
-              <span role="alert" className="text-sm text-warn-600">
-                {t("consulta.firma.faltanDatos")}
-              </span>
-            ) : null}
-          </div>
-          <Button type="button" isLoading={isSigning} disabled={planPanelOpen} onClick={handleSignClick} className="px-6">
-            {t("consulta.firma.firmarYCerrar")} <span className="ml-1 opacity-70">⌘/Ctrl+Enter</span>
-          </Button>
-        </div>
-      </div>
-
-      <Modal open={showConfirm} onClose={closeConfirm} title={t("consulta.firma.confirmarTitulo")} size="dialog">
-        <div className="flex flex-col gap-4">
-          <p className="text-base text-gray-700">{t("consulta.firma.advertencia")}</p>
-          {signError ? (
-            <Aviso variant="critico" title={t("consulta.firma.errorTitulo")}>
-              {signError instanceof ApiError ? signError.message : t("consulta.firma.intentaDeNuevo")}
-            </Aviso>
-          ) : null}
-          <div className="flex flex-wrap gap-3">
-            <Button type="button" isLoading={isSigning} onClick={() => void handleSignSubmit()} className="px-6">
-              {t("consulta.firma.siCerrar")}
-            </Button>
-            <Button type="button" variant="secondary" disabled={isSigning} onClick={closeConfirm}>
-              {t("common.acciones.cancelar")}
-            </Button>
+            {/* Prompt 32 (F4): "la receta pertenece a una nota firmada;
+                un borrador no emite recetas" — receta, órdenes e
+                indicaciones se emiten AL FIRMAR, en la vista siguiente. */}
+            <p className="text-sm text-gray-500">{t("consulta.emisionAlFirmar")}</p>
           </div>
         </div>
-      </Modal>
 
-      <Modal open={isFinished} onClose={onSigned} title={t("consulta.firma.terminadaTitulo")} size="dialog">
-        <div className="flex flex-col gap-4">
-          <Aviso variant="exito" title={t("consulta.firma.terminadaTitulo")}>
-            {t("consulta.firma.terminadaCuerpo")}
+        {hasDraftConflict ? (
+          <Aviso variant="advertencia" title={t("consulta.conflictoBorrador.titulo")}>
+            <p className="mb-3 text-base">{t("consulta.conflictoBorrador.cuerpo")}</p>
+            <div className="flex flex-wrap gap-3">
+              <Button type="button" onClick={() => void resolveConflict("mine")}>
+                {t("consulta.conflictoBorrador.conservarMia")}
+              </Button>
+              <Button type="button" variant="secondary" onClick={() => void resolveConflict("server")}>
+                {t("consulta.conflictoBorrador.usarServidor")}
+              </Button>
+            </div>
           </Aviso>
-          <Button type="button" onClick={onSigned} className="w-fit px-6">
-            {t("consulta.firma.aceptar")}
-          </Button>
+        ) : null}
+
+        <NoteTemplateBar accessToken={accessToken} onInsert={insertTemplate} pendingContent={form.getValues(activeField) ?? ""} />
+
+        <form onSubmit={(e) => e.preventDefault()} className="flex flex-col gap-6" noValidate>
+          <FieldWrapper label={t("consulta.campos.motivoConsulta")} htmlFor="chiefComplaint" error={form.formState.errors.chiefComplaint?.message}>
+            <Textarea
+              id="chiefComplaint"
+              rows={2}
+              error={!!form.formState.errors.chiefComplaint}
+              {...chiefComplaintField}
+              ref={(el) => {
+                chiefComplaintField.ref(el);
+                fieldRefs.chiefComplaint.current = el;
+              }}
+              onFocus={() => setActiveField("chiefComplaint")}
+            />
+          </FieldWrapper>
+
+          <FieldWrapper label={t("consulta.campos.padecimientoActual")} htmlFor="currentIllness" error={form.formState.errors.currentIllness?.message}>
+            <Textarea
+              id="currentIllness"
+              rows={4}
+              error={!!form.formState.errors.currentIllness}
+              {...currentIllnessField}
+              ref={(el) => {
+                currentIllnessField.ref(el);
+                fieldRefs.currentIllness.current = el;
+              }}
+              onFocus={() => setActiveField("currentIllness")}
+            />
+          </FieldWrapper>
+
+          <section>
+            <h2 className="mb-2 text-base font-semibold text-gray-900">{t("consulta.campos.antecedentes")}</h2>
+            {encounter.encounterType === "FIRST_VISIT" ? (
+              // M8-RN-012 "Modo Historia Clínica (primera vez)": los
+              // antecedentes se capturan aquí — viven en el paciente, no
+              // en este encuentro, así que se guardan de inmediato por
+              // ítem (AntecedentesEditor), no como parte del draft/firma.
+              <AntecedentesEditor patientId={encounter.patientId} accessToken={accessToken} historyItems={historyItems} onChanged={onHistoryChanged} />
+            ) : (
+              // M8-RN-012 "Modo Nota de Evolución": "se muestran de la
+              // consulta anterior, editables, no se recapturan" — resumen
+              // colapsado por default, el mismo editor queda un clic
+              // atrás si algo cambió.
+              <div className="flex flex-col gap-2">
+                <AntecedentesSummary historyItems={historyItems} />
+                <Button type="button" variant="secondary" className="w-fit" onClick={() => setShowAntecedentesEditor((v) => !v)}>
+                  {showAntecedentesEditor ? t("consulta.campos.ocultarAntecedentes") : t("consulta.campos.actualizarAntecedentes")}
+                </Button>
+                {showAntecedentesEditor && (
+                  <AntecedentesEditor patientId={encounter.patientId} accessToken={accessToken} historyItems={historyItems} onChanged={onHistoryChanged} />
+                )}
+              </div>
+            )}
+          </section>
+
+          <section>
+            <h2 className="mb-2 text-base font-semibold text-gray-900">{t("consulta.campos.signosVitales")}</h2>
+            <VitalsFields form={form} patientAgeYears={patientBirthDate ? patientAgeYears(patientBirthDate) : null} />
+          </section>
+
+          <EscalasSection
+            accessToken={accessToken}
+            values={watched.specialtyData ?? {}}
+            onChange={(next) => form.setValue("specialtyData", next, { shouldDirty: true })}
+            patientAgeYears={patientBirthDate ? patientAgeYears(patientBirthDate) : null}
+          />
+
+          <FieldWrapper label={t("consulta.campos.exploracionFisica")} htmlFor="physicalExam">
+            <Textarea
+              id="physicalExam"
+              rows={4}
+              {...physicalExamField}
+              ref={(el) => {
+                physicalExamField.ref(el);
+                fieldRefs.physicalExam.current = el;
+              }}
+              onFocus={() => setActiveField("physicalExam")}
+            />
+          </FieldWrapper>
+
+          <section>
+            <h2 className="mb-2 text-base font-semibold text-gray-900">{t("consulta.campos.diagnosticos")}</h2>
+            <Icd10Picker accessToken={accessToken} selected={diagnoses} onChange={handleDiagnosesChange} />
+            {diagnosesErrorMessage ? (
+              <p role="alert" className="mt-1 flex items-center gap-1 text-sm text-danger-600">
+                <span aria-hidden="true">⚠</span> {diagnosesErrorMessage}
+              </p>
+            ) : null}
+          </section>
+
+          <FieldWrapper label={t("consulta.campos.analisis")} htmlFor="assessment" error={form.formState.errors.assessment?.message}>
+            <Textarea
+              id="assessment"
+              rows={3}
+              error={!!form.formState.errors.assessment}
+              {...assessmentField}
+              ref={(el) => {
+                assessmentField.ref(el);
+                fieldRefs.assessment.current = el;
+              }}
+              onFocus={() => setActiveField("assessment")}
+            />
+          </FieldWrapper>
+
+          <FieldWrapper label={t("consulta.campos.plan")} htmlFor="plan" error={form.formState.errors.plan?.message}>
+            <Textarea
+              id="plan"
+              rows={3}
+              error={!!form.formState.errors.plan}
+              {...planField}
+              ref={(el) => {
+                planField.ref(el);
+                fieldRefs.plan.current = el;
+              }}
+              onFocus={() => setActiveField("plan")}
+            />
+          </FieldWrapper>
+
+          <EmisionDocumentos
+            accessToken={accessToken}
+            encounterId={encounter.id}
+            patientId={encounter.patientId}
+            defaultDiagnosis={diagnoses.find((d) => d.diagnosisType === "PRINCIPAL")?.description ?? ""}
+            hasPatientInstructions={false}
+            onOpenStateChange={setPlanPanelOpen}
+          />
+
+          {/* Prompt 37 (F4): lo que el PACIENTE se lleva — lenguaje
+              llano, separado de la nota técnica; se imprime como PDF
+              propio desde la nota firmada. */}
+          <FieldWrapper
+            label={t("consulta.campos.indicaciones")}
+            htmlFor="patientInstructions"
+            hint={t("consulta.campos.indicacionesAyuda")}
+          >
+            <Textarea id="patientInstructions" rows={3} {...form.register("patientInstructions")} />
+          </FieldWrapper>
+
+          <FieldWrapper label={t("consulta.campos.proximaCita")} htmlFor="suggestedFollowUpDays">
+            <TextInput
+              id="suggestedFollowUpDays"
+              type="number"
+              min={1}
+              max={365}
+              inputMode="numeric"
+              className="max-w-40"
+              {...form.register("suggestedFollowUpDays", {
+                setValueAs: (v: string) => (v === "" ? undefined : Number(v)),
+              })}
+            />
+          </FieldWrapper>
+
+          <FieldWrapper label={t("consulta.campos.pronostico")} htmlFor="prognosis">
+            <Textarea
+              id="prognosis"
+              rows={2}
+              {...prognosisField}
+              ref={(el) => {
+                prognosisField.ref(el);
+                fieldRefs.prognosis.current = el;
+              }}
+              onFocus={() => setActiveField("prognosis")}
+            />
+          </FieldWrapper>
+
+        </form>
+
+        {/* Empieza donde termina el rail (app-nav.tsx, --app-rail-width):
+            con inset-x-0 tapaba Perfil, idioma y Cerrar sesión. */}
+        <div ref={footerRef} className="fixed bottom-0 left-0 right-0 z-20 border-t border-gray-300 bg-white p-4 md:left-[var(--app-rail-width,0px)]">
+          <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-2">
+            <div className="flex items-center gap-3">
+              <IndicadorGuardado state={saveState} lastSavedAt={lastSavedAt} />
+              {planPanelOpen ? (
+                <span className="text-sm text-warn-600">{t("consulta.firma.cierraPanel")}</span>
+              ) : null}
+              {missingFields && !planPanelOpen ? (
+                <span role="alert" className="text-sm text-warn-600">
+                  {t("consulta.firma.faltanDatos")}
+                </span>
+              ) : null}
+            </div>
+            <div className="flex items-center gap-3">
+              <Button type="button" variant="secondary" disabled={planPanelOpen} onClick={() => setShowCloseWithoutNote(true)}>
+                {t("agenda.acciones.cerrarSinNota")}
+              </Button>
+              <Button type="button" isLoading={isSigning} disabled={planPanelOpen} onClick={handleSignClick} className="px-6">
+                {t("consulta.firma.firmarYCerrar")} <span className="ml-1 opacity-70">⌘/Ctrl+Enter</span>
+              </Button>
+            </div>
+          </div>
         </div>
-      </Modal>
-    </div>
+
+        <Modal open={showConfirm} onClose={closeConfirm} title={t("consulta.firma.confirmarTitulo")} size="dialog">
+          <div className="flex flex-col gap-4">
+            <p className="text-base text-gray-700">{t("consulta.firma.advertencia")}</p>
+            {signError ? (
+              <Aviso variant="error" title={t("consulta.firma.errorTitulo")}>
+                {signError instanceof ApiError ? signError.message : t("consulta.firma.intentaDeNuevo")}
+              </Aviso>
+            ) : null}
+            <div className="flex flex-wrap gap-3">
+              <Button type="button" isLoading={isSigning} onClick={() => void handleSignSubmit()} className="px-6">
+                {t("consulta.firma.siCerrar")}
+              </Button>
+              <Button type="button" variant="secondary" disabled={isSigning} onClick={closeConfirm}>
+                {t("common.acciones.cancelar")}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+
+        <Modal
+          open={showCloseWithoutNote}
+          onClose={() => (isClosingWithoutNote ? undefined : setShowCloseWithoutNote(false))}
+          title={t("consulta.cerrarSinNota.titulo")}
+          size="dialog"
+        >
+          <div className="flex flex-col gap-4">
+            <p className="text-base text-gray-700">{t("agenda.justificacionCierre")}</p>
+            <label htmlFor="close-without-note-justification" className="text-sm font-medium text-gray-700">
+              {t("consulta.cerrarSinNota.etiquetaJustificacion")}
+            </label>
+            <textarea
+              id="close-without-note-justification"
+              value={closeJustification}
+              onChange={(e) => setCloseJustification(e.target.value)}
+              minLength={10}
+              className="min-h-[80px] w-full rounded-md border border-gray-300 bg-white p-3 text-base text-gray-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-700"
+            />
+            {closeWithoutNoteError ? (
+              <Aviso variant="error" title={t("consulta.firma.errorTitulo")}>
+                {closeWithoutNoteError instanceof ApiError ? closeWithoutNoteError.message : t("consulta.firma.intentaDeNuevo")}
+              </Aviso>
+            ) : null}
+            <div className="flex flex-wrap gap-3">
+              <Button
+                type="button"
+                isLoading={isClosingWithoutNote}
+                disabled={closeJustification.trim().length < 10}
+                onClick={() => void closeWithoutNote()}
+                className="px-6"
+              >
+                {t("agenda.acciones.confirmarCierre")}
+              </Button>
+              <Button type="button" variant="secondary" disabled={isClosingWithoutNote} onClick={() => setShowCloseWithoutNote(false)}>
+                {t("common.acciones.cancelar")}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+
+        <Modal open={isFinished} onClose={onSigned} title={t("consulta.firma.terminadaTitulo")} size="dialog">
+          <div className="flex flex-col gap-4">
+            <Aviso variant="exito" title={t("consulta.firma.terminadaTitulo")}>
+              {t("consulta.firma.terminadaCuerpo")}
+            </Aviso>
+            <Button type="button" onClick={onSigned} className="w-fit px-6">
+              {t("consulta.firma.aceptar")}
+            </Button>
+          </div>
+        </Modal>
+      </div>
+    </>
   );
 }

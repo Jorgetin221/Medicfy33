@@ -1,5 +1,5 @@
 import { Injectable, Logger, NotFoundException } from "@nestjs/common";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import { medicalFileMimeType } from "@medicfy/contracts";
 import type { FileStoragePort } from "./file-storage.port";
@@ -58,6 +58,11 @@ export class LocalDiskFileStorageAdapter implements FileStoragePort {
     await mkdir(dirname(target), { recursive: true });
     await writeFile(target, params.buffer);
     this.logger.log(`[dev-only] stored ${params.fileKey} (${params.contentType}, ${params.buffer.length}B)`);
+  }
+
+  async remove(fileKey: string): Promise<void> {
+    this.assertNotProduction();
+    await rm(this.resolveSafePath(fileKey), { force: true });
   }
 
   async getSignedDownloadUrl(fileKey: string, ttlSeconds: number): Promise<string> {

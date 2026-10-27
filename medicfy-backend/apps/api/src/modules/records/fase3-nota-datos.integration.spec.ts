@@ -158,8 +158,6 @@ describe("Fase 3 · La nota como datos (prompt 31B)", () => {
       .send({
         ...BASE_NOTE,
         diagnoses: [{ icd10Code: await icd10(), description: "Control", diagnosisType: "PRINCIPAL", certainty: "CONFIRMED" }],
-        password: STRONG_PASSWORD,
-        totpCode: totpFromUri(otpauthUri),
         ...extra,
       });
     return { status: res.status, body: res.body };
@@ -286,7 +284,7 @@ describe("Fase 3 · La nota como datos (prompt 31B)", () => {
 
   it("Prompt 28 — un código CIE-10 inexistente ya no puede firmarse (FK real); descartar saca de vigentes sin borrar", async () => {
     const doctor = await registerDoctor();
-    const otpauthUri = await enrollMfa(doctor.accessToken);
+    await enrollMfa(doctor.accessToken);
     const patientId = await createPatient(doctor.accessToken, "1990-01-01");
 
     // Código inventado → 422 (P4 §2.4: antes quedaba firmado y hasheado).
@@ -301,8 +299,6 @@ describe("Fase 3 · La nota como datos (prompt 31B)", () => {
         ...BASE_NOTE,
         vitals: {},
         diagnoses: [{ icd10Code: "ZZZZ9", description: "Inventado", diagnosisType: "PRINCIPAL", certainty: "CONFIRMED" }],
-        password: STRONG_PASSWORD,
-        totpCode: totpFromUri(otpauthUri),
       });
     expect(invalid.status).toBe(422);
     expect(invalid.body.error.code).toBe("DIAGNOSIS_ICD10_NOT_IN_CATALOG");
@@ -316,8 +312,6 @@ describe("Fase 3 · La nota como datos (prompt 31B)", () => {
         ...BASE_NOTE,
         vitals: {},
         diagnoses: [{ icd10Code: code, description: "Real", diagnosisType: "PRINCIPAL", certainty: "CONFIRMED" }],
-        password: STRONG_PASSWORD,
-        totpCode: totpFromUri(otpauthUri),
       });
     expect(signed.status).toBe(201);
     const diagnosis = await prisma.encounterDiagnosis.findFirstOrThrow({ where: { encounterId: enc.body.id } });
@@ -339,7 +333,8 @@ describe("Fase 3 · La nota como datos (prompt 31B)", () => {
     expect(after.body).toHaveLength(0);
 
     const survivor = await prisma.encounterDiagnosis.findUniqueOrThrow({ where: { id: diagnosis.id } });
-    expect(survivor.certainty).toBe("DESCARTADO");
+    // A-07: lo firmado no se reescribe; el descarte es solo un sello.
+    expect(survivor.certainty).toBe("CONFIRMED");
     expect(survivor.discardedByUserId).toBe(doctor.userId);
     expect(survivor.discardedAt).toBeInstanceOf(Date);
   });

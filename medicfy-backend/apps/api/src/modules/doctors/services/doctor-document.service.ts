@@ -2,6 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { createHash, randomUUID } from "node:crypto";
 import type { DoctorDocument, DoctorDocumentType } from "@prisma/client";
 import { PrismaService } from "../../../prisma/prisma.service";
+import { assertContentMatchesDeclaredType } from "../../../common/file-signature.util";
 import { FILE_STORAGE_PORT, type FileStoragePort } from "./file-storage.port";
 import { extensionForMimeType } from "./local-disk-file-storage.adapter";
 
@@ -28,6 +29,8 @@ export class DoctorDocumentService {
     if (!ALLOWED_MIME_TYPES.has(params.mimeType)) {
       throw new InvalidDocumentError("Formato no permitido. Usa PDF, JPG o PNG.");
     }
+    // M-07: el contenido real tiene que corresponder al tipo declarado.
+    assertContentMatchesDeclaredType(params.buffer, params.mimeType);
     if (params.buffer.length > MAX_DOCUMENT_BYTES) {
       throw new InvalidDocumentError("El archivo supera los 10 MB permitidos.");
     }

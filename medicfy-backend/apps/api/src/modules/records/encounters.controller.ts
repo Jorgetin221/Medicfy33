@@ -16,6 +16,7 @@ import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { JwtAuthGuard } from "../identity/guards/jwt-auth.guard";
 import { DoctorVerifiedGuard } from "../identity/guards/doctor-verified.guard";
 import { CareRelationshipGuard, type ClinicalRequest } from "../../common/guards/care-relationship.guard";
+import { ResourceAuthorshipGuard } from "../../common/guards/resource-authorship.guard";
 import { AuditService } from "../identity/services/audit.service";
 import { getRequestMeta } from "../identity/request-meta";
 import { ClinicalEncounterService } from "./services/clinical-encounter.service";
@@ -74,6 +75,7 @@ export class EncountersController {
   }
 
   @Patch("records/encounters/:encounterId/note")
+  @UseGuards(ResourceAuthorshipGuard)
   @ApiOperation({ summary: "Autoguardado cada 10s mientras DRAFT (M8-RN-002)" })
   async updateDraft(
     @Param("encounterId") encounterId: string,
@@ -85,7 +87,7 @@ export class EncountersController {
   }
 
   @Post("records/encounters/:encounterId/sign")
-  @UseGuards(DoctorVerifiedGuard)
+  @UseGuards(DoctorVerifiedGuard, ResourceAuthorshipGuard)
   @ApiOperation({ summary: "Firma el encuentro: congela la nota, calcula y encadena el hash, completa la cita ligada (M8-RN-001/002, M8-CA-004)" })
   async sign(
     @Param("encounterId") encounterId: string,
@@ -98,20 +100,20 @@ export class EncountersController {
   }
 
   @Post("records/encounters/:encounterId/correct-note")
-  @UseGuards(DoctorVerifiedGuard)
+  @UseGuards(DoctorVerifiedGuard, ResourceAuthorshipGuard)
   @ApiOperation({ summary: "Corrige una nota firmada: inserta una nota nueva referenciando la original, nunca UPDATE (M8-RN-001)" })
   async correctNote(
     @Param("encounterId") encounterId: string,
     @Body(new ZodValidationPipe(clinicalNoteCorrectionSchema)) body: ClinicalNoteCorrectionInput,
     @Req() req: ClinicalRequest
   ) {
-    const note = await this.encounters.correctNote(encounterId, body);
+    const note = await this.encounters.correctNote(encounterId, req.user.sub, body);
     await this.audit(req, req.clinicalPatientId as string, "records.encounter.note.correct", note.id);
     return note;
   }
 
   @Post("records/encounters/:encounterId/notes/:noteId/cancel")
-  @UseGuards(DoctorVerifiedGuard)
+  @UseGuards(DoctorVerifiedGuard, ResourceAuthorshipGuard)
   @ApiOperation({ summary: "Prompt 44B: cancela una nota firmada — motivo de catálogo + firma, nunca se elimina" })
   async cancelNote(
     @Param("encounterId") encounterId: string,

@@ -10,6 +10,7 @@ import { useI18n } from "@/lib/i18n/context";
 import { formatDateTimeMedium } from "@/lib/i18n/format";
 import type { MessageKey } from "@/lib/i18n/dictionaries";
 import { translateKeyed } from "@/lib/i18n/keyed";
+import { describeAuditAction } from "@/lib/audit-action-label";
 
 interface AuditLogEntry {
   id: string;
@@ -19,6 +20,8 @@ interface AuditLogEntry {
   resourceType: string;
   patientId: string | null;
   ipAddress: string | null;
+  // B-18: nombre legal del médico que accedió (null si no es médico).
+  actorName?: string | null;
   result: "SUCCESS" | "DENIED";
   occurredAt: string;
 }
@@ -100,8 +103,15 @@ function AuditoriaContent({ accessToken }: { accessToken: string }) {
                 {entries.map((entry) => (
                   <tr key={entry.id} className="border-b border-gray-100 text-gray-900">
                     <td className="py-2 pr-3 whitespace-nowrap">{formatDateTimeMedium(locale, entry.occurredAt)}</td>
-                    <td className="py-2 pr-3">{entry.actorRole ? translateKeyed(t, ACTOR_ROLE_LABEL_KEYS, entry.actorRole) : "—"}</td>
-                    <td className="py-2 pr-3 font-mono text-xs text-gray-700">{entry.action}</td>
+                    <td className="py-2 pr-3">
+                      {entry.actorName ? <span className="block font-medium">{entry.actorName}</span> : null}
+                      <span className={entry.actorName ? "text-sm text-gray-500" : undefined}>
+                        {entry.actorRole ? translateKeyed(t, ACTOR_ROLE_LABEL_KEYS, entry.actorRole) : "—"}
+                      </span>
+                    </td>
+                    <td className="py-2 pr-3 text-gray-700" title={entry.action}>
+                      {describeAuditAction(t, entry.action)}
+                    </td>
                     <td className="py-2 pr-3">
                       {entry.patientId ? (
                         <Link href={`/pacientes/${entry.patientId}`} className="text-brand-700 underline">

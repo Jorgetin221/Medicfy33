@@ -24,6 +24,13 @@ export class LabResultAnalyteService {
     input: LabResultAnalyteCreateInput,
     options?: { source?: LabResultAnalyteSource; labName?: string }
   ): Promise<LabResultAnalyte> {
+    // A-06: la orden del cuerpo tiene que ser de este paciente.
+    if (input.labOrderId) {
+      const labOrder = await this.prisma.labOrder.findUnique({ where: { id: input.labOrderId }, select: { patientId: true } });
+      if (!labOrder || labOrder.patientId !== patientId) {
+        throw new ApiException("LAB_ORDER_NOT_FOUND", "Orden de laboratorio no encontrada.", HttpStatus.NOT_FOUND);
+      }
+    }
     return this.prisma.labResultAnalyte.create({
       data: {
         patientId,

@@ -9,6 +9,7 @@ import { CareRelationshipGuard } from "../../common/guards/care-relationship.gua
 import { FILE_STORAGE_PORT } from "../doctors/services/file-storage.port";
 import { LocalDiskFileStorageAdapter } from "../doctors/services/local-disk-file-storage.adapter";
 import { ClinicalEncounterService } from "./services/clinical-encounter.service";
+import { EncounterSweepService } from "./services/encounter-sweep.service";
 import { IndicacionesPdfService } from "./services/indicaciones-pdf.service";
 import { PatientClinicalService } from "./services/patient-clinical.service";
 import { AntecedentesTemplateService } from "./services/antecedentes-template.service";
@@ -50,6 +51,7 @@ import { DocumentViewController } from "./document-view.controller";
   ],
   providers: [
     ClinicalEncounterService,
+    EncounterSweepService,
     IndicacionesPdfService,
     PatientClinicalService,
     AntecedentesTemplateService,

@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { usePatientClinical } from "@/lib/use-patient-clinical";
+import { startWalkInAppointment } from "@/lib/start-walk-in";
 import { LoadingState, ErrorState } from "@/components/ui/states";
 import { Aviso } from "@/components/ui/alert";
 import { useT } from "@/lib/i18n/context";
@@ -18,6 +18,7 @@ import { TabNotas } from "./tab-notas";
 import { TabRecetas } from "./tab-recetas";
 import { TabOrdenes } from "./tab-ordenes";
 import { TabProtocolos } from "./tab-protocolos";
+import { sexAtBirthLabel } from "@/lib/sex-label";
 
 // Expediente — encabezado clínico persistente con alertas críticas
 // siempre visible (CLAUDE.md §5/§6), y las 5 secciones que
@@ -27,10 +28,28 @@ import { TabProtocolos } from "./tab-protocolos";
 // pestaña vacía.
 export function ExpedienteScreen({ patientId, accessToken }: { patientId: string; accessToken: string }) {
   const t = useT();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const justSigned = searchParams.get("justSigned") === "1";
   const { patient, allergies, medications, historyItems, timeline, isLoading, error, reload } = usePatientClinical(patientId, accessToken);
   const [isAtlasOpen, setIsAtlasOpen] = useState(false);
+  const [isStartingConsultation, setIsStartingConsultation] = useState(false);
+  const [startConsultationError, setStartConsultationError] = useState<unknown>(null);
+
+  // Pedido explícito del usuario (2026-10-27): esto ya NO navega a una
+  // pantalla distinta — crea una cita real para ahora mismo y entra a
+  // la MISMA /consulta/[appointmentId] que usa la agenda.
+  async function startConsultation() {
+    setIsStartingConsultation(true);
+    setStartConsultationError(null);
+    try {
+      const appointmentId = await startWalkInAppointment(patientId, accessToken);
+      router.push(`/consulta/${appointmentId}`);
+    } catch (err) {
+      setStartConsultationError(err);
+      setIsStartingConsultation(false);
+    }
+  }
 
   if (isLoading && !patient) {
     return (
@@ -101,7 +120,7 @@ export function ExpedienteScreen({ patientId, accessToken }: { patientId: string
           <h1 className="font-heading text-2xl text-brand-900">{patientFullName(patient)}</h1>
           <p className="text-base text-gray-500">
             {patient.medicfyId} · {t("pacientes.anios", { n: patientAgeYears(patient.birthDate) })} ·{" "}
-            {patient.sexAtBirth === "F" ? t("pacientes.mujer") : t("pacientes.hombre")}
+            {sexAtBirthLabel(t, patient.sexAtBirth)}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -110,14 +129,18 @@ export function ExpedienteScreen({ patientId, accessToken }: { patientId: string
             {t("pacientes.atlas.abrir")}
           </Button>
           {/* Pedido explícito: atender a un paciente que ya existe sin
-              necesidad de reservarle una cita primero. */}
-          <Link href={`/consulta/paciente/${patientId}`}>
-            <Button type="button">{t("pacientes.expediente.iniciarSinCita")}</Button>
-          </Link>
+              haberle reservado un espacio en la agenda de antemano —
+              crea la cita al vuelo (startWalkInAppointment) y entra a
+              la misma pantalla que "Iniciar" desde la agenda. */}
+          <Button type="button" isLoading={isStartingConsultation} onClick={() => void startConsultation()}>
+            {t("pacientes.expediente.iniciarSinCita")}
+          </Button>
         </div>
       </div>
 
-      {activeAllergyCount > 0 && <AllergySummary allergies={allergies} />}
+      {startConsultationError ? <ErrorState error={startConsultationError} onRetry={() => void startConsultation()} /> : null}
+
+      {activeAllergyCount > 0 && <AllergySummary allergies={allergies} loadState="ready" />}
 
       <Tabs items={tabs} />
 

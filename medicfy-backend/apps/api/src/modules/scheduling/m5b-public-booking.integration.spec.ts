@@ -98,6 +98,16 @@ describe("M5b — agendamiento público real del paciente", () => {
       .send({ serviceType: "TELECONSULTATION", name: "Teleconsulta", durationMinutes: 30, priceMxn: 500 });
     expect(serviceRes.status).toBe(201);
 
+    // A-12: la reserva pública solo acepta espacios reales del horario —
+    // de 08:00 a 20:00 (Ciudad de México) todos los días.
+    for (let weekday = 0; weekday <= 6; weekday += 1) {
+      const ruleRes = await request(app.getHttpServer())
+        .post("/doctors/me/availability-rules")
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({ modality: "ONLINE", weekday, startTime: "08:00", endTime: "20:00", slotDurationMinutes: 30, validFrom: "2026-01-01" });
+      expect(ruleRes.status).toBe(201);
+    }
+
     return { doctorId: doctor.id, serviceId: serviceRes.body.id, accessToken };
   }
 
@@ -151,6 +161,24 @@ describe("M5b — agendamiento público real del paciente", () => {
       expect(relationship).not.toBeNull();
       expect(relationship?.origin).toBe("APPOINTMENT");
       expect(relationship?.status).toBe("ACTIVE");
+    });
+
+    it("A-12: rechaza (422) una hora fuera de la rejilla del horario o fuera del horario del médico", async () => {
+      const doctor = await registerBookableDoctor();
+      const patient = await registerPatient();
+      const offGrid = new Date(futureSlot());
+      offGrid.setUTCMinutes(7);
+      const outsideHours = new Date(futureSlot());
+      outsideHours.setUTCHours(9, 0, 0, 0); // 03:00 en Ciudad de México
+
+      for (const startsAt of [offGrid, outsideHours]) {
+        const res = await request(app.getHttpServer())
+          .post(`/doctors/${doctor.doctorId}/public-appointments`)
+          .set("Authorization", `Bearer ${patient.accessToken}`)
+          .send({ serviceId: doctor.serviceId, startsAt: startsAt.toISOString() });
+        expect(res.status).toBe(422);
+        expect(res.body.error.code).toBe("SLOT_NOT_AVAILABLE");
+      }
     });
 
     it("la cita aparece en /patients/me/appointments del paciente", async () => {

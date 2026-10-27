@@ -19,6 +19,10 @@ export const consulta = {
     ayuda: "Documenta esta consulta como una nota nueva desde el expediente del paciente. La cita queda como estaba.",
   },
   volverAgenda: "Volver a la agenda",
+  cerrarSinNota: {
+    titulo: "¿Cerrar la consulta sin nota clínica?",
+    etiquetaJustificacion: "Justificación",
+  },
   irAlExpediente: "Ir al expediente",
   campos: {
     motivoConsulta: "Motivo de consulta",

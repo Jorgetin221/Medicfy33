@@ -156,7 +156,7 @@ export function Icd10Picker({
                   }`}
                 >
                   <span className="text-base font-medium text-gray-900">{r.code}</span>
-                  <span className="text-sm text-gray-500">{r.description}</span>
+                  <span className="text-base text-gray-500">{r.description}</span>
                 </button>
               ))
             )}
@@ -211,7 +211,7 @@ export function Icd10Picker({
                 ) : (
                   <>
                     <p className="text-base font-medium text-warn-600">Sin código CIE-10 — {d.description}</p>
-                    {d.codeAbsentReason ? <p className="text-sm text-gray-500">Razón: {d.codeAbsentReason}</p> : null}
+                    {d.codeAbsentReason ? <p className="text-base text-gray-500">{t("clinico.diagnosticoPicker.razon", { razon: d.codeAbsentReason })}</p> : null}
                   </>
                 )}
                 <p className="text-sm text-gray-500">
@@ -221,14 +221,14 @@ export function Icd10Picker({
               <div className="flex flex-wrap items-center gap-3">
                 {d.diagnosisType !== "PRINCIPAL" && (
                   <button type="button" onClick={() => makePrincipal(index)} className="min-h-11 text-sm font-medium text-brand-700 underline">
-                    Marcar principal
+                    {t("clinico.diagnosticoPicker.marcarPrincipal")}
                   </button>
                 )}
                 <button type="button" onClick={() => toggleCertainty(index)} className="min-h-11 text-sm font-medium text-brand-700 underline">
                   {d.certainty === "CONFIRMED" ? "Marcar sospechado" : "Marcar confirmado"}
                 </button>
                 <Button type="button" variant="destructive" onClick={() => removeDiagnosis(index)} className="min-h-11 px-3 text-sm">
-                  Quitar
+                  {t("common.acciones.quitar")}
                 </Button>
               </div>
             </li>

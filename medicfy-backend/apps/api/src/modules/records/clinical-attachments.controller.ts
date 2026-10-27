@@ -1,4 +1,4 @@
-import { Controller, Get, HttpStatus, Param, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
+import { Body, Controller, Get, HttpStatus, Param, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { clinicalAttachmentUploadMetadataSchema } from "@medicfy/contracts";
@@ -37,17 +37,21 @@ export class ClinicalAttachmentsController {
   @Post("documents")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: LAB_RESULT_MAX_FILE_BYTES }, fileFilter: labResultFileFilter }))
   @ApiConsumes("multipart/form-data")
-  @ApiOperation({ summary: "Prompt 41: sube un documento — categoría, fecha del estudio y descripción por query" })
+  @ApiOperation({ summary: "Prompt 41: sube un documento — categoría, fecha del estudio y descripción como campos del formulario (o por query, compatibilidad)" })
   async upload(
     @Param("patientId") patientId: string,
     @UploadedFile() file: Express.Multer.File | undefined,
     @Query() query: Record<string, unknown>,
+    @Body() formFields: Record<string, unknown> | undefined,
     @Req() req: ClinicalRequest
   ) {
     if (!file) {
       throw new ApiException("FILE_REQUIRED", "Debes adjuntar un archivo.", HttpStatus.BAD_REQUEST);
     }
-    const meta = clinicalAttachmentUploadMetadataSchema.safeParse(query);
+    // M-23: la descripción (texto libre, puede ser clínica) llega como
+    // campo multipart — en la URL quedaría en los logs de acceso. La
+    // query se sigue aceptando para no romper clientes viejos.
+    const meta = clinicalAttachmentUploadMetadataSchema.safeParse({ ...query, ...(formFields ?? {}) });
     if (!meta.success) {
       throw new ApiException("VALIDATION_ERROR", "Metadatos inválidos.", HttpStatus.BAD_REQUEST, { issues: meta.error.issues });
     }

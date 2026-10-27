@@ -1,8 +1,9 @@
 import type { disponibilidad as es } from "../es/disponibilidad";
 
 export const disponibilidad: typeof es = {
+  agregarHorario: "Add hours",
   titulo: "Availability settings",
-  subtitulo: "What you offer, where and when — everything a patient needs in order to book with you.",
+  subtitulo: "What you offer, where and when: everything a patient needs in order to book with you.",
   dias: {
     domingo: "Sunday",
     lunes: "Monday",
@@ -38,7 +39,7 @@ export const disponibilidad: typeof es = {
     titulo: "Services",
     subtitulo: "What you offer and what it costs. You need at least one in order to book appointments.",
     vacio: "No services configured",
-    vacioAyuda: 'Add the first one below — for example, "General consultation".',
+    vacioAyuda: 'Add the first one below, for example, "General consultation".',
     inactivo: "(inactive)",
     nombre: "Name",
     nombreEjemplo: "General consultation",

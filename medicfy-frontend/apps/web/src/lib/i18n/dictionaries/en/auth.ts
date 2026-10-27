@@ -27,7 +27,7 @@ export const auth: typeof es = {
     catalogoNoCargo: "The catalog couldn't be loaded.",
   },
   login: {
-    panelTitulo: "Your practice — no WhatsApp, no spreadsheets, no paper prescription pad",
+    panelTitulo: "Your practice, no WhatsApp, no spreadsheets, no paper prescription pad",
     panelCuerpo:
       "A NOM-004-compliant clinical record, legally valid electronic prescriptions, and your day's schedule, all in one place.",
     titulo: "Sign in",
@@ -38,12 +38,43 @@ export const auth: typeof es = {
     o: "or",
     comoMedico: "as a physician",
   },
+  olvide: {
+    panelTitulo: "Get back into your account",
+    panelCuerpo: "We send you a one-time link, valid for one hour. Using it signs you out everywhere else.",
+    titulo: "Forgot your password?",
+    subtitulo: "Enter your account email and we will send you a link to create a new one.",
+    enviar: "Send link",
+    enviadoTitulo: "Check your email",
+    enviadoCuerpo: "If an account exists with that email, a link will arrive in a few minutes. Check your spam folder too.",
+    volverLogin: "Back to sign in",
+    enlace: "Forgot your password?",
+  },
+  restablecer: {
+    titulo: "Create a new password",
+    subtitulo: "Use a password you don't use anywhere else.",
+    nueva: "New password",
+    guardar: "Save password",
+    sinToken: "The link is incomplete. Request a new one.",
+    listoTitulo: "Password updated",
+    listoCuerpo: "You can now sign in with your new password. Your other sessions were signed out.",
+  },
+  invitacion: {
+    titulo: "Assistant invitation",
+    subtitulo: "A doctor invited you to help with their schedule on Medicfy.",
+    necesitaSesion: "Sign in (or sign up) with the same email the invitation was sent to in order to accept it.",
+    iniciarSesion: "Sign in to accept",
+    aceptar: "Accept invitation",
+    aceptadaTitulo: "Invitation accepted",
+    aceptadaCuerpo: "You can now see and manage the schedule of the doctor who invited you.",
+    irAgenda: "Go to the schedule",
+    sinToken: "The link is incomplete. Ask the doctor to send you another invitation.",
+  },
   mfa: {
     panelTitulo: "One more step to protect your records",
     panelCuerpo:
       "Two-step verification keeps someone who has your password from seeing your patients' clinical history.",
     titulo: "Two-step verification",
-    subtitulo: "Enter the 6-digit code from your authenticator app.",
+    subtitulo: "Enter the 6-digit code from your authenticator app, or one of your backup codes.",
     verificar: "Verify",
   },
   verificarCorreo: {

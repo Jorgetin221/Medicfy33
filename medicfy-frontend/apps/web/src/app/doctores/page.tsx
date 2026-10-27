@@ -1,12 +1,11 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api-client";
 import { useSpecialties } from "@/lib/use-specialties";
 import { Card, LoadingState, EmptyState, ErrorState } from "@/components/ui/states";
-import { Button } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { FieldWrapper, TextInput, SelectInput } from "@/components/ui/field";
 import { IconShieldCheck } from "@/components/ui/landing-icons";
 import { SiteHeader } from "@/components/site-header";
@@ -211,11 +210,7 @@ function DoctorCard({ doctor }: { doctor: PublicDoctorSummary }) {
       ) : null}
       {doctor.university ? <p className="text-sm text-gray-600">{doctor.university}</p> : null}
       {doctor.acceptsTeleconsultation ? <p className="text-sm text-gray-500">{t("directorio.ofreceTeleconsulta")}</p> : null}
-      <Link href={`/dr/${doctor.slug}`}>
-        <Button type="button" variant="secondary" className="w-full">
-          {t("landing.destacados.verPerfil")}
-        </Button>
-      </Link>
+      <ButtonLink href={`/dr/${doctor.slug}`} variant="secondary" className="w-full">{t("landing.destacados.verPerfil")}</ButtonLink>
     </Card>
   );
 }

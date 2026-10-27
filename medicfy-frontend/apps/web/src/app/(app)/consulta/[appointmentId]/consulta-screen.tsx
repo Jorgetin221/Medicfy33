@@ -13,7 +13,7 @@ import { ConsultaForm } from "./consulta-form";
 import { useT } from "@/lib/i18n/context";
 import type { MessageKey } from "@/lib/i18n/dictionaries";
 import { ConsultaReadonly } from "./consulta-readonly";
-import { TeleconsultaButton } from "./teleconsulta-button";
+import { TeleconsultaPanel } from "./teleconsulta-panel";
 import { EmisionDocumentos } from "@/components/clinical/emision-documentos";
 import { patientFullName, type AppointmentDetail, type EncounterDetail } from "./types";
 
@@ -221,17 +221,20 @@ export function ConsultaScreen({ appointmentId, accessToken }: { appointmentId: 
   }
 
   return (
-    // M7 (Teleconsulta, MVP): el botón vive fuera de <main> (fragmento
+    // M7 (Teleconsulta, MVP): el panel vive fuera de <main> (fragmento
     // propio) porque <main> es el landmark de la nota clínica — esta
-    // barra no es contenido de la nota. Pestaña nueva, no navegación:
-    // así el médico no pierde la nota que ya tiene abierta (DOC-06
-    // sigue siendo la pantalla principal; la videollamada es un
-    // enlace de proveedor externo, no un panel integrado — Fase 3,
-    // fuera de este MVP).
+    // sección no es contenido de la nota. Carga el video EN ESTA
+    // MISMA pantalla (pedido explícito del usuario) — nunca navega a
+    // otra página ni pestaña, así el médico nunca pierde la nota.
+    // Disponible en CUALQUIER cita (pedido explícito del usuario,
+    // 2026-10-27): no se restringe a modalidad ONLINE — el médico
+    // puede abrir una videollamada ad hoc aunque la cita se haya
+    // agendado como presencial.
     <>
-      <TeleconsultaButton
-        visible={appointment.modality === "ONLINE" && (phase === "ready" || phase === "readonly")}
+      <TeleconsultaPanel
+        visible={phase === "ready" || phase === "readonly"}
         appointmentId={appointmentId}
+        accessToken={accessToken}
       />
       {/* El ancho sobrante pertenece a la nota. Zona 1 (w-72) y Zona 3 (w-96)
           muestran contenido de tamaño conocido y no ganan nada con más espacio;
@@ -271,12 +274,14 @@ export function ConsultaScreen({ appointmentId, accessToken }: { appointmentId: 
         ) : (
           <ConsultaForm
             accessToken={accessToken}
+            appointmentId={appointmentId}
             encounter={encounter}
             historyItems={historyItems}
             patientBirthDate={appointment.patient.birthDate}
             onHistoryChanged={reloadClinical}
             onSigned={() => void handleSigned()}
             onAbandoned={() => setPhase("abandoned")}
+            onClosedWithoutNote={() => router.push("/agenda")}
           />
         )}
         <ConsultaZona3

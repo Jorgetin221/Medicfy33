@@ -2,11 +2,11 @@ import { randomUUID } from "node:crypto";
 import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import cookieParser from "cookie-parser";
-import jwt from "jsonwebtoken";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AppModule } from "../../app.module";
 import { ApiExceptionFilter } from "../../common/api-exception.filter";
+import { signPurposeToken } from "../../common/purpose-token.util";
 import { PrismaService } from "../../prisma/prisma.service";
 import { NOTIFICATION_PORT, type NotificationPort } from "../identity/services/notification.port";
 import { TokenService } from "../identity/services/token.service";
@@ -158,7 +158,7 @@ describe("Documentos con acceso controlado — carga, listado y URL firmada de v
     const upload = await request(app.getHttpServer())
       .post(`/records/patients/${ownerPatientId}/documents?category=OTHER`)
       .set("Authorization", `Bearer ${owner.accessToken}`)
-      .attach("file", Buffer.from("contenido privado"), { filename: "d.pdf", contentType: "application/pdf" });
+      .attach("file", Buffer.from("%PDF-1.4 contenido privado"), { filename: "d.pdf", contentType: "application/pdf" });
     const documentId = upload.body.id as string;
 
     const stranger = await registerDoctor();
@@ -184,15 +184,10 @@ describe("Documentos con acceso controlado — carga, listado y URL firmada de v
     const upload = await request(app.getHttpServer())
       .post(`/records/patients/${patientId}/documents?category=OTHER`)
       .set("Authorization", `Bearer ${doctor.accessToken}`)
-      .attach("file", Buffer.from("contenido"), { filename: "d.pdf", contentType: "application/pdf" });
+      .attach("file", Buffer.from("%PDF-1.4 contenido"), { filename: "d.pdf", contentType: "application/pdf" });
     const documentId = upload.body.id as string;
 
-    const secret = process.env.JWT_ACCESS_SECRET as string;
-    const expiredToken = jwt.sign(
-      { purpose: "document_view", documentId, patientId, sub: doctor.userId },
-      secret,
-      { expiresIn: -10 }
-    );
+    const expiredToken = signPurposeToken("document_view", { documentId, patientId, sub: doctor.userId }, -10);
 
     const view = await request(app.getHttpServer())
       .get(`/documents/view/${expiredToken}`)
@@ -212,7 +207,7 @@ describe("Documentos con acceso controlado — carga, listado y URL firmada de v
     const upload = await request(app.getHttpServer())
       .post(`/records/patients/${patientId}/documents?category=OTHER`)
       .set("Authorization", `Bearer ${doctor.accessToken}`)
-      .attach("file", Buffer.from("contenido"), { filename: "d.pdf", contentType: "application/pdf" });
+      .attach("file", Buffer.from("%PDF-1.4 contenido"), { filename: "d.pdf", contentType: "application/pdf" });
     const documentId = upload.body.id as string;
 
     const signed = await request(app.getHttpServer())

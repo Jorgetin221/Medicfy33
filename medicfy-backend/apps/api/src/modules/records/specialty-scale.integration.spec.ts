@@ -172,7 +172,7 @@ describe("Motor de escalas clínicas (Glasgow, Apgar) sobre SpecialtyFieldSchema
 
   it("Glasgow 4+5+6 firma con glasgow_total=15 e interpretación Leve, protegido por el hash de la nota", async () => {
     const doctor = await registerDoctor();
-    const otpauthUri = await enrollMfa(doctor.accessToken);
+    await enrollMfa(doctor.accessToken);
     const patientId = await createPatient(doctor.accessToken);
     const encounterId = await createEncounter(doctor.accessToken, patientId);
 
@@ -181,8 +181,6 @@ describe("Motor de escalas clínicas (Glasgow, Apgar) sobre SpecialtyFieldSchema
       .set("Authorization", `Bearer ${doctor.accessToken}`)
       .send({
         ...baseSignPayload({ glasgow_ocular: 4, glasgow_verbal: 5, glasgow_motora: 6 }),
-        password: STRONG_PASSWORD,
-        totpCode: totpFromUri(otpauthUri),
       });
     expect(signed.status).toBe(201);
 
@@ -196,7 +194,7 @@ describe("Motor de escalas clínicas (Glasgow, Apgar) sobre SpecialtyFieldSchema
 
   it("Apgar bajo al minuto 1 da interpretación de depresión severa, y sin escalas la firma sigue funcionando igual que siempre", async () => {
     const doctor = await registerDoctor();
-    const otpauthUri = await enrollMfa(doctor.accessToken);
+    await enrollMfa(doctor.accessToken);
     const patientId = await createPatient(doctor.accessToken);
 
     const encounterWithApgar = await createEncounter(doctor.accessToken, patientId);
@@ -211,8 +209,6 @@ describe("Motor de escalas clínicas (Glasgow, Apgar) sobre SpecialtyFieldSchema
           apgar_1min_actividad: 0,
           apgar_1min_respiracion: 0,
         }),
-        password: STRONG_PASSWORD,
-        totpCode: totpFromUri(otpauthUri),
       });
     expect(signedLow.status).toBe(201);
     const storedLow = await prisma.encounterSpecialtyData.findUniqueOrThrow({ where: { encounterId: encounterWithApgar } });
@@ -226,7 +222,7 @@ describe("Motor de escalas clínicas (Glasgow, Apgar) sobre SpecialtyFieldSchema
     const signedPlain = await request(app.getHttpServer())
       .post(`/records/encounters/${encounterWithoutScales}/sign`)
       .set("Authorization", `Bearer ${doctor.accessToken}`)
-      .send({ ...baseSignPayload(), password: STRONG_PASSWORD, totpCode: totpFromUri(otpauthUri) });
+      .send({ ...baseSignPayload() });
     expect(signedPlain.status).toBe(201);
     const noSpecialtyRow = await prisma.encounterSpecialtyData.findUnique({ where: { encounterId: encounterWithoutScales } });
     expect(noSpecialtyRow).toBeNull();
@@ -234,7 +230,7 @@ describe("Motor de escalas clínicas (Glasgow, Apgar) sobre SpecialtyFieldSchema
 
   it("rechaza un valor fuera de rango con 400 y no firma la nota", async () => {
     const doctor = await registerDoctor();
-    const otpauthUri = await enrollMfa(doctor.accessToken);
+    await enrollMfa(doctor.accessToken);
     const patientId = await createPatient(doctor.accessToken);
     const encounterId = await createEncounter(doctor.accessToken, patientId);
 
@@ -243,8 +239,6 @@ describe("Motor de escalas clínicas (Glasgow, Apgar) sobre SpecialtyFieldSchema
       .set("Authorization", `Bearer ${doctor.accessToken}`)
       .send({
         ...baseSignPayload({ glasgow_ocular: 9, glasgow_verbal: 5, glasgow_motora: 6 }),
-        password: STRONG_PASSWORD,
-        totpCode: totpFromUri(otpauthUri),
       });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe("SCALE_VALUE_OUT_OF_RANGE");
@@ -255,14 +249,14 @@ describe("Motor de escalas clínicas (Glasgow, Apgar) sobre SpecialtyFieldSchema
 
   it("una escala incompleta no calcula un total parcial, pero guarda los valores crudos que sí llegaron", async () => {
     const doctor = await registerDoctor();
-    const otpauthUri = await enrollMfa(doctor.accessToken);
+    await enrollMfa(doctor.accessToken);
     const patientId = await createPatient(doctor.accessToken);
     const encounterId = await createEncounter(doctor.accessToken, patientId);
 
     const signed = await request(app.getHttpServer())
       .post(`/records/encounters/${encounterId}/sign`)
       .set("Authorization", `Bearer ${doctor.accessToken}`)
-      .send({ ...baseSignPayload({ glasgow_ocular: 4, glasgow_verbal: 5 }), password: STRONG_PASSWORD, totpCode: totpFromUri(otpauthUri) });
+      .send({ ...baseSignPayload({ glasgow_ocular: 4, glasgow_verbal: 5 }) });
     expect(signed.status).toBe(201);
 
     const stored = await prisma.encounterSpecialtyData.findUniqueOrThrow({ where: { encounterId } });

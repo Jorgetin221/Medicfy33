@@ -10,7 +10,6 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { NOTIFICATION_PORT, type NotificationPort } from "../identity/services/notification.port";
 import { TokenService } from "../identity/services/token.service";
 import { PasswordService } from "../identity/services/password.service";
-import { AppointmentStateMachineService } from "../scheduling/services/appointment-state-machine.service";
 import { toPublicDoctorView } from "./doctor-public-view";
 
 class TestNotificationAdapter implements NotificationPort {
@@ -52,7 +51,6 @@ describe("M2 — Perfil médico y verificación", () => {
   let prisma: PrismaService;
   let tokenService: TokenService;
   let passwordService: PasswordService;
-  let appointmentService: AppointmentStateMachineService;
   let notifications: TestNotificationAdapter;
 
   beforeAll(async () => {
@@ -70,7 +68,6 @@ describe("M2 — Perfil médico y verificación", () => {
     prisma = moduleRef.get(PrismaService);
     tokenService = moduleRef.get(TokenService);
     passwordService = moduleRef.get(PasswordService);
-    appointmentService = moduleRef.get(AppointmentStateMachineService);
     notifications = notificationAdapter;
   });
 
@@ -396,11 +393,9 @@ describe("M2 — Perfil médico y verificación", () => {
           startsAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
         });
       expect(apptRes.status).toBe(201);
-      expect(apptRes.body.status).toBe("PENDING_PAYMENT");
-      // Solo citas pagadas (SCHEDULED/CONFIRMED) admiten
-      // CANCELLED_BY_DOCTOR en la máquina de estados — confirmar el
-      // pago es lo que las vuelve elegibles para este flujo.
-      await appointmentService.confirmPayment(apptRes.body.id, doctor.userId);
+      // A-11: agendada desde el consultorio nace en SCHEDULED (el cobro
+      // ocurre en el consultorio), elegible para CANCELLED_BY_DOCTOR.
+      expect(apptRes.body.status).toBe("SCHEDULED");
 
       const doctorRecord = await prisma.doctor.findUniqueOrThrow({ where: { userId: doctor.userId } });
       const admin = await createAdmin();
@@ -451,7 +446,9 @@ describe("M2 — Perfil médico y verificación", () => {
           serviceId: serviceRes.body.id,
           startsAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
         });
-      expect(apptRes.body.status).toBe("PENDING_PAYMENT");
+      // Una reserva pública sin pagar: desde A-11 solo la reserva del
+      // paciente nace así, se simula sobre la fila.
+      await prisma.appointment.update({ where: { id: apptRes.body.id }, data: { status: "PENDING_PAYMENT" } });
 
       const doctorRecord = await prisma.doctor.findUniqueOrThrow({ where: { userId: doctor.userId } });
       const admin = await createAdmin();

@@ -55,6 +55,8 @@ export const perfil = {
       "Si pierdes acceso a tu app de autenticación, son la única forma de recuperar tu cuenta. Solo se muestran una vez.",
     paso2: "2. Confirma con el código de 6 dígitos que muestra la app",
     codigo: "Código",
+    contrasena: "Tu contraseña",
+    codigoActualORespaldo: "Código actual de tu app o un código de respaldo",
   },
   verificados: {
     titulo: "Datos verificados",
@@ -66,7 +68,7 @@ export const perfil = {
   especialidad: {
     titulo: "Cédula de especialidad",
     explicacion:
-      "Opcional. Si tu especialidad exige certificación de consejo, regístrala aquí — el sello de verificado se degrada automáticamente cuando vence, sin que tengas que hacer nada.",
+      "Opcional. Si tu especialidad exige certificación de consejo, regístrala aquí: el sello de verificado se degrada automáticamente cuando vence, sin que tengas que hacer nada.",
     vence: "Vence",
     noRegistrada: "No registrada.",
     numero: "Número de cédula de especialidad",
@@ -79,13 +81,13 @@ export const perfil = {
     fotoAyuda: "Enlace a una foto tuya de rostro, no un logotipo.",
     urlCompleta: "Debe ser una URL completa (https://...).",
     biografia: "Biografía",
-    biografiaAyuda: "Entre 50 y 2,000 caracteres. Sin teléfono ni correo — eso ya vive en tus datos de contacto.",
+    biografiaAyuda: "Entre 50 y 2,000 caracteres. Sin teléfono ni correo: eso ya vive en tus datos de contacto.",
     biografiaSinContacto: "La biografía no puede incluir teléfono ni correo de contacto.",
     aniosExperiencia: "Años de experiencia",
     aniosRango: "Debe ser un número entero entre 0 y 70.",
     universidad: "Universidad",
     idiomas: "Idiomas",
-    idiomasAyuda: "Sepáralos con comas — por ejemplo: Español, Inglés",
+    idiomasAyuda: "Sepáralos con comas, por ejemplo: Español, Inglés",
     guardado: "Guardado",
   },
   consultorios: {
@@ -108,14 +110,14 @@ export const perfil = {
   },
   contacto: {
     titulo: "Datos de contacto profesional",
-    subtitulo: "Distintos del correo con el que inicias sesión — estos se muestran en tus documentos.",
+    subtitulo: "Distintos del correo con el que inicias sesión: estos se muestran en tus documentos.",
     telefono: "Teléfono",
     telefonoAyuda: "+52 y 10 dígitos.",
     correo: "Correo profesional",
   },
   marca: {
     titulo: "Encabezado, logo y firma visual",
-    subtitulo: "Así se verá el encabezado de tus documentos. La firma es solo visual — no da validez legal.",
+    subtitulo: "Así se verá el encabezado de tus documentos. La firma es solo visual: no da validez legal.",
     frase: "Frase de encabezado (si no usas logo)",
     guardarFrase: "Guardar frase",
     logo: "Logo",

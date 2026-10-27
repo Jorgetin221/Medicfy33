@@ -61,8 +61,9 @@ export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () =>
         {isOffline ? t("ui.estados.sinConexion") : t("ui.estados.algoSalioMal")}
       </p>
       <p className="text-base text-gray-700">{message}</p>
+      {/* B-12: área táctil mínima 44×44 px. */}
       {onRetry && (
-        <button type="button" onClick={onRetry} className="text-sm font-medium text-brand-700 underline">
+        <button type="button" onClick={onRetry} className="min-h-11 w-fit text-base font-medium text-brand-700 underline">
           {t("common.acciones.reintentar")}
         </button>
       )}

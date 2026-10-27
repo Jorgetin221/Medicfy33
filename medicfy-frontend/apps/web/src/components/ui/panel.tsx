@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, type ReactNode } from "react";
 import { useT } from "@/lib/i18n/context";
+import { trapTabKey } from "@/lib/focus-trap";
 
 // Panel (§3.5 del doc de UX): panel lateral deslizable, para ficha
 // resumen y expediente "sin perder contexto". Primitivo puro — sin
@@ -27,6 +28,7 @@ export function Panel({
 }) {
   const t = useT();
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
   // Ref de "última versión" — un caller como ConsultaForm re-renderiza
   // cada segundo (el cronómetro) y pasa un onClose con identidad nueva
@@ -44,6 +46,7 @@ export function Panel({
 
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") onCloseRef.current();
+      trapTabKey(e, dialogRef.current);
     }
     document.addEventListener("keydown", handleKeyDown);
     return () => {
@@ -64,6 +67,7 @@ export function Panel({
       />
       <aside
         role="dialog"
+        ref={dialogRef}
         aria-modal="true"
         aria-labelledby="panel-title"
         className={`relative flex h-full w-full flex-col bg-white shadow-card ${wide ? "max-w-3xl" : "max-w-md"}`}

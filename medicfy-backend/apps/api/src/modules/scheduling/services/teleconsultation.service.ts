@@ -6,12 +6,14 @@ import { ApiException } from "../../../common/api-exception";
 import { VIDEO_PROVIDER_PORT, type VideoProviderPort } from "./video-provider.port";
 import { DailyHttpError } from "./daily-video-provider.adapter";
 
-// M7 (Teleconsulta, MVP): "la cita de modalidad en línea genera un
-// enlace de videollamada de proveedor externo." Orquesta la regla de
-// negocio (modalidad/estado de la cita) y la persistencia del enlace;
-// AppointmentsController resuelve "¿esta cita es del médico que
-// llama?" antes de llegar aquí, igual que con el resto de acciones de
-// la cita.
+// M7 (Teleconsulta, MVP): genera/recupera un enlace de videollamada de
+// proveedor externo para una cita. Pedido explícito del usuario
+// (2026-10-27): disponible para CUALQUIER cita, sin importar su
+// modalidad — el médico puede abrir una videollamada ad hoc incluso
+// en una cita agendada como presencial, no solo en las agendadas como
+// "en línea". AppointmentsController resuelve "¿esta cita es del
+// médico que llama?" antes de llegar aquí, igual que con el resto de
+// acciones de la cita.
 @Injectable()
 export class TeleconsultationService {
   private readonly logger = new Logger(TeleconsultationService.name);
@@ -22,13 +24,6 @@ export class TeleconsultationService {
   ) {}
 
   async openRoom(appointment: Appointment): Promise<TeleconsultationRoomOutcome> {
-    if (appointment.modality !== "ONLINE") {
-      throw new ApiException(
-        "APPOINTMENT_NOT_TELECONSULTATION",
-        "Esta cita no es de modalidad en línea.",
-        HttpStatus.UNPROCESSABLE_ENTITY
-      );
-    }
     // "al momento de que el doctor inicie la consulta": el enlace solo
     // se pide mientras la cita está en curso, nunca antes.
     if (appointment.status !== "IN_PROGRESS") {

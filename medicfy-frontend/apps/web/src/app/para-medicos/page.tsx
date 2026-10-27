@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
+import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/states";
 import { IconFile, IconPrescription, IconCalendar, IconShieldCheck, IconLock, IconClipboardList } from "@/components/ui/landing-icons";
 import { LanguageSwitcher } from "@/components/ui/language-switcher";
@@ -55,9 +55,7 @@ export default async function ParaMedicosPage() {
             >
               {t("nav.publico.iniciarSesion")}
             </Link>
-            <Link href="/registro-medico">
-              <Button className="px-3 sm:px-4">{t("nav.publico.registrate")}</Button>
-            </Link>
+            <ButtonLink href="/registro-medico" className="px-3 sm:px-4">{t("nav.publico.registrate")}</ButtonLink>
           </nav>
         </div>
       </header>
@@ -76,14 +74,8 @@ export default async function ParaMedicosPage() {
               {t("paraMedicos.hero.subtitulo")}
             </p>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-              <Link href="/registro-medico">
-                <Button className="w-full sm:w-auto">{t("paraMedicos.hero.cta")}</Button>
-              </Link>
-              <Link href="/login" className="sm:hidden">
-                <Button variant="secondary" className="w-full">
-                  {t("paraMedicos.hero.yaTengoCuenta")}
-                </Button>
-              </Link>
+              <ButtonLink href="/registro-medico" className="w-full sm:w-auto">{t("paraMedicos.hero.cta")}</ButtonLink>
+              <ButtonLink href="/login" variant="secondary" className="sm:hidden w-full">{t("paraMedicos.hero.yaTengoCuenta")}</ButtonLink>
             </div>
             <p className="text-sm text-gray-500">{t("paraMedicos.hero.nota")}</p>
           </div>
@@ -163,9 +155,7 @@ export default async function ParaMedicosPage() {
           <div className="mx-auto flex max-w-2xl flex-col items-center gap-6">
             <h2 className="font-heading text-2xl text-white md:text-3xl">{t("paraMedicos.cta.titulo")}</h2>
             <p className="text-lg text-brand-100">{t("paraMedicos.cta.cuerpo")}</p>
-            <Link href="/registro-medico">
-              <Button variant="secondary">{t("paraMedicos.hero.cta")}</Button>
-            </Link>
+            <ButtonLink href="/registro-medico" variant="secondary">{t("paraMedicos.hero.cta")}</ButtonLink>
           </div>
         </section>
       </main>

@@ -25,7 +25,12 @@ export const validacion: typeof es = {
   "El análisis es obligatorio.": "The assessment is required.",
   "El contenido no puede estar vacío.": "Content cannot be empty.",
   "El código de verificación debe tener 6 dígitos.": "The verification code must be 6 digits.",
+  "La fecha final debe ser posterior a la inicial.": "The end date must be after the start date.",
+  "El rango de fechas no puede pasar de 60 días.": "The date range cannot exceed 60 days.",
+  "La contraseña no puede pasar de 128 caracteres.": "The password cannot be longer than 128 characters.",
   "El código debe tener 6 dígitos.": "The code must be 6 digits.",
+  "Escribe el código de 6 dígitos de tu app o un código de respaldo de 10 caracteres.":
+    "Enter the 6-digit code from your app or a 10-character backup code.",
   "El diagnóstico es obligatorio.": "The diagnosis is required.",
   "El folio del recetario físico es obligatorio.": "The paper prescription pad number is required.",
   "El motivo de cancelación es obligatorio.": "A cancellation reason is required.",
@@ -43,7 +48,7 @@ export const validacion: typeof es = {
     "Write out the full agent (3 characters minimum). If there are no allergies, don't add a row.",
   "Fecha de nacimiento fuera de rango (entre hoy y hace 120 años).":
     "Date of birth out of range (between today and 120 years ago).",
-  "Fecha inválida — usa AAAA-MM-DD.": "Invalid date — use YYYY-MM-DD.",
+  "Fecha inválida — usa AAAA-MM-DD.": "Invalid date: use YYYY-MM-DD.",
   "Fecha inválida, usa formato YYYY-MM-DD.": "Invalid date, use the YYYY-MM-DD format.",
   "Hora inválida, usa formato HH:MM.": "Invalid time, use the HH:MM format.",
   "Ingresa un correo electrónico válido.": "Enter a valid email address.",

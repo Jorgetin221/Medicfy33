@@ -155,7 +155,7 @@ describe("Medicamentos — autoservicio del médico (sin aprobación de admin)",
 
   it("R5 — un médico prescribe electrónicamente un medicamento Grupo I recién agregado por él mismo: el bloqueo duro sigue aplicando igual que a uno sembrado", async () => {
     const doctor = await registerDoctor();
-    const otpauthUri = await enrollMfa(doctor.accessToken);
+    await enrollMfa(doctor.accessToken);
     const patientId = await createPatient(doctor.accessToken);
 
     const created = await request(app.getHttpServer())
@@ -183,7 +183,6 @@ describe("Medicamentos — autoservicio del médico (sin aprobación de admin)",
         signatureRoute: "ELECTRONIC",
         diagnosisSnapshot: "Dolor agudo, requiere manejo con opioide.",
         password: STRONG_PASSWORD,
-        totpCode: totpFromUri(otpauthUri),
         items: [
           {
             medicationCatalogId: created.body.id,

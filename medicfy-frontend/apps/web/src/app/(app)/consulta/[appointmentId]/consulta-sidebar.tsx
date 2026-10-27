@@ -7,17 +7,25 @@ import { AllergySummary } from "@/components/clinical/allergy-summary";
 import { AntecedentesSummary } from "@/components/clinical/antecedentes-editor";
 import { ResumenObjetivo } from "@/components/clinical/resumen-objetivo";
 import { LoadingState } from "@/components/ui/states";
-import type { ActiveDiagnosis, PatientAllergy, PatientMedication, PatientHistoryItem, PatientPregnancy, PatientTimeline } from "@/lib/use-patient-clinical";
+import type {
+  ActiveDiagnosis,
+  ClinicalLoadState,
+  PatientAllergy,
+  PatientMedication,
+  PatientHistoryItem,
+  PatientPregnancy,
+  PatientTimeline,
+} from "@/lib/use-patient-clinical";
 import { patientAgeYears, patientFullName, type AppointmentDetail } from "./types";
+import { sexAtBirthLabel } from "@/lib/sex-label";
 
 type SidebarPatient = AppointmentDetail["patient"];
 
 // CLAUDE.md §6: "antecedentes, alergias y últimas 3 consultas visibles
 // SIN SCROLL NI CLIC en 1280×800" — columna fija, siempre visible,
 // nunca detrás de una pestaña/acordeón. Toma patientId/patient sueltos
-// (no un AppointmentDetail completo) para poder reusarse tal cual en
-// la consulta sin cita (/consulta/paciente/[patientId]), que no tiene
-// ninguna cita de la que leer estos datos.
+// (no un AppointmentDetail completo) a propósito, por si en el futuro
+// vuelve a hacer falta una vista sin la cita completa.
 export function ConsultaSidebar({
   patientId,
   patient,
@@ -27,7 +35,8 @@ export function ConsultaSidebar({
   timeline,
   pregnancy,
   activeDiagnoses,
-  isLoadingClinical,
+  clinicalLoadState,
+  onRetryClinical,
   encounterId,
   accessToken,
 }: {
@@ -39,7 +48,9 @@ export function ConsultaSidebar({
   timeline: PatientTimeline | null;
   pregnancy: PatientPregnancy | null;
   activeDiagnoses: ActiveDiagnosis[];
-  isLoadingClinical: boolean;
+  // C-04: "loading" y "error" nunca se pintan como listas vacías.
+  clinicalLoadState: ClinicalLoadState;
+  onRetryClinical?: (() => void) | undefined;
   // Resumen objetivo (petición explícita del usuario, 2026-09-02):
   // opcionales porque ConsultaSidebar se re-usa también fuera de una
   // consulta activa.
@@ -59,7 +70,7 @@ export function ConsultaSidebar({
           5) medicación crónica con conteo expandible. Nada comercial
           ni administrativo ocupa este espacio. */}
       <section aria-label={t("clinico.alergiasActivas")}>
-        <AllergySummary allergies={allergies} compact />
+        <AllergySummary allergies={allergies} loadState={clinicalLoadState} onRetry={onRetryClinical} />
       </section>
 
       <div>
@@ -68,24 +79,28 @@ export function ConsultaSidebar({
         </Link>
         <p className="text-sm text-gray-500">
           {patient.medicfyId} · {t("pacientes.anios", { n: patientAgeYears(patient.birthDate) })} ·{" "}
-          {patient.sexAtBirth === "F" ? t("pacientes.mujer") : t("pacientes.hombre")}
+          {sexAtBirthLabel(t, patient.sexAtBirth)}
         </p>
       </div>
 
       {encounterId && accessToken ? <ResumenObjetivo encounterId={encounterId} accessToken={accessToken} /> : null}
 
-      {isLoadingClinical ? (
+      {clinicalLoadState === "error" ? (
+        <p role="alert" className="text-base text-gray-700">
+          {t("clinico.errorContexto")}
+        </p>
+      ) : clinicalLoadState === "loading" ? (
         <LoadingState label={t("consulta.sidebar.cargandoContexto")} />
       ) : (
         <>
           <section data-testid="active-diagnoses">
             <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-gray-500">{t("consulta.sidebar.diagnosticosVigentes")}</h2>
             {activeDiagnoses.length === 0 ? (
-              <p className="text-sm text-gray-500">{t("consulta.sidebar.sinDiagnosticos")}</p>
+              <p className="text-base text-gray-500">{t("consulta.sidebar.sinDiagnosticos")}</p>
             ) : (
               <ul className="flex flex-col gap-1">
                 {activeDiagnoses.slice(0, 5).map((d) => (
-                  <li key={`${d.icd10Code ?? d.description}`} className="text-sm text-gray-700">
+                  <li key={`${d.icd10Code ?? d.description}`} className="text-base text-gray-700">
                     {d.icd10Code ? <span className="font-mono text-gray-500">{d.icd10Code} · </span> : null}
                     {d.description}
                     {d.certainty === "SUSPECTED" ? <span className="text-gray-500">{t("consulta.sidebar.sospecha")}</span> : null}
@@ -117,11 +132,11 @@ export function ConsultaSidebar({
                 {t("consulta.sidebar.medicacionCronica", { n: activeMedications.length })} <span aria-hidden="true">▾</span>
               </summary>
               {activeMedications.length === 0 ? (
-                <p className="text-sm text-gray-500">{t("consulta.sidebar.ningunaRegistrada")}</p>
+                <p className="text-base text-gray-500">{t("consulta.sidebar.ningunaRegistrada")}</p>
               ) : (
                 <ul className="flex flex-col gap-1">
                   {activeMedications.map((m) => (
-                    <li key={m.id} className="text-sm text-gray-700">
+                    <li key={m.id} className="text-base text-gray-700">
                       {m.genericName} — {m.dose}, {m.frequency}
                     </li>
                   ))}
@@ -138,11 +153,11 @@ export function ConsultaSidebar({
           <section>
             <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-gray-500">{t("consulta.sidebar.ultimasConsultas")}</h2>
             {lastThreeEncounters.length === 0 ? (
-              <p className="text-sm text-gray-500">{t("consulta.sidebar.sinConsultasPrevias")}</p>
+              <p className="text-base text-gray-500">{t("consulta.sidebar.sinConsultasPrevias")}</p>
             ) : (
               <ul className="flex flex-col gap-1">
                 {lastThreeEncounters.map((e) => (
-                  <li key={e.id} className="text-sm text-gray-700">
+                  <li key={e.id} className="text-base text-gray-700">
                     {formatDateMedium(locale, e.signedAt ?? e.startedAt)} —{" "}
                     {e.encounterType === "FIRST_VISIT" ? t("consulta.sidebar.primeraVez") : t("consulta.sidebar.seguimiento")}
                   </li>

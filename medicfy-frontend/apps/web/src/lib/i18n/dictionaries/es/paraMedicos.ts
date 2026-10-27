@@ -32,7 +32,7 @@ export const paraMedicos = {
       "Antecedentes, alergias y tus últimas consultas con cada paciente, visibles sin saltar entre WhatsApp y una libreta.",
     cedulaTitulo: "Cédula verificada",
     cedulaCuerpo:
-      "Tu perfil muestra tu cédula profesional verificada — la confianza que un directorio genérico no puede dar.",
+      "Tu perfil muestra tu cédula profesional verificada: la confianza que un directorio genérico no puede dar.",
   },
   pasos: {
     titulo: "Cómo funciona",

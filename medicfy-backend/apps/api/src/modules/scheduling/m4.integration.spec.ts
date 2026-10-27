@@ -576,4 +576,11 @@ describe("M4 — Agenda y disponibilidad", () => {
   it.todo(
     "M4-CA-003: an exception never silently cancels already-booked appointments; it must list affected appointments and require an explicit per-appointment decision. Needs `appointments` to exist (M5) — there is nothing to cancel yet, so this can't be proven true or false today."
   );
+  // Auditoría 2026-10-21, M-08.
+  it("M-08: rejects an availability range longer than 60 days (public endpoint, no auth)", async () => {
+    const res = await request(app.getHttpServer())
+      .get(`/doctors/${randomUUID()}/availability`)
+      .query({ from: "1900-01-01", to: "9999-12-31", service_id: randomUUID() });
+    expect(res.status).toBe(400);
+  });
 });

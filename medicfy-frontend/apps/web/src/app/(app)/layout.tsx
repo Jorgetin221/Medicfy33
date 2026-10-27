@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { AppNav } from "@/components/app-nav";
 import { InactivityWarningBanner } from "@/components/inactivity-warning-banner";
+import { RoleGate } from "@/components/role-gate";
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   return (
@@ -19,7 +20,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           contenedor de scroll. */}
       <div className="min-h-screen flex-1 overflow-x-clip bg-gray-100 pt-14 md:pt-0">
         <InactivityWarningBanner />
-        {children}
+        <RoleGate>{children}</RoleGate>
       </div>
     </div>
   );

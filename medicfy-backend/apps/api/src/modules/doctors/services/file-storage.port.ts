@@ -12,6 +12,11 @@ export interface FileStoragePort {
   // esto se reemplaza por una descarga real vía URL prefirmada; en dev
   // lee del disco local.
   retrieve(fileKey: string): Promise<{ buffer: Buffer; contentType: string }>;
+  // M-10: compensación. Receta y orden guardan su PDF ANTES del INSERT
+  // (R1 impide un UPDATE posterior); si el INSERT falla, el PDF queda
+  // huérfano y se borra aquí. Nunca se usa sobre un archivo ya ligado
+  // a una fila clínica. No falla si el archivo ya no existe.
+  remove(fileKey: string): Promise<void>;
 }
 
 export const FILE_STORAGE_PORT = Symbol("FILE_STORAGE_PORT");

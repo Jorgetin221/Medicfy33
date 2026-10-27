@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import { useT } from "@/lib/i18n/context";
+import { trapTabKey } from "@/lib/focus-trap";
 
 // Ventana emergente centrada. Hermano de Panel (mismo manejo de Esc,
 // foco y fondo), pero centrada. Dos tamaños: "full" para VISORES que
@@ -29,6 +30,7 @@ export function Modal({
   const t = useT();
   const titleId = useId();
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
   // Ref de "última versión", mismo motivo que en Panel: un onClose con
   // identidad nueva en cada render no debe repetir el efecto.
@@ -44,6 +46,7 @@ export function Modal({
 
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") onCloseRef.current();
+      trapTabKey(e, dialogRef.current);
     }
     document.addEventListener("keydown", handleKeyDown);
     return () => {
@@ -60,6 +63,7 @@ export function Modal({
       <button type="button" aria-label={t("common.acciones.cerrar")} tabIndex={-1} onClick={onClose} className="absolute inset-0 bg-overlay" />
       <section
         role="dialog"
+        ref={dialogRef}
         aria-modal="true"
         aria-labelledby={titleId}
         className={`relative flex w-full flex-col overflow-hidden rounded-lg bg-white shadow-card ${SIZE_CLASS[size]}`}

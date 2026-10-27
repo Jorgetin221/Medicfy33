@@ -29,11 +29,17 @@ export const ui = {
     borrar: "Borrar",
     listo: "Listo",
   },
+  confirmacion: {
+    confirmar: "Confirmar",
+    cancelar: "Cancelar",
+    longitudMotivo: "Entre {min} y {max} caracteres ({n} escritos).",
+  },
   guardado: {
     guardado: "Guardado",
     guardando: "Guardando…",
-    sinConexion: "Sin conexión — tus cambios se guardan en este dispositivo",
-    sinRespaldo: "Sin conexión y sin respaldo local — no cierres ni recargues esta pestaña",
+    sinConexion: "Sin conexión: tus cambios se guardan en este dispositivo",
+    sinRespaldo: "Sin conexión y sin respaldo local: no cierres ni recargues esta pestaña",
+    conflicto: "Este borrador cambió en otra pestaña o dispositivo",
     alas: " a las {hora}",
   },
   cita: {

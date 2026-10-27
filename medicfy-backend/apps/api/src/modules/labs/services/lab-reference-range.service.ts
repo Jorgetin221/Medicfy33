@@ -7,6 +7,17 @@ import { evaluateLabValue, type LabValueEvaluation } from "../lab-value-evaluato
 
 type Sex = "M" | "F";
 
+// A-15: "mg/dL" y "mg/dl " son la misma unidad; "mmol/L" no.
+function normalizeUnit(unit: string): string {
+  return unit.replace(/\s+/g, "").toLowerCase();
+}
+
+// A-15: además del estado, se informa si el rango aplicado del sistema
+// todavía no tiene revisión médica (M10-RN-009 ordena usarlo igual —
+// "pendiente de revisión no es lo mismo que inválido"; lo que no puede
+// es presentarse como si estuviera validado).
+export type AnalyteEvaluation = LabValueEvaluation & { rangePendingReview: boolean };
+
 // Capa 2 (v2.5) — tabla curada propia (M10-RN-008/009), sin
 // precedente previo en la especificación. pendingMedicalReview NO
 // excluye una fila de usarse para marcar fuera de rango — "pendiente
@@ -37,8 +48,8 @@ export class LabReferenceRangeService {
   // La celda más específica gana: sexo exacto antes que ANY, y entre
   // varias franjas de edad que ajusten, la más angosta (más
   // específica para ese paciente) antes que una franja amplia.
-  private async findApplicable(analyteKey: string, sex: Sex, ageYears: number): Promise<LabReferenceRange | null> {
-    const candidates = await this.prisma.labReferenceRange.findMany({
+  private async findApplicable(analyteKey: string, sex: Sex, ageYears: number, unit?: string): Promise<LabReferenceRange | null> {
+    const rows = await this.prisma.labReferenceRange.findMany({
       where: {
         analyteKey,
         sex: { in: [sex, "ANY"] },
@@ -46,6 +57,8 @@ export class LabReferenceRangeService {
         ageMaxYears: { gte: ageYears },
       },
     });
+    // A-15: un rango en mg/dL no puede calificar un valor en mmol/L.
+    const candidates = unit === undefined ? rows : rows.filter((r) => normalizeUnit(r.unit) === normalizeUnit(unit));
     const [mostSpecific] = [...candidates].sort((a, b) => {
       if (a.sex !== b.sex) return a.sex === sex ? -1 : 1;
       const widthA = Number(a.ageMaxYears) - Number(a.ageMinYears);
@@ -65,14 +78,15 @@ export class LabReferenceRangeService {
     value: number,
     sex: Sex,
     ageYears: number,
-    printedRange?: { min: number; max: number } | null
-  ): Promise<LabValueEvaluation> {
+    printedRange?: { min: number; max: number } | null,
+    unit?: string
+  ): Promise<AnalyteEvaluation> {
     if (printedRange) {
-      return evaluateLabValue({ value, printedRange });
+      return { ...evaluateLabValue({ value, printedRange }), rangePendingReview: false };
     }
     const analyteKey = normalizeTerm(analyteName);
-    const systemRange = await this.findApplicable(analyteKey, sex, ageYears);
-    return evaluateLabValue({
+    const systemRange = await this.findApplicable(analyteKey, sex, ageYears, unit);
+    const evaluation = evaluateLabValue({
       value,
       systemRange: systemRange
         ? {
@@ -83,5 +97,6 @@ export class LabReferenceRangeService {
           }
         : null,
     });
+    return { ...evaluation, rangePendingReview: systemRange?.pendingMedicalReview ?? false };
   }
 }

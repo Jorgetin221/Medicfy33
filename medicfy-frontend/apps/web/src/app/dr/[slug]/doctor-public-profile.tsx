@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { EDUCATIONAL_POST_CATEGORIES, type PostCategory } from "@medicfy/contracts";
-import { apiFetch, ApiError, expectArray } from "@/lib/api-client";
+import { apiFetch, ApiError, expectArray, newIdempotencyKey } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
 import { tokenPrimaryRole } from "@/lib/jwt-claims";
 import { Card, LoadingState, EmptyState, ErrorState } from "@/components/ui/states";
@@ -255,7 +255,7 @@ function HeroSection({ doctor }: { doctor: PublicDoctor }) {
           ) : null}
         </div>
         <Button type="button" variant="secondary" onClick={() => void share()} className="shrink-0">
-          Compartir perfil
+          {t("perfilPublico.compartirPerfil")}
         </Button>
       </div>
       {!doctor.acceptsNewPatients ? (
@@ -399,6 +399,13 @@ function AvailabilitySection({ doctor }: { doctor: PublicDoctor }) {
     void loadSlots();
   }, [loadSlots]);
 
+  // A-14: misma llave si el paciente reintenta el mismo horario.
+  const bookingKeyRef = useRef<{ startAt: string; key: string } | null>(null);
+  function idempotencyKeyFor(startAt: string): string {
+    if (bookingKeyRef.current?.startAt !== startAt) bookingKeyRef.current = { startAt, key: newIdempotencyKey() };
+    return bookingKeyRef.current.key;
+  }
+
   async function book(slot: AvailableSlot) {
     if (!accessToken) return;
     setBookingError(null);
@@ -408,6 +415,7 @@ function AvailabilitySection({ doctor }: { doctor: PublicDoctor }) {
         method: "POST",
         accessToken,
         body: { serviceId, startsAt: slot.startAt },
+        idempotencyKey: idempotencyKeyFor(`${serviceId}|${slot.startAt}`),
       });
       setBooked(slot);
     } catch (err) {

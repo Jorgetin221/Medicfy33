@@ -54,16 +54,15 @@ function fakePrisma(): PrismaService {
 }
 
 describe("TeleconsultationService", () => {
-  it("rechaza una cita presencial (no genera ningún enlace)", async () => {
+  it("genera el enlace también para una cita agendada como presencial (ad hoc, sin importar la modalidad)", async () => {
     const port = fakePort();
     const service = new TeleconsultationService(fakePrisma(), port);
-    await expect(service.openRoom(baseAppointment({ modality: "IN_PERSON" }))).rejects.toMatchObject({
-      code: "APPOINTMENT_NOT_TELECONSULTATION",
-    });
-    expect(port.createRoom).not.toHaveBeenCalled();
+    const outcome = await service.openRoom(baseAppointment({ modality: "IN_PERSON" }));
+    expect(outcome).toEqual({ kind: "ok", room: { url: ROOM.roomUrl } });
+    expect(port.createRoom).toHaveBeenCalled();
   });
 
-  it("rechaza una cita en línea que todavía no está en curso", async () => {
+  it("rechaza una cita que todavía no está en curso", async () => {
     const port = fakePort();
     const service = new TeleconsultationService(fakePrisma(), port);
     await expect(service.openRoom(baseAppointment({ status: "CONFIRMED" }))).rejects.toMatchObject({

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Req, StreamableFile, UseGuards } from "@nestjs/common";
+import { Body, Controller, Headers, Get, Param, Post, Req, StreamableFile, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import {
   labOrderCreateSchema,
@@ -7,9 +7,11 @@ import {
   type LabOrderCancelInput,
 } from "@medicfy/contracts";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
+import { parseIdempotencyKey } from "../../common/idempotency";
 import { JwtAuthGuard } from "../identity/guards/jwt-auth.guard";
 import { DoctorVerifiedGuard } from "../identity/guards/doctor-verified.guard";
 import { CareRelationshipGuard, type ClinicalRequest } from "../../common/guards/care-relationship.guard";
+import { ResourceAuthorshipGuard } from "../../common/guards/resource-authorship.guard";
 import { AuditService } from "../identity/services/audit.service";
 import { getRequestMeta } from "../identity/request-meta";
 import { LabOrderService } from "./services/lab-order.service";
@@ -28,11 +30,12 @@ export class LabOrdersController {
   ) {}
 
   @Post("lab-orders/encounters/:encounterId")
-  @UseGuards(DoctorVerifiedGuard)
+  @UseGuards(DoctorVerifiedGuard, ResourceAuthorshipGuard)
   @ApiOperation({ summary: "Emite orden de laboratorio ligada al encuentro; firma con contraseña+TOTP" })
   async create(
     @Param("encounterId") encounterId: string,
     @Body(new ZodValidationPipe(labOrderCreateSchema)) body: LabOrderCreateInput,
+    @Headers("idempotency-key") idempotencyKeyHeader: string | undefined,
     @Req() req: ClinicalRequest
   ) {
     const labOrder = await this.labOrders.create(
@@ -40,7 +43,8 @@ export class LabOrdersController {
       req.actingDoctorId as string,
       req.user.sub,
       req.clinicalPatientId as string,
-      body
+      body,
+      parseIdempotencyKey(idempotencyKeyHeader)
     );
     await this.audit(req, "lab_orders.create", labOrder.id);
     return labOrder;
@@ -56,6 +60,7 @@ export class LabOrdersController {
   }
 
   @Post("lab-orders/:labOrderId/cancel")
+  @UseGuards(ResourceAuthorshipGuard)
   @ApiOperation({ summary: "Cancelar — nunca UPDATE, inserta LabOrderCancellation" })
   async cancel(
     @Param("labOrderId") labOrderId: string,

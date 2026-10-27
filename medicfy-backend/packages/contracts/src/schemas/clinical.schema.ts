@@ -38,7 +38,9 @@ export const clinicalEncounterCreateSchema = z
   .object({
     patientId: z.string().uuid(),
     appointmentId: z.string().uuid().optional(),
-    encounterType: encounterTypeSchema,
+    // M-27: si se omite, lo decide el servidor (primera vez si el
+    // paciente no tiene ninguna nota firmada; seguimiento si ya tiene).
+    encounterType: encounterTypeSchema.optional(),
   })
   .strict();
 export type ClinicalEncounterCreateInput = z.infer<typeof clinicalEncounterCreateSchema>;
@@ -92,6 +94,11 @@ export const clinicalNoteDraftUpdateSchema = z
     // uno en note_lab_results al firmar, con su estado ya calculado.
     labResultAnalyteIds: z.array(z.string().uuid()).optional(),
     diagnoses: z.array(encounterDiagnosisDraftSchema).max(20).optional(),
+    // M-13: versión del borrador que el cliente tenía al editar. Si ya
+    // no es la vigente, el servidor responde 409 DRAFT_CONFLICT en vez
+    // de pisar lo guardado desde otra pestaña. Opcional para no romper
+    // clientes viejos (sin ella, gana la última escritura, como antes).
+    expectedDraftVersion: z.number().int().min(0).optional(),
   })
   .strict();
 export type ClinicalNoteDraftUpdateInput = z.infer<typeof clinicalNoteDraftUpdateSchema>;

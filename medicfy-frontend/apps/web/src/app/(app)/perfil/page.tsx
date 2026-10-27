@@ -21,6 +21,7 @@ import { useDoctorProfile, type DoctorProfile, type DoctorVerificationStatus } f
 import { useSpecialties } from "@/lib/use-specialties";
 import { Button } from "@/components/ui/button";
 import { FieldWrapper, TextInput, Textarea } from "@/components/ui/field";
+import { PasswordInput } from "@/components/ui/password-input";
 import { DateInput } from "@/components/ui/date-input";
 import { Card, LoadingState, EmptyState, ErrorState } from "@/components/ui/states";
 import { Aviso } from "@/components/ui/alert";
@@ -279,6 +280,9 @@ function MfaSection({ accessToken }: { accessToken: string }) {
   const [isStarting, setIsStarting] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
   const [isDisabling, setIsDisabling] = useState(false);
+  const [isDisableFormOpen, setIsDisableFormOpen] = useState(false);
+  const [disablePassword, setDisablePassword] = useState("");
+  const [disableCode, setDisableCode] = useState("");
   const [actionError, setActionError] = useState<unknown>(null);
 
   const loadMe = useCallback(() => {
@@ -337,12 +341,24 @@ function MfaSection({ accessToken }: { accessToken: string }) {
     }
   }
 
+  function closeDisableForm() {
+    setIsDisableFormOpen(false);
+    setDisablePassword("");
+    setDisableCode("");
+  }
+
+  // A-27: desactivar exige contraseña y un código vigente (TOTP o de
+  // respaldo); el servidor lo verifica y lo registra en bitácora.
   async function disableMfa() {
-    if (!window.confirm(t("perfil.mfa.confirmarDesactivar"))) return;
     setActionError(null);
     setIsDisabling(true);
     try {
-      await apiFetch("/auth/mfa/disable", { method: "POST", accessToken, body: {} });
+      await apiFetch("/auth/mfa/disable", {
+        method: "POST",
+        accessToken,
+        body: { password: disablePassword, code: disableCode.trim() },
+      });
+      closeDisableForm();
       loadMe();
     } catch (err) {
       setActionError(err);
@@ -365,9 +381,51 @@ function MfaSection({ accessToken }: { accessToken: string }) {
         {me && me.mfaEnabled && !enrollment ? (
           <div className="flex flex-col gap-3">
             <Aviso variant="exito" title={t("perfil.mfa.activada")} />
-            <Button type="button" variant="destructive" isLoading={isDisabling} onClick={() => void disableMfa()} className="w-fit">
-              {t("perfil.mfa.desactivar")}
-            </Button>
+            {isDisableFormOpen ? (
+              <form
+                className="flex flex-col gap-3"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void disableMfa();
+                }}
+              >
+                <p className="text-base text-gray-900">{t("perfil.mfa.confirmarDesactivar")}</p>
+                <FieldWrapper label={t("perfil.mfa.contrasena")} htmlFor="mfa-disable-password">
+                  <PasswordInput
+                    id="mfa-disable-password"
+                    autoComplete="current-password"
+                    value={disablePassword}
+                    onChange={(e) => setDisablePassword(e.target.value)}
+                  />
+                </FieldWrapper>
+                <FieldWrapper label={t("perfil.mfa.codigoActualORespaldo")} htmlFor="mfa-disable-code">
+                  <TextInput
+                    id="mfa-disable-code"
+                    autoComplete="one-time-code"
+                    maxLength={10}
+                    value={disableCode}
+                    onChange={(e) => setDisableCode(e.target.value.replace(/[^0-9a-fA-F]/g, ""))}
+                  />
+                </FieldWrapper>
+                <div className="flex flex-wrap gap-3">
+                  <Button
+                    type="submit"
+                    variant="destructive"
+                    isLoading={isDisabling}
+                    disabled={disablePassword.length === 0 || (disableCode.length !== 6 && disableCode.length !== 10)}
+                  >
+                    {t("perfil.mfa.desactivar")}
+                  </Button>
+                  <Button type="button" variant="secondary" onClick={closeDisableForm}>
+                    {t("common.acciones.cancelar")}
+                  </Button>
+                </div>
+              </form>
+            ) : (
+              <Button type="button" variant="secondary" onClick={() => setIsDisableFormOpen(true)} className="w-fit">
+                {t("perfil.mfa.desactivar")}
+              </Button>
+            )}
           </div>
         ) : null}
 
@@ -417,10 +475,10 @@ function MfaSection({ accessToken }: { accessToken: string }) {
                   />
                 </FieldWrapper>
                 <Button type="button" isLoading={isConfirming} disabled={code.length !== 6} onClick={() => void confirmEnrollment()}>
-                  Confirmar
+                  {t("common.acciones.confirmar")}
                 </Button>
                 <Button type="button" variant="secondary" onClick={() => setEnrollment(null)}>
-                  Cancelar
+                  {t("common.acciones.cancelar")}
                 </Button>
               </div>
             </div>
@@ -592,7 +650,7 @@ function SpecialtyLicenseSection({
           {error ? <ErrorState error={error} /> : null}
           {saved && !error ? <Aviso variant="exito" title={t("perfil.profesional.guardado")} /> : null}
           <Button type="submit" isLoading={form.formState.isSubmitting} className="w-fit">
-            Guardar
+            {t("common.acciones.guardar")}
           </Button>
         </form>
       )}
@@ -745,7 +803,7 @@ function ProfessionalInfoSection({
         {error ? <ErrorState error={error} /> : null}
         {saved && !error ? <Aviso variant="exito" title={t("perfil.profesional.guardado")} /> : null}
         <Button type="submit" isLoading={form.formState.isSubmitting} className="w-fit">
-          Guardar
+          {t("common.acciones.guardar")}
         </Button>
       </form>
     </Card>
@@ -916,7 +974,7 @@ function ContactSection({ doctor, accessToken, onSaved }: { doctor: DoctorProfil
         {error ? <ErrorState error={error} /> : null}
         {saved && !error ? <Aviso variant="exito" title={t("perfil.profesional.guardado")} /> : null}
         <Button type="submit" isLoading={form.formState.isSubmitting} className="w-fit">
-          Guardar
+          {t("common.acciones.guardar")}
         </Button>
       </form>
     </Card>

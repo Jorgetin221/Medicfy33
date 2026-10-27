@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { INestApplication, ExecutionContext } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import cookieParser from "cookie-parser";
+import { TOTP, Secret } from "otpauth";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AppModule } from "../../app.module";
@@ -60,6 +61,11 @@ function uniqueCedula(): string {
 }
 
 const STRONG_PASSWORD = "Correcto-Caballo-Bateria-47!Grafito";
+
+function totpFromUri(otpauthUri: string): string {
+  const secret = new URL(otpauthUri).searchParams.get("secret") ?? "";
+  return new TOTP({ algorithm: "SHA1", digits: 6, period: 30, secret: Secret.fromBase32(secret) }).generate();
+}
 
 describe("M1 — Identidad, cuentas y sesión", () => {
   let app: INestApplication;
@@ -443,6 +449,127 @@ describe("M1 — Identidad, cuentas y sesión", () => {
         .get("/doctors/me/assistants")
         .set("Authorization", `Bearer ${acceptedAssistantAccessToken}`);
       expect(asAssistant.status).toBe(403);
+    });
+  });
+  // Auditoría 2026-10-21, C-01 y A-27.
+  describe("C-01 — el token intermedio de MFA no es un token de acceso", () => {
+    async function doctorWithMfa(): Promise<{ email: string; accessToken: string; otpauthUri: string; backupCodes: string[] }> {
+      const { email } = await registerAndVerifyDoctor();
+      const login = await request(app.getHttpServer()).post("/auth/login").send({ email, password: STRONG_PASSWORD });
+      const accessToken = login.body.accessToken as string;
+      const start = await request(app.getHttpServer()).post("/auth/mfa/enroll").set("Authorization", `Bearer ${accessToken}`).send({});
+      const otpauthUri = start.body.otpauthUri as string;
+      const backupCodes = start.body.backupCodes as string[];
+      const confirm = await request(app.getHttpServer())
+        .post("/auth/mfa/enroll")
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({ code: totpFromUri(otpauthUri) });
+      expect(confirm.status).toBe(200);
+      return { email, accessToken, otpauthUri, backupCodes };
+    }
+
+    it("rejects the mfaSessionToken on protected routes (401)", async () => {
+      const { email } = await doctorWithMfa();
+      const login = await request(app.getHttpServer()).post("/auth/login").send({ email, password: STRONG_PASSWORD });
+      expect(login.body.mfaRequired).toBe(true);
+      const mfaToken = login.body.mfaSessionToken as string;
+
+      const me = await request(app.getHttpServer()).get("/me").set("Authorization", `Bearer ${mfaToken}`);
+      expect(me.status).toBe(401);
+      const patients = await request(app.getHttpServer()).get("/patients").set("Authorization", `Bearer ${mfaToken}`);
+      expect(patients.status).toBe(401);
+      const hijack = await request(app.getHttpServer()).post("/auth/mfa/enroll").set("Authorization", `Bearer ${mfaToken}`).send({});
+      expect(hijack.status).toBe(401);
+    });
+
+    it("refuses to re-enroll over an active MFA secret (409)", async () => {
+      const { accessToken } = await doctorWithMfa();
+      const again = await request(app.getHttpServer()).post("/auth/mfa/enroll").set("Authorization", `Bearer ${accessToken}`).send({});
+      expect(again.status).toBe(409);
+      expect(again.body.error.code).toBe("MFA_ALREADY_ENABLED");
+    });
+
+    it("A-27: disabling MFA requires password and a valid code, and is audited", async () => {
+      const { accessToken, otpauthUri, backupCodes } = await doctorWithMfa();
+      const noBody = await request(app.getHttpServer()).post("/auth/mfa/disable").set("Authorization", `Bearer ${accessToken}`).send({});
+      expect(noBody.status).toBe(400);
+
+      const wrong = await request(app.getHttpServer())
+        .post("/auth/mfa/disable")
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({ password: "otra-contrasena", code: totpFromUri(otpauthUri) });
+      expect(wrong.status).toBe(401);
+
+      const ok = await request(app.getHttpServer())
+        .post("/auth/mfa/disable")
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({ password: STRONG_PASSWORD, code: backupCodes[0] });
+      expect(ok.status).toBe(200);
+    });
+
+    it("M-01: the TOTP used to confirm enrollment cannot be replayed to log in; a backup code works once", async () => {
+      const { email, otpauthUri, backupCodes } = await doctorWithMfa();
+      const login = await request(app.getHttpServer()).post("/auth/login").send({ email, password: STRONG_PASSWORD });
+      const mfaSessionToken = login.body.mfaSessionToken as string;
+
+      const replay = await request(app.getHttpServer()).post("/auth/mfa/verify").send({ mfaSessionToken, code: totpFromUri(otpauthUri) });
+      expect(replay.status).toBe(401);
+
+      const backup = await request(app.getHttpServer()).post("/auth/mfa/verify").send({ mfaSessionToken, code: backupCodes[1] });
+      expect(backup.status).toBe(200);
+
+      const again = await request(app.getHttpServer()).post("/auth/login").send({ email, password: STRONG_PASSWORD });
+      const reused = await request(app.getHttpServer())
+        .post("/auth/mfa/verify")
+        .send({ mfaSessionToken: again.body.mfaSessionToken, code: backupCodes[1] });
+      expect(reused.status).toBe(401);
+    });
+  });
+  describe("Auditoría 2026-10-21 — M-02 y M-04", () => {
+    it("M-02: an email code dies after 5 wrong attempts, even if the right one comes next", async () => {
+      const email = uniqueEmail("patient");
+      const res = await request(app.getHttpServer())
+        .post("/auth/register/patient")
+        .send({
+          email,
+          password: STRONG_PASSWORD,
+          phone: uniquePhone(),
+          firstName: "Karla",
+          lastNamePaternal: "Núñez",
+          birthDate: "1990-01-01",
+          sexAtBirth: "F",
+          consents: { privacyNotice: true, sensitiveData: true, digitalPrescriptionChannel: false },
+        });
+      const userId = res.body.userId as string;
+      const code = mustGet(notifications.emailCodes, email);
+      const wrong = code === "000000" ? "111111" : "000000";
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const bad = await request(app.getHttpServer()).post("/auth/email/verify").send({ userId, code: wrong });
+        expect(bad.status).not.toBe(200);
+      }
+      const late = await request(app.getHttpServer()).post("/auth/email/verify").send({ userId, code });
+      expect(late.status).not.toBe(200);
+    });
+
+    it("M-04: presenting an already-rotated refresh token after the grace window revokes the whole session", async () => {
+      const { userId, email } = await registerAndVerifyDoctor();
+      const loginRes = await request(app.getHttpServer()).post("/auth/login").send({ email, password: STRONG_PASSWORD });
+      const cookieOf = (r: request.Response) =>
+        (r.headers["set-cookie"] as unknown as string[]).find((c) => c.startsWith("medicfy_refresh_token=")) ?? "";
+      const first = cookieOf(loginRes);
+
+      const rotated = await request(app.getHttpServer()).post("/auth/refresh").set("Cookie", first);
+      expect(rotated.status).toBe(200);
+      const second = cookieOf(rotated);
+
+      await prisma.session.updateMany({ where: { userId }, data: { rotatedAt: new Date(Date.now() - 60_000) } });
+      const stolen = await request(app.getHttpServer()).post("/auth/refresh").set("Cookie", first);
+      expect(stolen.status).toBe(401);
+
+      const legit = await request(app.getHttpServer()).post("/auth/refresh").set("Cookie", second);
+      expect(legit.status).toBe(401);
+      const reuse = await prisma.auditLog.findFirst({ where: { actorUserId: userId, action: "auth.refresh_token_reused" } });
+      expect(reuse).not.toBeNull();
     });
   });
 });

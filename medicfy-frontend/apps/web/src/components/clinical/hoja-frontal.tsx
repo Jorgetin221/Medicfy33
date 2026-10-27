@@ -8,6 +8,7 @@ import { AllergySummary } from "@/components/clinical/allergy-summary";
 import type { PatientAllergy, PatientMedication, ActiveDiagnosis, PatientHistoryItem } from "@/lib/use-patient-clinical";
 import { useI18n } from "@/lib/i18n/context";
 import { formatDateMedium, formatDateTimeMedium } from "@/lib/i18n/format";
+import { sexAtBirthLabel } from "@/lib/sex-label";
 
 
 interface HojaFrontalPatient {
@@ -83,14 +84,14 @@ export function HojaFrontal({ patientId, accessToken }: { patientId: string; acc
   const address = formatAddress(patient);
 
   return (
-    <div className="flex flex-col gap-4 text-sm">
+    <div className="flex flex-col gap-4 text-base">
       <div>
         <p className="text-base font-semibold text-gray-900">
           {patient.firstName} {patient.lastNamePaternal} {patient.lastNameMaternal ?? ""}
         </p>
         <p className="text-gray-500">
           {patient.medicfyId} · {t("pacientes.anios", { n: ageYears(patient.birthDate) })} ·{" "}
-          {patient.sexAtBirth === "F" ? t("pacientes.mujer") : t("pacientes.hombre")}
+          {sexAtBirthLabel(t, patient.sexAtBirth)}
         </p>
         <p className="text-gray-500">{patient.phoneE164} · {patient.email}</p>
         {address ? <p className="text-gray-500">{address}</p> : null}
@@ -98,7 +99,7 @@ export function HojaFrontal({ patientId, accessToken }: { patientId: string; acc
 
       <div>
         <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">{t("clinico.hojaFrontal.alergias")}</h3>
-        <AllergySummary allergies={allergies} />
+        <AllergySummary allergies={allergies} loadState="ready" />
       </div>
 
       <div>
@@ -169,7 +170,7 @@ export function HojaFrontal({ patientId, accessToken }: { patientId: string; acc
         )}
       </div>
 
-      <Link href={`/pacientes/${patientId}`} className="w-fit text-sm font-medium text-brand-700 underline">
+      <Link href={`/pacientes/${patientId}`} className="flex min-h-11 w-fit items-center text-base font-medium text-brand-700 underline">
         {t("clinico.verExpediente")}
       </Link>
     </div>

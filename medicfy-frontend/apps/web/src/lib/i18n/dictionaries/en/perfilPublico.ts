@@ -1,6 +1,7 @@
 import type { perfilPublico as es } from "../es/perfilPublico";
 
 export const perfilPublico: typeof es = {
+  compartirPerfil: "Share profile",
   noEncontradoTitulo: "Physician not found",
   noEncontradoCuerpo: "This link doesn't match any profile published on Medicfy.",
   acercaDe: "About",

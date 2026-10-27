@@ -145,7 +145,7 @@ describe("Nota clínica — IMC calculado y corrección (adenda) de nota firmada
   describe("IMC calculado en servidor", () => {
     it("78.4 kg y 158 cm firman con bmi=31.4 y la fórmula guardada, nunca confiado del cliente", async () => {
       const doctor = await registerDoctor();
-      const otpauthUri = await enrollMfa(doctor.accessToken);
+      await enrollMfa(doctor.accessToken);
       const patientId = await createPatient(doctor.accessToken);
       const encounterId = await createEncounter(doctor.accessToken, patientId);
 
@@ -158,8 +158,6 @@ describe("Nota clínica — IMC calculado y corrección (adenda) de nota firmada
         .send(
           signPayload({
             vitals: { weightKg: 78.4, heightCm: 158, bmi: 999 },
-            password: STRONG_PASSWORD,
-            totpCode: totpFromUri(otpauthUri),
           })
         );
       expect(signed.status).toBe(201);
@@ -169,14 +167,14 @@ describe("Nota clínica — IMC calculado y corrección (adenda) de nota firmada
 
     it("sin peso o sin talla, no calcula ni inventa un bmi", async () => {
       const doctor = await registerDoctor();
-      const otpauthUri = await enrollMfa(doctor.accessToken);
+      await enrollMfa(doctor.accessToken);
       const patientId = await createPatient(doctor.accessToken);
       const encounterId = await createEncounter(doctor.accessToken, patientId);
 
       const signed = await request(app.getHttpServer())
         .post(`/records/encounters/${encounterId}/sign`)
         .set("Authorization", `Bearer ${doctor.accessToken}`)
-        .send(signPayload({ vitals: { weightKg: 78.4 }, password: STRONG_PASSWORD, totpCode: totpFromUri(otpauthUri) }));
+        .send(signPayload({ vitals: { weightKg: 78.4 } }));
       expect(signed.status).toBe(201);
       expect(signed.body.note.vitals.bmi).toBeUndefined();
     });
@@ -185,14 +183,14 @@ describe("Nota clínica — IMC calculado y corrección (adenda) de nota firmada
   describe("Corrección de nota firmada (adenda)", () => {
     it("inserta una nota nueva referenciando la original — la original nunca se toca, ambas quedan visibles", async () => {
       const doctor = await registerDoctor();
-      const otpauthUri = await enrollMfa(doctor.accessToken);
+      await enrollMfa(doctor.accessToken);
       const patientId = await createPatient(doctor.accessToken);
       const encounterId = await createEncounter(doctor.accessToken, patientId);
 
       const signed = await request(app.getHttpServer())
         .post(`/records/encounters/${encounterId}/sign`)
         .set("Authorization", `Bearer ${doctor.accessToken}`)
-        .send(signPayload({ password: STRONG_PASSWORD, totpCode: totpFromUri(otpauthUri) }));
+        .send(signPayload());
       expect(signed.status).toBe(201);
       const originalNoteId = signed.body.note.id as string;
       const originalCreatedAt = signed.body.note.createdAt;
@@ -204,8 +202,6 @@ describe("Nota clínica — IMC calculado y corrección (adenda) de nota firmada
           signPayload({
             isCorrectionOfNoteId: originalNoteId,
             assessment: "Corrige: sí hay hallazgo relevante",
-            password: STRONG_PASSWORD,
-            totpCode: totpFromUri(otpauthUri),
           })
         );
       expect(corrected.status).toBe(201);
@@ -228,39 +224,39 @@ describe("Nota clínica — IMC calculado y corrección (adenda) de nota firmada
 
     it("rechaza corregir sobre un encuentro que sigue en DRAFT (409)", async () => {
       const doctor = await registerDoctor();
-      const otpauthUri = await enrollMfa(doctor.accessToken);
+      await enrollMfa(doctor.accessToken);
       const patientId = await createPatient(doctor.accessToken);
       const encounterId = await createEncounter(doctor.accessToken, patientId);
 
       const res = await request(app.getHttpServer())
         .post(`/records/encounters/${encounterId}/correct-note`)
         .set("Authorization", `Bearer ${doctor.accessToken}`)
-        .send(signPayload({ isCorrectionOfNoteId: randomUUID(), password: STRONG_PASSWORD, totpCode: totpFromUri(otpauthUri) }));
+        .send(signPayload({ isCorrectionOfNoteId: randomUUID() }));
       expect(res.status).toBe(409);
       expect(res.body.error.code).toBe("ENCOUNTER_NOT_SIGNED");
     });
 
     it("rechaza corregir una nota que pertenece a otro encuentro (404)", async () => {
       const doctor = await registerDoctor();
-      const otpauthUri = await enrollMfa(doctor.accessToken);
+      await enrollMfa(doctor.accessToken);
       const patientId = await createPatient(doctor.accessToken);
 
       const encounterA = await createEncounter(doctor.accessToken, patientId);
       const signedA = await request(app.getHttpServer())
         .post(`/records/encounters/${encounterA}/sign`)
         .set("Authorization", `Bearer ${doctor.accessToken}`)
-        .send(signPayload({ password: STRONG_PASSWORD, totpCode: totpFromUri(otpauthUri) }));
+        .send(signPayload());
 
       const encounterB = await createEncounter(doctor.accessToken, patientId);
       await request(app.getHttpServer())
         .post(`/records/encounters/${encounterB}/sign`)
         .set("Authorization", `Bearer ${doctor.accessToken}`)
-        .send(signPayload({ password: STRONG_PASSWORD, totpCode: totpFromUri(otpauthUri) }));
+        .send(signPayload());
 
       const res = await request(app.getHttpServer())
         .post(`/records/encounters/${encounterB}/correct-note`)
         .set("Authorization", `Bearer ${doctor.accessToken}`)
-        .send(signPayload({ isCorrectionOfNoteId: signedA.body.note.id, password: STRONG_PASSWORD, totpCode: totpFromUri(otpauthUri) }));
+        .send(signPayload({ isCorrectionOfNoteId: signedA.body.note.id }));
       expect(res.status).toBe(404);
       expect(res.body.error.code).toBe("NOTE_NOT_FOUND");
     });

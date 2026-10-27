@@ -442,8 +442,10 @@ export class PatientClinicalService {
   }
 
   // ── Fase 3 · Prompt 28: descartar un diagnóstico ─────────────────
-  // No lo borra: cambia certainty a DESCARTADO y conserva el histórico
-  // con fecha y autor (R1). Sale de los diagnósticos vigentes.
+  // No lo borra ni reescribe lo firmado: solo estampa fecha y autor del
+  // descarte (una vez). certainty conserva lo que se firmó — el trigger
+  // medicfy_seal_signed_diagnosis rechaza cualquier otro cambio (A-07).
+  // Sale de los diagnósticos vigentes.
   async discardDiagnosis(patientId: string, diagnosisId: string, userId: string) {
     const diagnosis = await this.prisma.encounterDiagnosis.findUnique({
       where: { id: diagnosisId },
@@ -452,12 +454,12 @@ export class PatientClinicalService {
     if (!diagnosis || diagnosis.encounter.patientId !== patientId) {
       throw new ApiException("DIAGNOSIS_NOT_FOUND", "Diagnóstico no encontrado para este paciente.", HttpStatus.NOT_FOUND);
     }
-    if (diagnosis.certainty === "DESCARTADO") {
+    if (isDiscardedDiagnosis(diagnosis)) {
       throw new ApiException("DIAGNOSIS_ALREADY_DISCARDED", "Este diagnóstico ya está descartado.", HttpStatus.CONFLICT);
     }
     return this.prisma.encounterDiagnosis.update({
       where: { id: diagnosisId },
-      data: { certainty: "DESCARTADO", discardedAt: new Date(), discardedByUserId: userId },
+      data: { discardedAt: new Date(), discardedByUserId: userId },
     });
   }
 
@@ -588,11 +590,13 @@ export class PatientClinicalService {
         description: true,
         diagnosisType: true,
         certainty: true,
+        discardedAt: true,
         createdAt: true,
         encounterId: true,
       },
     });
     const groups = new Map<string, {
+      isDiscarded: boolean;
       icd10Code: string | null;
       description: string;
       diagnosisType: string;
@@ -609,11 +613,13 @@ export class PatientClinicalService {
         existing.description = d.description;
         existing.diagnosisType = d.diagnosisType;
         existing.certainty = d.certainty;
+        existing.isDiscarded = isDiscardedDiagnosis(d);
         existing.lastRecordedAt = d.createdAt;
         existing.lastEncounterId = d.encounterId;
         existing.timesRecorded += 1;
       } else {
         groups.set(key, {
+          isDiscarded: isDiscardedDiagnosis(d),
           icd10Code: d.icd10Code,
           description: d.description,
           diagnosisType: d.diagnosisType,
@@ -628,7 +634,8 @@ export class PatientClinicalService {
     // Prompt 28: un diagnóstico descartado sale de los vigentes — pero
     // su fila sobrevive con fecha y autor del descarte (R1).
     return [...groups.values()]
-      .filter((g) => g.certainty !== "DESCARTADO")
+      .filter((g) => !g.isDiscarded)
+      .map(({ isDiscarded: _isDiscarded, ...group }) => group)
       .sort((a, b) => b.lastRecordedAt.getTime() - a.lastRecordedAt.getTime());
   }
 
@@ -821,4 +828,10 @@ export class PatientClinicalService {
       throw new ApiException("MEDICATION_NOT_FOUND", "Medicamento no encontrado.", HttpStatus.NOT_FOUND);
     }
   }
+}
+
+// Filas descartadas antes de 2026-10-22 llevan certainty=DESCARTADO;
+// desde entonces el descarte es solo el sello discardedAt.
+function isDiscardedDiagnosis(d: { certainty: string; discardedAt: Date | null }): boolean {
+  return d.discardedAt !== null || d.certainty === "DESCARTADO";
 }

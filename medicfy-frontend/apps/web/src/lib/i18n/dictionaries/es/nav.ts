@@ -14,7 +14,7 @@ export const nav = {
     colapsarBarra: "Colapsar barra lateral",
     expandirBarra: "Expandir barra lateral",
     navegacionPrincipal: "Navegación principal",
-    irAAgenda: "Medicfy — ir a Agenda",
+    irAAgenda: "Medicfy · ir a Agenda",
   },
   publico: {
     principal: "Principal",

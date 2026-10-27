@@ -2,6 +2,13 @@ import { describe, expect, it } from "vitest";
 import { buildAuditLogChainHashInput, sha256Hex } from "../../../common/content-hash.util";
 import { AuditChainVerifierService } from "./audit-chain-verifier.service";
 
+// Acceso por índice que falla con un mensaje claro en vez de usar `!`.
+function at<T>(items: readonly T[], index: number): T {
+  const item = items[index];
+  if (item === undefined) throw new Error(`Se esperaba un elemento en la posición ${index}.`);
+  return item;
+}
+
 interface FixtureRow {
   id: string;
   actorUserId: string | null;
@@ -63,9 +70,21 @@ function buildValidChain(count: number): FixtureRow[] {
   return rows;
 }
 
-function buildService(rows: FixtureRow[]): AuditChainVerifierService {
+// El estado de la cadena por defecto refleja la última fila — como lo
+// deja AuditService.log(). Las pruebas de truncado lo pasan explícito.
+function buildService(rows: FixtureRow[], state?: { lastSequence: bigint; lastHashSha256: string | null }): AuditChainVerifierService {
+  const last = rows[rows.length - 1];
+  const chainState = state ?? { lastSequence: last?.sequence ?? 0n, lastHashSha256: last?.hashSha256 ?? null };
   const prisma = {
-    auditLog: { findMany: async () => rows },
+    auditLog: {
+      findMany: async ({ where }: { where: { sequence: { gt?: bigint; lte?: bigint } } }) =>
+        rows.filter(
+          (r) =>
+            (where.sequence.gt === undefined || r.sequence > where.sequence.gt) &&
+            (where.sequence.lte === undefined || r.sequence <= where.sequence.lte)
+        ),
+    },
+    auditLogChainState: { findUnique: async () => ({ id: 1, ...chainState }) },
   } as unknown as ConstructorParameters<typeof AuditChainVerifierService>[0];
   return new AuditChainVerifierService(prisma);
 }
@@ -85,7 +104,7 @@ describe("AuditChainVerifierService (M15-RN-002)", () => {
     const rows = buildValidChain(4);
     // Alteración directa: cambia el action de la fila 3 sin recalcular
     // su hashSha256 — simula un UPDATE hecho por fuera de la app.
-    rows[2]!.action = "action.tampered";
+    at(rows, 2).action = "action.tampered";
 
     const result = await buildService(rows).verifyChain();
 
@@ -99,25 +118,25 @@ describe("AuditChainVerifierService (M15-RN-002)", () => {
     // Ataque más sofisticado: recalcular el propio hash tras alterar el
     // contenido, para pasar la comparación (a). El eslabón (b) con la
     // fila SIGUIENTE sigue apuntando al hash ORIGINAL — no coincide.
-    rows[1]!.action = "action.tampered";
-    rows[1]!.hashSha256 = sha256Hex(
+    at(rows, 1).action = "action.tampered";
+    at(rows, 1).hashSha256 = sha256Hex(
       buildAuditLogChainHashInput({
-        id: rows[1]!.id,
-        actorUserId: rows[1]!.actorUserId,
-        actorRole: rows[1]!.actorRole,
-        action: rows[1]!.action,
-        resourceType: rows[1]!.resourceType,
-        resourceId: rows[1]!.resourceId,
-        patientId: rows[1]!.patientId,
-        ipAddress: rows[1]!.ipAddress,
-        userAgent: rows[1]!.userAgent,
-        requestId: rows[1]!.requestId,
-        justification: rows[1]!.justification,
-        result: rows[1]!.result,
-        metadata: rows[1]!.metadata,
-        occurredAtIso: rows[1]!.occurredAt.toISOString(),
-        sequence: rows[1]!.sequence.toString(),
-        previousHashSha256: rows[1]!.previousHashSha256,
+        id: at(rows, 1).id,
+        actorUserId: at(rows, 1).actorUserId,
+        actorRole: at(rows, 1).actorRole,
+        action: at(rows, 1).action,
+        resourceType: at(rows, 1).resourceType,
+        resourceId: at(rows, 1).resourceId,
+        patientId: at(rows, 1).patientId,
+        ipAddress: at(rows, 1).ipAddress,
+        userAgent: at(rows, 1).userAgent,
+        requestId: at(rows, 1).requestId,
+        justification: at(rows, 1).justification,
+        result: at(rows, 1).result,
+        metadata: at(rows, 1).metadata,
+        occurredAtIso: at(rows, 1).occurredAt.toISOString(),
+        sequence: at(rows, 1).sequence.toString(),
+        previousHashSha256: at(rows, 1).previousHashSha256,
       })
     );
 
@@ -126,5 +145,21 @@ describe("AuditChainVerifierService (M15-RN-002)", () => {
     expect(result.status).toBe("ROTA");
     expect(result.brokenAtSequence).toBe("3");
     expect(result.reasons[0]).toContain("eslabón con la fila anterior");
+  });
+  it("M-16: detecta una fila borrada a la mitad (hueco en la secuencia)", async () => {
+    const rows = buildValidChain(5);
+    rows.splice(2, 1);
+    const result = await buildService(rows).verifyChain();
+    expect(result.status).toBe("ROTA");
+    expect(result.reasons[0]).toContain("hueco");
+  });
+
+  it("M-16: detecta que se borraron las últimas filas (la cadena termina antes que el estado)", async () => {
+    const rows = buildValidChain(5);
+    const fullState = { lastSequence: at(rows, 4).sequence, lastHashSha256: at(rows, 4).hashSha256 };
+    const truncated = rows.slice(0, 3);
+    const result = await buildService(truncated, fullState).verifyChain();
+    expect(result.status).toBe("ROTA");
+    expect(result.reasons[0]).toContain("se borraron filas del final");
   });
 });

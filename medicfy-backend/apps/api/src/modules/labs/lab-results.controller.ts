@@ -24,6 +24,7 @@ import {
   type LabResultReviewInput,
 } from "@medicfy/contracts";
 import { ApiException } from "../../common/api-exception";
+import { assertContentMatchesDeclaredType, fileResponse } from "../../common/file-signature.util";
 import { JwtAuthGuard } from "../identity/guards/jwt-auth.guard";
 import { CareRelationshipGuard, type ClinicalRequest } from "../../common/guards/care-relationship.guard";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
@@ -69,7 +70,7 @@ export class LabResultsController {
   ): Promise<StreamableFile> {
     const { buffer, contentType } = await this.labOrders.getResultFile(resultId, patientId);
     await this.audit(req, patientId, "lab_results.file.download", resultId);
-    return new StreamableFile(buffer, { type: contentType });
+    return fileResponse(buffer, contentType);
   }
 
   @Post()
@@ -99,6 +100,10 @@ export class LabResultsController {
       throw new ApiException("LAB_RESULT_FILE_TYPE_NOT_ALLOWED", "Formato no permitido.", HttpStatus.BAD_REQUEST);
     }
 
+    // M-07: lo que se declara PDF/JPG/PNG tiene que serlo de verdad.
+    assertContentMatchesDeclaredType(file.buffer, format.mimeTypes[0] ?? file.mimetype);
+    // A-06: validar la orden ANTES de escribir el archivo en disco.
+    await this.labOrders.assertLabOrderBelongsToPatient(meta.data.labOrderId, patientId);
     const fileHashSha256 = createHash("sha256").update(file.buffer).digest("hex");
     // El adaptador de almacenamiento (LocalDiskFileStorageAdapter) no
     // guarda el content-type en ningún lado — lo infiere de la

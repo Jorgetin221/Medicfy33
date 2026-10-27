@@ -117,7 +117,11 @@ export class AppointmentReminderSchedulerService implements OnModuleDestroy {
           jobId: this.jobId(appointmentId, kind),
           delay,
           removeOnComplete: true,
-          removeOnFail: true,
+          // M-19: un recordatorio fallido se conserva 7 días para poder
+          // diagnosticarlo (antes se borraba al instante y la falla no
+          // dejaba rastro). Sin reintentos automáticos: decisión
+          // explícita del usuario (2026-09-08).
+          removeOnFail: { age: 7 * 24 * 60 * 60 },
         }
       );
     } catch (error) {

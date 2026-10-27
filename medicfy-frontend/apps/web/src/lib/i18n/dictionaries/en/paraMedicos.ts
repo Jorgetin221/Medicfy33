@@ -6,7 +6,7 @@ import type { paraMedicos as es } from "../es/paraMedicos";
 export const paraMedicos: typeof es = {
   hero: {
     insignia: "For private-practice physicians in Guadalajara",
-    titulo: "Your practice — no WhatsApp, no spreadsheets, no paper prescription pad",
+    titulo: "Your practice, no WhatsApp, no spreadsheets, no paper prescription pad",
     subtitulo:
       "A NOM-004-compliant clinical record, legally valid electronic prescriptions, and your day's schedule, all in one place.",
     cta: "Create a free account",
@@ -35,7 +35,7 @@ export const paraMedicos: typeof es = {
       "History, allergies and your most recent visits with each patient, visible without jumping between WhatsApp and a notebook.",
     cedulaTitulo: "Verified license",
     cedulaCuerpo:
-      "Your profile shows your verified professional license — the kind of trust a generic directory can't offer.",
+      "Your profile shows your verified professional license: the kind of trust a generic directory can't offer.",
   },
   pasos: {
     titulo: "How it works",

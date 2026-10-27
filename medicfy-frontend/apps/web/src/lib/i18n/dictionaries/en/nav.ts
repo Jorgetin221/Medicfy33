@@ -15,7 +15,7 @@ export const nav: typeof es = {
     colapsarBarra: "Collapse sidebar",
     expandirBarra: "Expand sidebar",
     navegacionPrincipal: "Main navigation",
-    irAAgenda: "Medicfy — go to Schedule",
+    irAAgenda: "Medicfy · go to Schedule",
   },
   publico: {
     principal: "Main",

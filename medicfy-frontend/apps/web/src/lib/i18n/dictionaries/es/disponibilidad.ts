@@ -1,7 +1,8 @@
 // Configuración de disponibilidad del médico.
 export const disponibilidad = {
+  agregarHorario: "Agregar horario",
   titulo: "Configuración de disponibilidad",
-  subtitulo: "Qué ofreces, dónde y cuándo — todo lo que se necesita para que un paciente pueda agendar contigo.",
+  subtitulo: "Qué ofreces, dónde y cuándo: todo lo que se necesita para que un paciente pueda agendar contigo.",
   // Claves por nombre, no un arreglo: una ruta "dias.0" no es
   // tipable con seguridad y se lee peor en el código.
   dias: {
@@ -39,7 +40,7 @@ export const disponibilidad = {
     titulo: "Servicios",
     subtitulo: "Lo que ofreces y su precio. Necesitas al menos uno para poder agendar citas.",
     vacio: "Sin servicios configurados",
-    vacioAyuda: 'Agrega el primero abajo — por ejemplo, "Consulta general".',
+    vacioAyuda: 'Agrega el primero abajo, por ejemplo, "Consulta general".',
     inactivo: "(inactivo)",
     nombre: "Nombre",
     nombreEjemplo: "Consulta general",

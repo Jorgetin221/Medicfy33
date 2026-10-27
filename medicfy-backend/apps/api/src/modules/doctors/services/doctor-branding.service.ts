@@ -2,6 +2,7 @@ import { HttpStatus, Inject, Injectable } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { PrismaService } from "../../../prisma/prisma.service";
 import { ApiException } from "../../../common/api-exception";
+import { assertContentMatchesDeclaredType } from "../../../common/file-signature.util";
 import { FILE_STORAGE_PORT, type FileStoragePort } from "./file-storage.port";
 import { extensionForMimeType } from "./local-disk-file-storage.adapter";
 
@@ -28,6 +29,8 @@ export class DoctorBrandingService {
     if (!ALLOWED_MIME_TYPES.has(params.mimeType)) {
       throw new InvalidBrandingAssetError("Formato no permitido. Usa JPG o PNG.");
     }
+    // M-07: el contenido real tiene que corresponder al tipo declarado.
+    assertContentMatchesDeclaredType(params.buffer, params.mimeType);
     if (params.buffer.length > MAX_BRANDING_ASSET_BYTES) {
       throw new InvalidBrandingAssetError("La imagen supera los 5 MB permitidos.");
     }

@@ -7,9 +7,6 @@ export interface AppointmentDetail {
   patientId: string;
   doctorId: string;
   status: "PENDING_PAYMENT" | "SCHEDULED" | "CONFIRMED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED_BY_PATIENT" | "CANCELLED_BY_DOCTOR" | "NO_SHOW";
-  // M7 (Teleconsulta, MVP): el botón "Iniciar teleconsulta" solo se
-  // muestra para modalidad ONLINE.
-  modality: "IN_PERSON" | "ONLINE";
   startsAt: string;
   endsAt: string;
   completedWithoutNoteReason: string | null;

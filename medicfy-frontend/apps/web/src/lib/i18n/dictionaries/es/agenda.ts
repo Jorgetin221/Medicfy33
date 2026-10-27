@@ -16,9 +16,11 @@ export const agenda = {
     cerrarSinNota: "Cerrar sin nota clínica",
     confirmarCierre: "Confirmar cierre",
     abrirConsulta: "Abrir consulta",
+    confirmarPago: "Confirmar pago recibido",
+    reprogramar: "Reprogramar",
   },
   justificacionCierre:
-    'Justificación — excepción M5-RN-006: cierra la cita sin nota clínica firmada. La ruta normal es firmar la consulta desde "Continuar consulta".',
+    'Justificación (excepción M5-RN-006): cierra la cita sin nota clínica firmada. La ruta normal es firmar la consulta desde "Continuar consulta".',
   resumen: {
     titulo: "Resumen del día",
     atendidas: "Atendidas",
@@ -41,7 +43,7 @@ export const citaNueva = {
   sinEspacios: "Sin espacios disponibles",
   sinEspaciosAyuda: "Prueba con otro servicio o configura más horario.",
   elPaciente: "El paciente",
-  agendadaCuerpo: "{paciente} — {fecha} a las {hora}.",
+  agendadaCuerpo: "{paciente}, {fecha} a las {hora}.",
   irALaAgenda: "Ir a la agenda",
   paciente: "Paciente",
   sinPacientes: "Sin pacientes registrados.",
@@ -53,4 +55,20 @@ export const citaNueva = {
   irADisponibilidad: "Ir a Disponibilidad",
   agendando: "Agendando…",
   seleccionaPaciente: "Selecciona un paciente para poder agendar.",
+};
+
+// M-33: reprogramar una cita (M5-RN-004: máximo 2 veces).
+export const citaReprogramar = {
+  titulo: "Reprogramar cita",
+  subtitulo: "Elige el nuevo horario. La cita original queda cancelada y ligada a la nueva.",
+  horarioActual: "Horario actual: {fecha} a las {hora}",
+  quienSolicita: "¿Quién pide el cambio?",
+  solicitaPaciente: "El paciente",
+  solicitaMedico: "El consultorio",
+  nuevoHorario: "Nuevo horario",
+  reprogramando: "Reprogramando…",
+  reprogramada: "Cita reprogramada",
+  reprogramadaCuerpo: "Nuevo horario: {fecha} a las {hora}.",
+  volverAgenda: "Volver a la agenda",
+  noReprogramable: "Esta cita ya no se puede reprogramar en su estado actual.",
 };

@@ -1,6 +1,7 @@
 import { Controller, Get, HttpStatus, Param, Req, StreamableFile, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { ApiException } from "../../common/api-exception";
+import { fileResponse } from "../../common/file-signature.util";
 import { JwtAuthGuard, type AuthenticatedRequest } from "../identity/guards/jwt-auth.guard";
 import { AuditService } from "../identity/services/audit.service";
 import { getRequestMeta } from "../identity/request-meta";
@@ -58,7 +59,7 @@ export class DocumentViewController {
       userAgent: meta.userAgent,
     });
 
-    return new StreamableFile(buffer, { type: contentType });
+    return fileResponse(buffer, contentType);
   }
 
   private async auditDenied(req: AuthenticatedRequest, reason: string, resourceId?: string, patientId?: string): Promise<void> {

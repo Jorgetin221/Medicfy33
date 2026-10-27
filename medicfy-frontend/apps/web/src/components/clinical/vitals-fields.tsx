@@ -55,14 +55,23 @@ export function VitalsFields({ form, patientAgeYears }: { form: UseFormReturn<Cl
   const visibleFields = VITALS_FIELDS.filter((field) => !PEDIATRIC_ONLY.has(field.name) || isPediatric);
 
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
       {visibleFields.map((field) => {
         const fieldError = errors?.[field.name];
         const status = vitalRangeStatus(field.name, watchedVitals[field.name], patientAgeYears);
         const statusLabelKey = VITAL_RANGE_LABEL_KEY[status];
         return (
-          <div key={field.name} className={`rounded-md border bg-white p-3 ${fieldError ? "border-danger-600" : VITAL_RANGE_TILE_CLASS[status]}`}>
-            <FieldWrapper label={t(field.labelKey)} htmlFor={`vitals.${field.name}`} error={fieldError?.message}>
+          // M-29: el input no dibuja contorno propio; la tarjeta entera lo
+          // muestra al tener el foco (antes no había ninguna señal).
+          <div
+            key={field.name}
+            className={`rounded-md border bg-white p-4 shadow-sm focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-brand-700 ${fieldError ? "border-danger-600" : VITAL_RANGE_TILE_CLASS[status]}`}>
+            <FieldWrapper
+              label={t(field.labelKey)}
+              htmlFor={`vitals.${field.name}`}
+              error={fieldError?.message}
+              labelClassName="flex min-h-[2.5rem] items-end"
+            >
               <TextInput
                 id={`vitals.${field.name}`}
                 type="number"
@@ -76,7 +85,8 @@ export function VitalsFields({ form, patientAgeYears }: { form: UseFormReturn<Cl
                   setValueAs: (value: string) => (value === "" ? undefined : Number(value)),
                 })}
               />
-              <span className="text-sm text-gray-500">
+              {/* A-22: unidad y estado del signo vital a 16 px. */}
+              <span className="text-base text-gray-500">
                 {field.unit}
                 {statusLabelKey ? ` · ${t(statusLabelKey)}` : ""}
               </span>
@@ -95,10 +105,10 @@ function BmiTile({ weightKg, heightCm, patientAgeYears }: { weightKg?: number | 
   const bmi = computeBmi(weightKg, heightCm);
   const category = bmi !== null ? bmiCategory(bmi, patientAgeYears) : null;
   return (
-    <div className="rounded-md border border-brand-700 bg-brand-100 p-3" aria-live="polite">
-      <p className="text-sm font-medium text-gray-700">{t("clinico.vitales.imc")}</p>
+    <div className="rounded-md border border-brand-700 bg-brand-100 p-4 shadow-sm" aria-live="polite">
+      <p className="flex min-h-[2.5rem] items-end text-sm font-medium text-gray-700">{t("clinico.vitales.imc")}</p>
       <p className="text-2xl font-semibold text-brand-900">{bmi !== null ? bmi.toFixed(1) : "—"}</p>
-      <span className="text-sm text-gray-700">
+      <span className="text-base text-gray-700">
         kg/m²
         {category ? ` · ${t(`clinico.vitales.imcCategoria.${category}`)}` : ""}
       </span>

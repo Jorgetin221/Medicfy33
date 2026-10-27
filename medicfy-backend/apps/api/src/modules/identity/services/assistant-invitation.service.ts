@@ -1,5 +1,5 @@
 import { HttpStatus, Inject, Injectable } from "@nestjs/common";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { PrismaService } from "../../../prisma/prisma.service";
 import { ApiException } from "../../../common/api-exception";
 import { NOTIFICATION_PORT, type NotificationPort } from "./notification.port";
@@ -28,17 +28,22 @@ export class AssistantInvitationService {
       );
     }
 
+    // B-01: en la base se guarda solo el hash del token (como los de
+    // restablecer contraseña); el token en claro viaja únicamente en
+    // el enlace del correo.
     const token = randomBytes(24).toString("base64url");
     const invitation = await this.prisma.assistantInvitation.create({
       data: {
         doctorUserId,
         email,
-        token,
+        token: hashInvitationToken(token),
         expiresAt: new Date(now.getTime() + INVITATION_TTL_MS),
       },
     });
 
-    const inviteUrl = `${mustGetAppBaseUrl()}/invitaciones/asistente?token=${token}`;
+    // El enlace es de la aplicación web (WEB_ORIGIN), no del API: antes
+    // apuntaba a APP_BASE_URL y llevaba a una página inexistente.
+    const inviteUrl = `${mustGetWebOrigin()}/invitaciones/asistente?token=${token}`;
     await this.notifications.sendAssistantInvitation(email, inviteUrl);
 
     return { invitationId: invitation.id };
@@ -82,8 +87,15 @@ export class AssistantInvitationService {
   }
 
   async accept(token: string, acceptingUserId: string): Promise<void> {
-    const invitation = await this.prisma.assistantInvitation.findUnique({ where: { token } });
-    if (!invitation || invitation.status !== "PENDING" || invitation.expiresAt < new Date()) {
+    // Invitaciones emitidas antes de 2026-10-22 guardaban el token en claro.
+    const invitation =
+      (await this.prisma.assistantInvitation.findUnique({ where: { token: hashInvitationToken(token) } })) ??
+      (await this.prisma.assistantInvitation.findUnique({ where: { token } }));
+    // B-01: la invitación es para UN correo — quien tenga el enlace pero
+    // otra cuenta no puede usarla.
+    const acceptingUser = await this.prisma.user.findUnique({ where: { id: acceptingUserId }, select: { email: true } });
+    const emailMatches = acceptingUser !== null && invitation !== null && acceptingUser.email.toLowerCase() === invitation.email.toLowerCase();
+    if (!invitation || !emailMatches || invitation.status !== "PENDING" || invitation.expiresAt < new Date()) {
       throw new ApiException(
         "ASSISTANT_INVITATION_INVALID",
         "Invitación inválida o expirada.",
@@ -92,10 +104,13 @@ export class AssistantInvitationService {
     }
 
     await this.prisma.$transaction(async (tx) => {
-      await tx.assistantInvitation.update({
-        where: { id: invitation.id },
+      const claimed = await tx.assistantInvitation.updateMany({
+        where: { id: invitation.id, status: "PENDING" },
         data: { status: "ACCEPTED", acceptedAt: new Date(), acceptedByUserId: acceptingUserId },
       });
+      if (claimed.count !== 1) {
+        throw new ApiException("ASSISTANT_INVITATION_INVALID", "Invitación inválida o expirada.", HttpStatus.BAD_REQUEST);
+      }
       await tx.userRole.create({
         data: { userId: acceptingUserId, role: "ASSISTANT", scopeId: invitation.doctorUserId },
       });
@@ -103,10 +118,11 @@ export class AssistantInvitationService {
   }
 }
 
-function mustGetAppBaseUrl(): string {
-  const url = process.env.APP_BASE_URL;
-  if (!url) {
-    throw new Error("APP_BASE_URL is not set");
-  }
-  return url;
+function hashInvitationToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
 }
+
+function mustGetWebOrigin(): string {
+  return process.env.WEB_ORIGIN ?? "http://localhost:3000";
+}
+

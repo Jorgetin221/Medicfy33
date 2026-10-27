@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, expectArray } from "@/lib/api-client";
+import { cn } from "@/lib/utils";
 import type { PatientHistoryItem } from "@/lib/use-patient-clinical";
 import { Card, ErrorState } from "@/components/ui/states";
 import { Button } from "@/components/ui/button";
@@ -360,7 +361,7 @@ function SubstanceRow({
               })
             }
           >
-            Guardar
+            {t("common.acciones.guardar")}
           </Button>
         </div>
       ) : null}
@@ -534,14 +535,13 @@ export function GinecoBlock({ patientId, accessToken }: { patientId: string; acc
     );
   }
 
-  function field(label: string, name: string, props: Record<string, unknown> = {}) {
+  function field(label: string, name: string, props: Record<string, unknown> = {}, span = "") {
     return (
-      <label className="flex flex-col gap-1 text-sm font-medium text-gray-700">
+      <label className={cn("flex flex-col gap-1 text-sm font-medium text-gray-700", span)}>
         {label}
         <TextInput
           value={form[name] ?? ""}
           onChange={(e) => setForm((f) => ({ ...f, [name]: e.target.value }))}
-          className="w-36"
           {...props}
         />
       </label>
@@ -550,8 +550,8 @@ export function GinecoBlock({ patientId, accessToken }: { patientId: string; acc
 
   return (
     <Card data-testid="gyneco-block">
-      <h3 className="mb-2 text-base font-semibold text-gray-900">{t("clinico.historiaFase2.gineco")}</h3>
-      <div className="flex flex-wrap gap-3">
+      <h3 className="mb-3 text-base font-semibold text-gray-900">{t("clinico.historiaFase2.gineco")}</h3>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3 lg:grid-cols-4">
         {field(t("clinico.historiaFase2.menarca"), "menarcheAge", { inputMode: "numeric" })}
         {field(t("clinico.historiaFase2.duracionCiclo"), "cycleDurationDays", { inputMode: "numeric" })}
         {field(t("clinico.historiaFase2.frecuenciaCiclo"), "cycleFrequencyDays", { inputMode: "numeric" })}
@@ -581,11 +581,11 @@ export function GinecoBlock({ patientId, accessToken }: { patientId: string; acc
         {field(t("clinico.historiaFase2.partos"), "partos", { inputMode: "numeric" })}
         {field(t("clinico.historiaFase2.cesareas"), "cesareas", { inputMode: "numeric" })}
         {field(t("clinico.historiaFase2.abortos"), "abortos", { inputMode: "numeric" })}
-        {field(t("clinico.historiaFase2.its"), "stiHistory", { className: "w-56" })}
-        {field(t("clinico.historiaFase2.otrasSecreciones"), "otherDischarge", { className: "w-56" })}
-        {field(t("clinico.historiaFase2.perinatales"), "perinatalHistory", { className: "w-72" })}
+        {field(t("clinico.historiaFase2.its"), "stiHistory", {}, "sm:col-span-2")}
+        {field(t("clinico.historiaFase2.otrasSecreciones"), "otherDischarge", {}, "sm:col-span-2")}
+        {field(t("clinico.historiaFase2.perinatales"), "perinatalHistory", {}, "col-span-full")}
       </div>
-      <div className="mt-3 flex items-center gap-3">
+      <div className="mt-4 flex items-center gap-3 border-t border-gray-200 pt-3">
         <Button type="button" className="min-h-11 px-3 text-sm" onClick={() => void save()}>
           {t("clinico.historiaFase2.guardarBloque")}
         </Button>

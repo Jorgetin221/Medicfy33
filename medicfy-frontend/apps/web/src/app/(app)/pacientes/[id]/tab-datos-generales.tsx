@@ -4,6 +4,7 @@ import type { PatientSummary } from "@/lib/use-patient-clinical";
 import { Card } from "@/components/ui/states";
 import { useI18n } from "@/lib/i18n/context";
 import { formatDateLong } from "@/lib/i18n/format";
+import { sexAtBirthLabel } from "@/lib/sex-label";
 
 function Field({ label, value }: { label: string; value: string }) {
   return (
@@ -26,7 +27,7 @@ export function TabDatosGenerales({ patient }: { patient: PatientSummary }) {
         <Field label={t("pacientes.datosGenerales.nombreCompleto")} value={[patient.firstName, patient.lastNamePaternal, patient.lastNameMaternal].filter(Boolean).join(" ")} />
         <Field label={t("pacientes.datosGenerales.medicfyId")} value={patient.medicfyId} />
         <Field label={t("pacientes.datosGenerales.fechaNacimiento")} value={formatDateLong(locale, patient.birthDate)} />
-        <Field label={t("pacientes.datosGenerales.sexo")} value={patient.sexAtBirth === "F" ? t("pacientes.mujer") : t("pacientes.hombre")} />
+        <Field label={t("pacientes.datosGenerales.sexo")} value={sexAtBirthLabel(t, patient.sexAtBirth)} />
         <Field label={t("pacientes.datosGenerales.tipoSangre")} value={patient.bloodType ?? ""} />
         <Field label={t("pacientes.datosGenerales.telefono")} value={patient.phoneE164} />
         <Field label={t("pacientes.datosGenerales.correo")} value={patient.email} />

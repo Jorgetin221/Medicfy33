@@ -218,7 +218,7 @@ describe("Banderas rojas — filtro de seguridad determinista (Prompt 52)", () =
 
   it("NO bloquea la firma: un signo vital con bandera activa (umbral propio, distinto del gate existente de criticalVitalsConfirmed) permite firmar sin confirmación adicional", async () => {
     const doctor = await registerDoctor();
-    const otpauthUri = await enrollMfa(doctor.accessToken);
+    await enrollMfa(doctor.accessToken);
     const patientId = await createAdultPatient(doctor.accessToken);
     const encounterId = await createDraftEncounter(doctor.accessToken, patientId);
 
@@ -234,8 +234,6 @@ describe("Banderas rojas — filtro de seguridad determinista (Prompt 52)", () =
         diagnoses: [
           { description: "Control sano", codeAbsentReason: "Consulta de control sin patología que codificar.", diagnosisType: "PRINCIPAL", certainty: "CONFIRMED" },
         ],
-        password: STRONG_PASSWORD,
-        totpCode: totpFromUri(otpauthUri),
       });
     expect(signed.status).toBe(201);
     expect(signed.body.activeRedFlags.some((f: { flagCode: string }) => f.flagCode === "vital_hipoxemia")).toBe(true);

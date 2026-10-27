@@ -3,7 +3,10 @@ import { APP_GUARD } from "@nestjs/core";
 import { Test } from "@nestjs/testing";
 import { Throttle, ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 import request from "supertest";
+import jwt from "jsonwebtoken";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { getTrackerByIpAndUser } from "./rate-limit";
+import { signPurposeToken } from "./purpose-token.util";
 
 // M15-RN-010 ("Rate limiting por IP y por usuario en autenticación,
 // búsqueda y descarga de archivos"). A diferencia de casi toda otra
@@ -56,5 +59,31 @@ describe("M15-RN-010 — ThrottlerGuard bloquea tras el límite configurado", ()
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
     expect(third.status).toBe(429);
+  });
+});
+
+// Auditoría 2026-10-21, A-01: la llave del limitador ya no confía en
+// un JWT sin verificar.
+describe("getTrackerByIpAndUser", () => {
+  const USER_ID = "7f1c2d3e-4b5a-4c6d-8e9f-0a1b2c3d4e5f";
+  const req = (authorization?: string) => ({ ip: "203.0.113.7", headers: authorization ? { authorization } : {} });
+
+  it("keys anonymous requests by IP only", () => {
+    expect(getTrackerByIpAndUser(req())).toBe("203.0.113.7");
+  });
+
+  it("adds the user only for a verified access token", () => {
+    const token = signPurposeToken("access", { sub: USER_ID, primaryRole: "DOCTOR" }, 60);
+    expect(getTrackerByIpAndUser(req(`Bearer ${token}`))).toBe(`203.0.113.7:${USER_ID}`);
+  });
+
+  it("ignores a forged, unsigned token with an invented sub (falls back to IP)", () => {
+    const forged = jwt.sign({ sub: "00000000-0000-4000-8000-000000000000" }, "", { algorithm: "none" });
+    expect(getTrackerByIpAndUser(req(`Bearer ${forged}`))).toBe("203.0.113.7");
+  });
+
+  it("ignores an mfa_pending token (falls back to IP)", () => {
+    const mfa = signPurposeToken("mfa_pending", { sub: USER_ID }, 60);
+    expect(getTrackerByIpAndUser(req(`Bearer ${mfa}`))).toBe("203.0.113.7");
   });
 });

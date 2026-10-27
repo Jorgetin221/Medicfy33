@@ -42,7 +42,7 @@ describe("LabReferenceRangeService.evaluateForAnalyte() — resolución real con
     });
 
     const result = await service.evaluateForAnalyte("Hormona de prueba", 5, "F", 30, { min: 4, max: 6 });
-    expect(result).toEqual({ status: "normal", rangeMin: 4, rangeMax: 6, rangeSource: "sheet" });
+    expect(result).toEqual({ status: "normal", rangeMin: 4, rangeMax: 6, rangeSource: "sheet", rangePendingReview: false });
   });
 
   it("sin rango impreso, resuelve por analyteKey normalizado + sexo específico sobre ANY", async () => {
@@ -64,7 +64,7 @@ describe("LabReferenceRangeService.evaluateForAnalyte() — resolución real con
 
   it("sin ningún rango aplicable (analito desconocido), regresa unknown sin lanzar", async () => {
     const result = await service.evaluateForAnalyte(`Inexistente ${randomUUID()}`, 5, "M", 30);
-    expect(result).toEqual({ status: "unknown", rangeMin: null, rangeMax: null, rangeSource: "none" });
+    expect(result).toEqual({ status: "unknown", rangeMin: null, rangeMax: null, rangeSource: "none", rangePendingReview: false });
   });
 
   it("fuera de la franja de edad del rango específico, cae a un rango que sí cubra esa edad (o unknown si ninguno aplica)", async () => {
@@ -81,5 +81,22 @@ describe("LabReferenceRangeService.evaluateForAnalyte() — resolución real con
     const childResult = await service.evaluateForAnalyte(label, 10, "M", 8);
     expect(childResult.rangeSource).toBe("system");
     expect(childResult.status).toBe("normal");
+  });
+  // Auditoría 2026-10-21, A-15.
+  it("A-15: un rango en otra unidad no califica el valor (mg/dL contra mmol/L), y un rango sin revisión médica se marca como tal", async () => {
+    const label = `Glucosa Unidad ${randomUUID()}`;
+    const analyteKey = label.toLowerCase();
+    await prisma.labReferenceRange.create({
+      data: { analyteKey, analyteLabel: label, unit: "mg/dL", sex: "ANY", ageMinYears: 0, ageMaxYears: 120, valueMin: 70, valueMax: 100, pendingMedicalReview: true, source: "prueba" },
+    });
+
+    const inMmol = await service.evaluateForAnalyte(label, 5.4, "M", 30, null, "mmol/L");
+    expect(inMmol.rangeSource).toBe("none");
+    expect(inMmol.status).toBe("unknown");
+
+    const inMgDl = await service.evaluateForAnalyte(label, 90, "M", 30, null, "mg/dl");
+    expect(inMgDl.rangeSource).toBe("system");
+    expect(inMgDl.status).toBe("normal");
+    expect(inMgDl.rangePendingReview).toBe(true);
   });
 });

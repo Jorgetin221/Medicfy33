@@ -7,7 +7,6 @@ import { useForm } from "react-hook-form";
 import { loginSchema, mfaLoginVerifySchema, type LoginInput, type MfaLoginVerifyInput } from "@medicfy/contracts";
 import { apiFetch } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
-import { tokenPrimaryRole } from "@/lib/jwt-claims";
 import { AuthLayout } from "@/components/auth-layout";
 import { Button } from "@/components/ui/button";
 import { FieldWrapper, TextInput } from "@/components/ui/field";
@@ -15,19 +14,13 @@ import { PasswordInput } from "@/components/ui/password-input";
 import { ErrorState, LoadingState } from "@/components/ui/states";
 import { useT } from "@/lib/i18n/context";
 import { useZodResolver } from "@/lib/i18n/validation";
+import { landingRouteFor } from "@/lib/role-routing";
 
 type LoginResult = { accessToken: string } | { mfaRequired: true; mfaSessionToken: string };
 
-// M5-RN-009 (v2.3): antes SIEMPRE mandaba a /agenda, una pantalla de
-// médico — una cuenta PATIENT terminaba viendo la agenda de nadie.
-// `redirectTo` (M5-RN-010): "Agendar" desde un perfil público sin
-// sesión manda aquí con ?redirect=/dr/{slug} para volver exactamente
-// a donde estaba, en vez de perder el contexto en /mi-cuenta.
-function landingRouteFor(accessToken: string, redirectTo: string | null): string {
-  if (redirectTo && redirectTo.startsWith("/")) return redirectTo;
-  return tokenPrimaryRole(accessToken) === "PATIENT" ? "/mi-cuenta" : "/agenda";
-}
-
+// M5-RN-009 / M-31: cada rol aterriza en su pantalla (paciente →
+// /mi-cuenta, admin → /admin, consultorio → /agenda). `redirectTo`
+// (M5-RN-010) vuelve a donde estaba, solo si es una ruta interna (M-22).
 // PUB-04. M1-RN-004/005/006: consentimiento vigente, MFA y bloqueo
 // por fuerza bruta ya viven en el backend — esta pantalla solo
 // necesita ramificar en la respuesta de /auth/login.
@@ -102,6 +95,10 @@ function LoginForm() {
           <Button type="submit" isLoading={form.formState.isSubmitting} className="mt-1 w-full">
             {t("auth.login.entrar")}
           </Button>
+          {/* M-33: recuperación de contraseña. */}
+          <Link href="/olvide-contrasena" className="min-h-11 self-center text-base font-medium text-brand-700 underline">
+            {t("auth.olvide.enlace")}
+          </Link>
         </form>
 
         <p className="text-center text-base text-gray-700">
@@ -155,10 +152,10 @@ function MfaStep({ mfaSessionToken, redirectTo }: { mfaSessionToken: string; red
         <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-5" noValidate>
           <input type="hidden" {...form.register("mfaSessionToken")} />
           <FieldWrapper label={t("auth.campos.codigo")} htmlFor="code" error={form.formState.errors.code?.message}>
+            {/* M-01: también acepta un código de respaldo (10 caracteres). */}
             <TextInput
               id="code"
-              inputMode="numeric"
-              maxLength={6}
+              maxLength={10}
               autoComplete="one-time-code"
               autoFocus
               error={!!form.formState.errors.code}

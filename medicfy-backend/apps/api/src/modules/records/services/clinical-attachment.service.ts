@@ -1,8 +1,10 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { HttpStatus, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { createHash, randomUUID } from "node:crypto";
 import type { ClinicalAttachment } from "@prisma/client";
 import type { ClinicalAttachmentUploadMetadataInput } from "@medicfy/contracts";
 import { PrismaService } from "../../../prisma/prisma.service";
+import { ApiException } from "../../../common/api-exception";
+import { assertContentMatchesDeclaredType } from "../../../common/file-signature.util";
 import { FILE_STORAGE_PORT, type FileStoragePort } from "../../doctors/services/file-storage.port";
 import { extensionForMimeType } from "../../doctors/services/local-disk-file-storage.adapter";
 
@@ -31,6 +33,15 @@ export class ClinicalAttachmentService {
     file: Express.Multer.File,
     meta: ClinicalAttachmentUploadMetadataInput
   ): Promise<ClinicalAttachment> {
+    // A-06: el encounterId viene del cuerpo; debe ser un encuentro de
+    // ESTE paciente, o el adjunto aparecería en el expediente de otro.
+    if (meta.encounterId) {
+      const encounter = await this.prisma.clinicalEncounter.findUnique({ where: { id: meta.encounterId }, select: { patientId: true } });
+      if (!encounter || encounter.patientId !== patientId) {
+        throw new ApiException("ENCOUNTER_NOT_FOUND", "Encuentro no encontrado.", HttpStatus.NOT_FOUND);
+      }
+    }
+    assertContentMatchesDeclaredType(file.buffer, file.mimetype);
     const fileHashSha256 = createHash("sha256").update(file.buffer).digest("hex");
     // Sin extensión en el fileKey, retrieve() no puede inferir el
     // content-type y el visor embebido recibe application/octet-stream

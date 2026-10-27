@@ -8,7 +8,7 @@ import type {
 } from "@medicfy/contracts";
 import { ApiException } from "../../../common/api-exception";
 import { PrismaService } from "../../../prisma/prisma.service";
-import { buildSignedNoteHashInput, sha256Hex } from "../../../common/content-hash.util";
+import { buildCorrectionNoteHashInput, buildSignedNoteHashInput, sha256Hex } from "../../../common/content-hash.util";
 import { omitUndefined } from "../../../common/omit-undefined";
 import { LMS_FORMULA, lmsPercentile, withBodySurfaceArea, withComputedVitals } from "../../../common/vitals-calculations.util";
 import { evaluateVitalRanges } from "../../../common/vital-ranges.util";
@@ -114,12 +114,30 @@ export class ClinicalEncounterService {
     if (input.patientId !== patientId) {
       throw new ApiException("VALIDATION_ERROR", "El paciente de la ruta no coincide con el del cuerpo.", HttpStatus.BAD_REQUEST);
     }
+    // A-02: el appointmentId viene del cuerpo. Sin esto, un médico con
+    // vínculo con OTRO paciente podía mandar la cita ajena y recibir el
+    // encuentro (con su draftContent) de ese otro paciente, o quedarse
+    // ligado a una cita que no es suya.
+    if (input.appointmentId) {
+      const appointment = await this.prisma.appointment.findUnique({
+        where: { id: input.appointmentId },
+        select: { doctorId: true, patientId: true },
+      });
+      if (!appointment || appointment.doctorId !== doctorId || appointment.patientId !== patientId) {
+        throw new ApiException("APPOINTMENT_NOT_FOUND", "Cita no encontrada.", HttpStatus.NOT_FOUND);
+      }
+    }
+    // M-27: el tipo de encuentro lo decide el servidor (CLAUDE.md §4:
+    // nada de lógica clínica en el navegador).
+    const encounterType =
+      input.encounterType ??
+      ((await this.prisma.clinicalEncounter.count({ where: { patientId, status: "SIGNED" } })) > 0 ? "FOLLOW_UP" : "FIRST_VISIT");
     try {
       return await this.prisma.clinicalEncounter.create({
         data: {
           patientId,
           doctorId,
-          encounterType: input.encounterType,
+          encounterType,
           ...omitUndefined({ appointmentId: input.appointmentId }),
           draftContent: {},
         },
@@ -127,7 +145,8 @@ export class ClinicalEncounterService {
     } catch (error) {
       if (input.appointmentId && error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
         const existing = await this.prisma.clinicalEncounter.findUnique({ where: { appointmentId: input.appointmentId } });
-        if (existing) return existing;
+        if (existing && existing.doctorId === doctorId && existing.patientId === patientId) return existing;
+        throw new ApiException("ENCOUNTER_ALREADY_EXISTS", "Esta cita ya tiene un encuentro.", HttpStatus.CONFLICT);
       }
       throw error;
     }
@@ -170,11 +189,32 @@ export class ClinicalEncounterService {
       ...(patch.vitals ? { vitals: withComputedVitals(patch.vitals) } : {}),
       ...(resolvedSpecialtyData ? { specialtyData: resolvedSpecialtyData.data } : {}),
     };
-    const draftContent = { ...(encounter.draftContent as Record<string, unknown>), ...nextPatch };
-    const updated = await this.prisma.clinicalEncounter.update({
-      where: { id: encounterId },
-      data: { draftContent: draftContent as unknown as Prisma.InputJsonValue },
+    const { expectedDraftVersion, ...contentPatch } = nextPatch;
+    const draftContent = { ...(encounter.draftContent as Record<string, unknown>), ...contentPatch };
+    // M-13: control optimista. Si el cliente dice qué versión tenía y ya
+    // no es la vigente (otra pestaña o dispositivo guardó en medio), 409
+    // en vez de pisar en silencio lo que escribió el otro.
+    const claimed = await this.prisma.clinicalEncounter.updateMany({
+      where: {
+        id: encounterId,
+        status: "DRAFT",
+        ...(expectedDraftVersion !== undefined ? { draftVersion: expectedDraftVersion } : {}),
+      },
+      data: { draftContent: draftContent as unknown as Prisma.InputJsonValue, draftVersion: { increment: 1 } },
     });
+    if (claimed.count !== 1) {
+      const current = await this.prisma.clinicalEncounter.findUnique({ where: { id: encounterId }, select: { status: true, draftVersion: true } });
+      if (current?.status !== "DRAFT") {
+        throw new ApiException("ENCOUNTER_ALREADY_SIGNED", "Este encuentro ya fue firmado y no se puede modificar.", HttpStatus.CONFLICT);
+      }
+      throw new ApiException(
+        "DRAFT_CONFLICT",
+        "Este borrador se guardó desde otra pestaña o dispositivo. Recarga para ver la versión más reciente.",
+        HttpStatus.CONFLICT,
+        { currentDraftVersion: current.draftVersion }
+      );
+    }
+    const updated = await this.prisma.clinicalEncounter.findUniqueOrThrow({ where: { id: encounterId } });
     const activeRedFlags = await this.evaluateRedFlags(encounterId, encounter.patientId, draftContent);
     return { ...updated, activeRedFlags };
   }
@@ -212,13 +252,6 @@ export class ClinicalEncounterService {
         { pendingItems: pendingInherited }
       );
     }
-
-    const previous = await this.prisma.clinicalEncounter.findFirst({
-      where: { patientId: encounter.patientId, status: "SIGNED", id: { not: encounterId } },
-      orderBy: { signedAt: "desc" },
-      select: { contentHashSha256: true },
-    });
-    const previousHashSha256 = previous?.contentHashSha256 ?? null;
 
     const {
       diagnoses,
@@ -278,7 +311,7 @@ export class ClinicalEncounterService {
     const noteTypeTerm = await this.prisma.clinicalCatalogTerm.findFirst({ where: { domain: "TIPO_NOTA", key: noteTypeKey } });
     const signingDoctor = await this.prisma.doctor.findUnique({
       where: { id: encounter.doctorId },
-      select: { displayName: true, legalFirstName: true, legalLastName: true, professionalLicense: true, primarySpecialty: { select: { code: true } } },
+      select: { legalFirstName: true, legalLastName: true, professionalLicense: true, primarySpecialty: { select: { code: true } } },
     });
     const specialtyCode = signingDoctor?.primarySpecialty?.code ?? null;
     // Prompt 43: "estampa nombre completo, cédula profesional" —
@@ -287,9 +320,8 @@ export class ClinicalEncounterService {
     // que no se reusa aquí directamente porque también calcula
     // snapshots del paciente que ClinicalEncounter no necesita — ya
     // tiene patientId.
-    const signedByLegalNameSnapshot = signingDoctor
-      ? (signingDoctor.displayName ?? `${signingDoctor.legalFirstName} ${signingDoctor.legalLastName}`)
-      : null;
+    // A-13 / R6: nombre legal, nunca el nombre comercial (displayName).
+    const signedByLegalNameSnapshot = signingDoctor ? `${signingDoctor.legalFirstName} ${signingDoctor.legalLastName}` : null;
     const signedByLicenseSnapshot = signingDoctor?.professionalLicense ?? null;
 
     // v2.5 · Capa 3: analitos que el médico eligió incluir en ESTA
@@ -322,7 +354,8 @@ export class ClinicalEncounterService {
           Number(a.value),
           patientForVitals.sexAtBirth === "F" ? "F" : "M",
           ageYearsAtMeasurement,
-          printedRange
+          printedRange,
+          a.unit
         );
         return {
           sourceAnalyteId: a.id,
@@ -346,39 +379,78 @@ export class ClinicalEncounterService {
     // Prompt 27: percentilas pediátricas por edad y sexo (LMS OMS/CDC).
     const percentiles = await this.computeGrowthPercentiles(ageYears, patientForVitals.sexAtBirth, vitals);
     const resolvedSpecialtyData = await this.resolveSpecialtyData(encounter.doctorId, rawSpecialtyData);
-    const contentHashSha256 = sha256Hex(
-      buildSignedNoteHashInput({
-        note: {
-          chiefComplaint: requiredNote.chiefComplaint,
-          currentIllness: requiredNote.currentIllness,
-          physicalExam: physicalExam ?? null,
-          assessment: requiredNote.assessment,
-          plan: requiredNote.plan,
-          prognosis: prognosis ?? null,
-          vitals: computedVitals,
-          specialtyCode,
-          noteTypeTermId: noteTypeTerm?.id ?? null,
-          patientInstructions: patientInstructions ?? null,
-          suggestedFollowUpDays: suggestedFollowUpDays ?? null,
-        },
-        diagnoses: diagnoses.map((d) => ({
-          icd10CodeId: d.icd10Code ?? null,
-          codeAbsentReason: d.codeAbsentReason ?? null,
-          description: d.description,
-          diagnosisType: d.diagnosisType,
-          certainty: d.certainty,
-        })),
-        specialtyData: resolvedSpecialtyData?.data ?? null,
-        previousHashSha256,
-        encounterId,
-      })
-    );
+    // A-08: el eslabón anterior se lee DENTRO de la transacción, bajo
+    // candado por paciente — dos firmas simultáneas del mismo paciente
+    // ya no pueden encadenarse al mismo "anterior" y bifurcar la cadena.
+    const computeContentHash = (previousHashSha256: string | null) =>
+      sha256Hex(
+        buildSignedNoteHashInput({
+          note: {
+            chiefComplaint: requiredNote.chiefComplaint,
+            currentIllness: requiredNote.currentIllness,
+            physicalExam: physicalExam ?? null,
+            assessment: requiredNote.assessment,
+            plan: requiredNote.plan,
+            prognosis: prognosis ?? null,
+            vitals: computedVitals,
+            specialtyCode,
+            noteTypeTermId: noteTypeTerm?.id ?? null,
+            patientInstructions: patientInstructions ?? null,
+            suggestedFollowUpDays: suggestedFollowUpDays ?? null,
+          },
+          diagnoses: diagnoses.map((d) => ({
+            icd10CodeId: d.icd10Code ?? null,
+            codeAbsentReason: d.codeAbsentReason ?? null,
+            description: d.description,
+            diagnosisType: d.diagnosisType,
+            certainty: d.certainty,
+          })),
+          specialtyData: resolvedSpecialtyData?.data ?? null,
+          previousHashSha256,
+          encounterId,
+        })
+      );
     const signedAt = new Date();
 
     const signResult = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${encounter.patientId}))::text`;
+      const previous = await tx.clinicalEncounter.findFirst({
+        where: { patientId: encounter.patientId, status: "SIGNED", id: { not: encounterId } },
+        orderBy: { signedAt: "desc" },
+        select: { contentHashSha256: true },
+      });
+      const previousHashSha256 = previous?.contentHashSha256 ?? null;
+      const contentHashSha256 = computeContentHash(previousHashSha256);
+
+      // A-08: compare-and-set. assertDraft() corrió fuera de la
+      // transacción; un doble clic o una segunda pestaña llegaban aquí
+      // los dos y dejaban dos notas imborrables. Solo una solicitud
+      // puede pasar el encuentro de DRAFT a SIGNED; la otra recibe 409
+      // y su transacción no inserta nada.
+      const claimed = await tx.clinicalEncounter.updateMany({
+        where: { id: encounterId, status: "DRAFT" },
+        data: {
+          status: "SIGNED",
+          endedAt: signedAt,
+          signedAt,
+          // M8-RN-013: la métrica del negocio, fijada en servidor.
+          timeToSignSeconds: Math.max(0, Math.round((signedAt.getTime() - encounter.startedAt.getTime()) / 1000)),
+          signedByUserId: doctorUserId,
+          signatureMethod: "INTERNAL_SYSTEM",
+          signedByLegalNameSnapshot,
+          signedByLicenseSnapshot,
+          contentHashSha256,
+          previousHashSha256,
+        },
+      });
+      if (claimed.count !== 1) {
+        throw new ApiException("ENCOUNTER_ALREADY_SIGNED", "Este encuentro ya fue firmado y no se puede modificar.", HttpStatus.CONFLICT);
+      }
+
       const note = await tx.clinicalNote.create({
         data: {
           encounterId,
+          authorUserId: doctorUserId,
           ...requiredNote,
           vitals: computedVitals,
           noteTypeTermId: noteTypeTerm?.id ?? null,
@@ -449,10 +521,13 @@ export class ClinicalEncounterService {
         // recién firmada, sin alterar, como "ALTERADA" (falso
         // positivo encontrado al escribir la prueba de integridad).
         await tx.encounterDiagnosis.createMany({
-          data: diagnoses.map(({ icd10Code, codeAbsentReason, ...required }) => ({
+          data: diagnoses.map(({ icd10Code, codeAbsentReason, ...required }, ordinal) => ({
             encounterId,
             ...required,
             createdAt: signedAt,
+            // A-09: el orden que entró al hash, para que el verificador
+            // lo reproduzca exactamente.
+            ordinal,
             // Prompt 28: FK real — validada arriba contra el catálogo.
             ...omitUndefined({ icd10Code, icd10CodeId: icd10Code, codeAbsentReason }),
           })),
@@ -467,22 +542,7 @@ export class ClinicalEncounterService {
           },
         });
       }
-      const updated = await tx.clinicalEncounter.update({
-        where: { id: encounterId },
-        data: {
-          status: "SIGNED",
-          endedAt: signedAt,
-          signedAt,
-          // M8-RN-013: la métrica del negocio, fijada en servidor.
-          timeToSignSeconds: Math.max(0, Math.round((signedAt.getTime() - encounter.startedAt.getTime()) / 1000)),
-          signedByUserId: doctorUserId,
-          signatureMethod: "INTERNAL_SYSTEM",
-          signedByLegalNameSnapshot,
-          signedByLicenseSnapshot,
-          contentHashSha256,
-          previousHashSha256,
-        },
-      });
+      const updated = await tx.clinicalEncounter.findUniqueOrThrow({ where: { id: encounterId } });
       return { encounter: updated, note };
     });
     const pregnancy = await this.patientClinical.getActivePregnancy(encounter.patientId);
@@ -522,7 +582,7 @@ export class ClinicalEncounterService {
   // no noteId — los diagnósticos de una corrección se suman a los
   // del encounter, no reemplazan a los de la nota original en la
   // base de datos (la interfaz decide cómo mostrarlo).
-  async correctNote(encounterId: string, input: ClinicalNoteCorrectionInput) {
+  async correctNote(encounterId: string, authorUserId: string, input: ClinicalNoteCorrectionInput) {
     // Prompt 44A: "su propia firma" — una adenda se firma igual que la
     // nota original (clinicalNoteCorrectionSchema extiende
     // clinicalNoteSignSchema), hoy sin contraseña (ver sign()).
@@ -546,6 +606,12 @@ export class ClinicalEncounterService {
         HttpStatus.NOT_FOUND
       );
     }
+    // A-10: una nota cancelada ya no es la versión vigente de nada —
+    // corregirla dejaría una adenda colgando de un documento anulado.
+    const cancellation = await this.prisma.clinicalNoteCancellation.findUnique({ where: { noteId: original.id } });
+    if (cancellation) {
+      throw new ApiException("NOTE_CANCELLED", "Esta nota fue cancelada; no se puede corregir.", HttpStatus.CONFLICT);
+    }
 
     const {
       diagnoses,
@@ -558,12 +624,50 @@ export class ClinicalEncounterService {
       ...requiredNote
     } = input;
     const computedVitals = withComputedVitals(vitals);
+    // A-10: la adenda lleva autor y sello propio, encadenado al sello de
+    // la nota original.
+    const contentHashSha256 = sha256Hex(
+      buildCorrectionNoteHashInput({
+        note: {
+          chiefComplaint: requiredNote.chiefComplaint,
+          currentIllness: requiredNote.currentIllness,
+          physicalExam: physicalExam ?? null,
+          assessment: requiredNote.assessment,
+          plan: requiredNote.plan,
+          prognosis: prognosis ?? null,
+          vitals: computedVitals,
+          specialtyCode: null,
+          noteTypeTermId: null,
+          patientInstructions: patientInstructions ?? null,
+          suggestedFollowUpDays: suggestedFollowUpDays ?? null,
+        },
+        diagnoses: diagnoses.map((d) => ({
+          icd10CodeId: d.icd10Code ?? null,
+          codeAbsentReason: d.codeAbsentReason ?? null,
+          description: d.description,
+          diagnosisType: d.diagnosisType,
+          certainty: d.certainty,
+        })),
+        specialtyData: null,
+        previousHashSha256: encounter.contentHashSha256,
+        encounterId,
+        isCorrectionOfNoteId,
+        authorUserId,
+      })
+    );
+
+    // Mismo instante explícito para la adenda y sus diagnósticos: así el
+    // verificador sabe cuáles diagnósticos entraron a ESTE sello.
+    const correctedAt = new Date();
 
     return this.prisma.$transaction(async (tx) => {
       const note = await tx.clinicalNote.create({
         data: {
           encounterId,
           isCorrectionOfNoteId,
+          authorUserId,
+          contentHashSha256,
+          createdAt: correctedAt,
           ...requiredNote,
           vitals: computedVitals,
           ...omitUndefined({ physicalExam, prognosis, patientInstructions, suggestedFollowUpDays }),
@@ -571,9 +675,11 @@ export class ClinicalEncounterService {
       });
       if (diagnoses.length > 0) {
         await tx.encounterDiagnosis.createMany({
-          data: diagnoses.map(({ icd10Code, codeAbsentReason, ...required }) => ({
+          data: diagnoses.map(({ icd10Code, codeAbsentReason, ...required }, ordinal) => ({
             encounterId,
             ...required,
+            ordinal,
+            createdAt: correctedAt,
             // Prompt 28: FK real — validada arriba contra el catálogo.
             ...omitUndefined({ icd10Code, icd10CodeId: icd10Code, codeAbsentReason }),
           })),
@@ -618,6 +724,44 @@ export class ClinicalEncounterService {
     return result.source ? result : null;
   }
 
+  // M8-RN-003, barrido (EncounterSweepService): a diferencia de
+  // assertDraft() —que marca abandonado un borrador SOLO cuando el
+  // médico vuelve a tocarlo— este método encuentra los que NADIE
+  // volvió a tocar, para que su cita ligada no se quede IN_PROGRESS
+  // para siempre. Pedido explícito del usuario, 2026-10-27: cuando el
+  // borrador se abandona, la cita se cierra sola por el camino de
+  // "consulta sin nota" (M5-RN-006) — nunca se borra el borrador
+  // (R1/NOM-004, el expediente es append-only incluso sin firmar).
+  async closeAbandonedEncounters(): Promise<number> {
+    const cutoff = new Date(Date.now() - ABANDONED_AFTER_HOURS * 60 * 60_000);
+    const candidates = await this.prisma.clinicalEncounter.findMany({
+      where: {
+        status: "DRAFT",
+        appointmentId: { not: null },
+        OR: [{ abandonedAt: { not: null } }, { startedAt: { lt: cutoff } }],
+      },
+      select: { id: true, appointmentId: true, abandonedAt: true },
+    });
+
+    for (const encounter of candidates) {
+      if (!encounter.appointmentId) continue;
+      if (!encounter.abandonedAt) {
+        // Mismo compare-and-set que assertDraft(): evita pisar un
+        // abandonedAt que otra instancia del barrido acaba de poner.
+        await this.prisma.clinicalEncounter.updateMany({
+          where: { id: encounter.id, status: "DRAFT", abandonedAt: null },
+          data: { abandonedAt: new Date() },
+        });
+      }
+      await this.appointments.completeAbandonedDraft(
+        encounter.appointmentId,
+        "Borrador abandonado a las 72 h sin firmarse (M8-RN-003, cierre automático)."
+      );
+    }
+
+    return candidates.length;
+  }
+
   private async assertDraft(encounterId: string) {
     const encounter = await this.prisma.clinicalEncounter.findUnique({ where: { id: encounterId } });
     if (!encounter) {
@@ -626,9 +770,17 @@ export class ClinicalEncounterService {
     if (encounter.status !== "DRAFT") {
       throw new ApiException("ENCOUNTER_ALREADY_SIGNED", "Este encuentro ya fue firmado y no se puede modificar.", HttpStatus.CONFLICT);
     }
+    // M-12: antes solo la PRIMERA llamada tras las 72 h fallaba; desde
+    // la segunda (abandonedAt ya puesto) el borrador volvía a ser
+    // editable y firmable.
     const ageHours = (Date.now() - encounter.startedAt.getTime()) / (1000 * 60 * 60);
-    if (ageHours > ABANDONED_AFTER_HOURS && !encounter.abandonedAt) {
-      await this.prisma.clinicalEncounter.update({ where: { id: encounterId }, data: { abandonedAt: new Date() } });
+    if (encounter.abandonedAt || ageHours > ABANDONED_AFTER_HOURS) {
+      if (!encounter.abandonedAt) {
+        await this.prisma.clinicalEncounter.updateMany({
+          where: { id: encounterId, status: "DRAFT", abandonedAt: null },
+          data: { abandonedAt: new Date() },
+        });
+      }
       throw new ApiException(
         "ENCOUNTER_ABANDONED",
         "Este borrador lleva más de 72 horas sin firmarse y se marcó como abandonado.",

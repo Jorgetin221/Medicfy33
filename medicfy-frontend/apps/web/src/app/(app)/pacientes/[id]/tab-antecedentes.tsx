@@ -64,7 +64,7 @@ export function TabAntecedentes({
       <div className="order-1 flex flex-1 flex-col gap-6 lg:order-2">
         <Card id="bloque-alergias" className="scroll-mt-20">
           <h2 className="mb-3 text-base font-semibold text-gray-900">Alergias</h2>
-          <AllergySummary allergies={allergies} />
+          <AllergySummary allergies={allergies} loadState="ready" />
           {allergies.some((a) => a.status !== "ACTIVE") && (
             <ul className="mt-2 flex flex-col gap-1">
               {allergies
@@ -90,7 +90,8 @@ export function TabAntecedentes({
                   <p className="text-base font-medium text-gray-900">
                     {m.genericName} {m.brandName ? `(${m.brandName})` : ""}
                   </p>
-                  <p className="text-sm text-gray-700">
+                  {/* A-22: dosis y frecuencia nunca por debajo de 16 px. */}
+                  <p className="text-base text-gray-700">
                     {m.dose} · {vocab("via", m.route)} · {m.frequency}
                   </p>
                   <p className="text-sm text-gray-500">
@@ -220,7 +221,7 @@ function AddAllergyForm({ patientId, accessToken, onCreated }: { patientId: stri
           {t("common.acciones.cancelar")}
         </Button>
         <Button type="submit" isLoading={form.formState.isSubmitting}>
-          Guardar alergia
+          {t("pacientes.antecedentesTab.guardarAlergia")}
         </Button>
       </div>
     </form>

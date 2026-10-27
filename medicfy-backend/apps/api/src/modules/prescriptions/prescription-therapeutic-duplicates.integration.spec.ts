@@ -9,6 +9,7 @@ import { ApiExceptionFilter } from "../../common/api-exception.filter";
 import { PrismaService } from "../../prisma/prisma.service";
 import { NOTIFICATION_PORT, type NotificationPort } from "../identity/services/notification.port";
 import { TokenService } from "../identity/services/token.service";
+import { givePrimaryPracticeLocation } from "../../testing/practice-location.fixture";
 
 class TestNotificationAdapter implements NotificationPort {
   async sendEmailVerificationCode(): Promise<void> {}
@@ -82,6 +83,7 @@ describe("Receta — duplicidad terapéutica (nombre exacto y clase ATC)", () =>
     const userId = res.body.userId as string;
     // DoctorVerifiedGuard (M1-RN-002) ahora protege prescriptions.create.
     await prisma.doctor.update({ where: { userId }, data: { verificationStatus: "VERIFIED" } });
+    await givePrimaryPracticeLocation(prisma, userId);
     const accessToken = tokenService.signAccessToken({ sub: userId, primaryRole: "DOCTOR" });
     return { userId, email, accessToken };
   }

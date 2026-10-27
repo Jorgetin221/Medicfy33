@@ -25,6 +25,11 @@ import { DoctorProfileService } from "./services/doctor-profile.service";
 import { DoctorPostService, InvalidPostMediaError } from "./services/doctor-post.service";
 import { DownloadThrottle } from "../../common/rate-limit";
 
+// M-07: sin límite, multer cargaba en memoria archivos de cualquier
+// tamaño antes de que el servicio los rechazara. Mismo tope que valida
+// el servicio.
+const POST_MEDIA_UPLOAD_LIMIT_BYTES = 5 * 1024 * 1024;
+
 // M2B (spec §7, v2.2): panel privado del médico — administra sus
 // propias publicaciones sin importar audiencia/estado (a diferencia
 // de las rutas públicas/de pacientes, que filtran por ambas).
@@ -91,7 +96,7 @@ export class DoctorPostsController {
   }
 
   @Post(":id/media")
-  @UseInterceptors(FileInterceptor("file"))
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: POST_MEDIA_UPLOAD_LIMIT_BYTES } }))
   @ApiConsumes("multipart/form-data")
   @ApiQuery({ name: "mediaType", enum: ["PHOTO", "VIDEO"] })
   @ApiOperation({ summary: "M2B-RN-005: sube una foto (video: PENDIENTE(jorge), ver spec §7 M2B) a una publicación propia" })

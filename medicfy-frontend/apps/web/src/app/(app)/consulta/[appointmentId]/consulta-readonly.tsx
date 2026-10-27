@@ -116,7 +116,7 @@ export function ConsultaReadonly({
                             {r.referenceMin !== null && r.referenceMax !== null ? `${r.referenceMin} – ${r.referenceMax}` : t("clinico.rango.sinRango")}
                           </td>
                           <td className="p-2">
-                            <span className={`inline-flex items-center rounded-md border px-2 py-1 text-sm font-medium ${VITAL_RANGE_TILE_CLASS[status]}`}>
+                            <span className={`inline-flex items-center rounded-md border px-2 py-1 text-base font-medium ${VITAL_RANGE_TILE_CLASS[status]}`}>
                               {labelKey ? t(labelKey) : t("clinico.rango.normal")}
                             </span>
                           </td>

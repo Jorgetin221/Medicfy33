@@ -161,7 +161,7 @@ describe("M7 — Teleconsulta (MVP: enlace de proveedor externo)", () => {
     expect(persisted.videoProviderRef).toBe(`test-${appointment.id}`);
   });
 
-  it("CA-3: una cita presencial no puede pedir enlace de teleconsulta (422)", async () => {
+  it("una cita agendada como presencial también puede pedir el enlace (videollamada ad hoc, sin importar la modalidad)", async () => {
     const doctor = await registerDoctor();
     const service = await createService(doctor.accessToken, "FIRST_VISIT");
     const patient = await createAdultPatient(doctor.accessToken);
@@ -169,11 +169,11 @@ describe("M7 — Teleconsulta (MVP: enlace de proveedor externo)", () => {
     await request(app.getHttpServer()).post(`/appointments/${appointment.id}/start`).set("Authorization", `Bearer ${doctor.accessToken}`);
 
     const res = await request(app.getHttpServer()).post(`/appointments/${appointment.id}/video-room`).set("Authorization", `Bearer ${doctor.accessToken}`);
-    expect(res.status).toBe(422);
-    expect(res.body.error.code).toBe("APPOINTMENT_NOT_TELECONSULTATION");
+    expect(res.status).toBe(201);
+    expect(res.body).toEqual({ kind: "ok", room: { url: `https://video.test/${appointment.id}` } });
   });
 
-  it("CA-3: una cita en línea que todavía no está en curso no puede pedir enlace (409)", async () => {
+  it("CA-3: una cita que todavía no está en curso no puede pedir enlace (409)", async () => {
     const doctor = await registerDoctor();
     const service = await createService(doctor.accessToken, "TELECONSULTATION");
     const patient = await createAdultPatient(doctor.accessToken);

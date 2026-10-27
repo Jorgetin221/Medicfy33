@@ -10,6 +10,7 @@ import { ApiExceptionFilter } from "../../common/api-exception.filter";
 import { PrismaService } from "../../prisma/prisma.service";
 import { NOTIFICATION_PORT, type NotificationPort } from "./services/notification.port";
 import { TokenService } from "./services/token.service";
+import { givePrimaryPracticeLocation } from "../../testing/practice-location.fixture";
 
 class TestNotificationAdapter implements NotificationPort {
   async sendEmailVerificationCode(): Promise<void> {}
@@ -101,6 +102,7 @@ describe("Verificación de médico — enforcement real en las rutas de emisión
 
   async function verify(userId: string): Promise<void> {
     await prisma.doctor.update({ where: { userId }, data: { verificationStatus: "VERIFIED" } });
+    await givePrimaryPracticeLocation(prisma, userId);
   }
 
   // /auth/mfa/enroll solo exige JwtAuthGuard (sin DoctorVerifiedGuard),
@@ -223,7 +225,7 @@ describe("Verificación de médico — enforcement real en las rutas de emisión
     // enroll no depende de verificationStatus, y así se aísla que el
     // bloqueo de la llamada "blocked" de abajo es por DOCTOR_NOT_VERIFIED
     // y no por falta de MFA.
-    const otpauthUri = await enrollMfa(doctor.accessToken);
+    await enrollMfa(doctor.accessToken);
     const patientId = await createPatient(doctor.accessToken);
     const encounterId = await createEncounter(doctor.accessToken, patientId);
 
@@ -256,7 +258,7 @@ describe("Verificación de médico — enforcement real en las rutas de emisión
     const allowed = await request(app.getHttpServer())
       .post(`/records/encounters/${encounterId}/sign`)
       .set("Authorization", `Bearer ${doctor.accessToken}`)
-      .send({ ...noteBody, password: STRONG_PASSWORD, totpCode: totpFromUri(otpauthUri) });
+      .send({ ...noteBody });
     expect(allowed.status).toBe(201);
   });
 

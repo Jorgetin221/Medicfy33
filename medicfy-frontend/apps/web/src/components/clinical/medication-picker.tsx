@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { apiFetch, ApiError, expectArray } from "@/lib/api-client";
 import { TextInput, FieldWrapper, SelectInput } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
@@ -96,6 +96,12 @@ export function MedicationPicker({
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<MedicationCatalogEntry[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  // M-25: un fallo de red ya no se ve como "sin resultados" (que invitaba
+  // a dar de alta un duplicado del medicamento).
+  const [searchError, setSearchError] = useState(false);
+  // M-25: navegación por teclado del combobox (consulta sin ratón, §6).
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const listboxId = useId();
   const [selected, setSelected] = useState<MedicationCatalogEntry | null>(null);
   const [fields, setFields] = useState(emptyDraftFields());
   // Prompt 36: al editar una línea heredada, se conserva su receta de
@@ -110,17 +116,23 @@ export function MedicationPicker({
   useEffect(() => {
     if (query.trim().length < 2) {
       setResults([]);
+      setSearchError(false);
       return undefined;
     }
     let cancelled = false;
     setIsSearching(true);
+    setSearchError(false);
+    setActiveIndex(-1);
     const timeout = setTimeout(() => {
       apiFetch<unknown>(`/medications?search=${encodeURIComponent(query)}`, { accessToken })
         .then((data) => {
           if (!cancelled) setResults(expectArray<MedicationCatalogEntry>(data));
         })
         .catch(() => {
-          if (!cancelled) setResults([]);
+          if (!cancelled) {
+            setResults([]);
+            setSearchError(true);
+          }
         })
         .finally(() => {
           if (!cancelled) setIsSearching(false);
@@ -253,11 +265,12 @@ export function MedicationPicker({
                   <p className="text-base font-medium text-gray-900">
                     {item.genericName} — {item.presentation}
                   </p>
-                  <p className="text-sm text-gray-700">
+                  {/* A-22: dosis y frecuencia nunca por debajo de 16 px. */}
+                  <p className="text-base text-gray-700">
                     {item.dose}
                     {item.doseUnit ? ` ${item.doseUnit}` : ""} · {item.route} · {item.frequency} · {item.duration}
                   </p>
-                  {item.indication && <p className="text-sm text-gray-500">{t("clinico.medicamentos.indicacion", { texto: item.indication })}</p>}
+                  {item.indication && <p className="text-base text-gray-500">{t("clinico.medicamentos.indicacion", { texto: item.indication })}</p>}
                   {item.specialInstructions && <p className="text-sm text-gray-500">{item.specialInstructions}</p>}
                   {originKey(item.origin) && (
                     <p className="mt-1 w-fit rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
@@ -268,7 +281,7 @@ export function MedicationPicker({
                 </div>
                 <div className="flex flex-col gap-2">
                   <Button type="button" variant="secondary" onClick={() => editItem(index)} className="min-h-11 px-3 text-sm">
-                    Editar
+                    {t("common.acciones.editar")}
                   </Button>
                   <Button type="button" variant="destructive" onClick={() => removeItem(index)} className="min-h-11 px-3 text-sm">
                     {t("common.acciones.quitar")}
@@ -288,12 +301,35 @@ export function MedicationPicker({
             placeholder={t("clinico.medicamentos.buscar")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowDown" && results.length > 0) {
+                e.preventDefault();
+                setActiveIndex((i) => Math.min(i + 1, results.length - 1));
+              } else if (e.key === "ArrowUp" && results.length > 0) {
+                e.preventDefault();
+                setActiveIndex((i) => Math.max(i - 1, 0));
+              } else if (e.key === "Enter" && activeIndex >= 0 && results[activeIndex]) {
+                e.preventDefault();
+                pick(results[activeIndex]);
+              } else if (e.key === "Escape") {
+                setQuery("");
+              }
+            }}
+            role="combobox"
+            aria-expanded={query.trim().length >= 2 && results.length > 0}
+            aria-controls={listboxId}
+            aria-autocomplete="list"
+            aria-activedescendant={activeIndex >= 0 ? `${listboxId}-${activeIndex}` : undefined}
             aria-label={t("clinico.medicamentos.buscarEtiqueta")}
           />
           {query.trim().length >= 2 && (
             <div className="absolute z-10 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-gray-300 bg-white shadow-card">
               {isSearching ? (
-                <p className="p-3 text-sm text-gray-500">{t("clinico.medicamentos.buscando")}</p>
+                <p className="p-3 text-base text-gray-500">{t("clinico.medicamentos.buscando")}</p>
+              ) : searchError ? (
+                <p role="alert" className="p-3 text-base text-danger-600">
+                  {t("clinico.medicamentos.errorBusqueda")}
+                </p>
               ) : results.length === 0 ? (
                 <div className="p-3">
                   <p className="text-sm text-gray-500">{t("clinico.medicamentos.sinResultadosPara", { consulta: query })}</p>
@@ -306,24 +342,31 @@ export function MedicationPicker({
                   </button>
                 </div>
               ) : (
-                results.map((entry) => (
+                <div id={listboxId} role="listbox" aria-label={t("clinico.medicamentos.buscarEtiqueta")}>
+                {results.map((entry, index) => (
                   <button
                     key={entry.id}
+                    id={`${listboxId}-${index}`}
                     type="button"
+                    role="option"
+                    aria-selected={index === activeIndex}
+                    tabIndex={-1}
+                    onMouseEnter={() => setActiveIndex(index)}
                     onClick={() => pick(entry)}
-                    className="flex min-h-11 w-full items-center justify-between gap-2 border-b border-gray-100 px-3 py-2 text-left hover:bg-gray-100 last:border-0"
+                    className={`flex min-h-11 w-full items-center justify-between gap-2 border-b border-gray-100 px-3 py-2 text-left hover:bg-gray-100 last:border-0 ${index === activeIndex ? "bg-gray-100" : ""}`}
                   >
                     <span>
                       <span className="block text-base font-medium text-gray-900">{entry.genericName}</span>
                       <span className="block text-sm text-gray-500">{entry.presentations[0]?.label ?? ""}</span>
                     </span>
                     {!entry.isElectronicallyPrescribable && (
-                      <span className="whitespace-nowrap rounded-full border border-critical-600 px-2 py-0.5 text-xs font-medium text-critical-600">
-                        Grupo {entry.controlGroup} — bloqueado
+                      <span className="whitespace-nowrap rounded-full border border-critical-600 px-2 py-0.5 text-sm font-medium text-critical-600">
+                        {t("clinico.medicamentos.grupoBloqueadoEtiqueta", { grupo: entry.controlGroup })}
                       </span>
                     )}
                   </button>
-                ))
+                ))}
+                </div>
               )}
             </div>
           )}

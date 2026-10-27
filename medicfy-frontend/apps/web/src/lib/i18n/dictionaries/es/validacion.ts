@@ -30,7 +30,12 @@ export const validacion = {
   "El análisis es obligatorio.": "El análisis es obligatorio.",
   "El contenido no puede estar vacío.": "El contenido no puede estar vacío.",
   "El código de verificación debe tener 6 dígitos.": "El código de verificación debe tener 6 dígitos.",
+  "La fecha final debe ser posterior a la inicial.": "La fecha final debe ser posterior a la inicial.",
+  "El rango de fechas no puede pasar de 60 días.": "El rango de fechas no puede pasar de 60 días.",
+  "La contraseña no puede pasar de 128 caracteres.": "La contraseña no puede pasar de 128 caracteres.",
   "El código debe tener 6 dígitos.": "El código debe tener 6 dígitos.",
+  "Escribe el código de 6 dígitos de tu app o un código de respaldo de 10 caracteres.":
+    "Escribe el código de 6 dígitos de tu app o un código de respaldo de 10 caracteres.",
   "El diagnóstico es obligatorio.": "El diagnóstico es obligatorio.",
   "El folio del recetario físico es obligatorio.": "El folio del recetario físico es obligatorio.",
   "El motivo de cancelación es obligatorio.": "El motivo de cancelación es obligatorio.",
@@ -47,7 +52,7 @@ export const validacion = {
   "Escribe el agente completo (mínimo 3 caracteres). Si no hay alergias, no captures una fila.":
     "Escribe el agente completo (mínimo 3 caracteres). Si no hay alergias, no captures una fila.",
   "Fecha de nacimiento fuera de rango (entre hoy y hace 120 años).": "Fecha de nacimiento fuera de rango (entre hoy y hace 120 años).",
-  "Fecha inválida — usa AAAA-MM-DD.": "Fecha inválida — usa AAAA-MM-DD.",
+  "Fecha inválida — usa AAAA-MM-DD.": "Fecha inválida: usa AAAA-MM-DD.",
   "Fecha inválida, usa formato YYYY-MM-DD.": "Fecha inválida, usa formato YYYY-MM-DD.",
   "Hora inválida, usa formato HH:MM.": "Hora inválida, usa formato HH:MM.",
   "Ingresa un correo electrónico válido.": "Ingresa un correo electrónico válido.",

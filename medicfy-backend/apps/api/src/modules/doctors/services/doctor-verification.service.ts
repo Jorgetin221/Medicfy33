@@ -175,6 +175,11 @@ export class DoctorVerificationService {
       where: { id: doctorId },
       data: { verificationStatus: "SUSPENDED" },
     });
+    // A-05: la suspensión corta las sesiones abiertas en ese momento.
+    await this.prisma.session.updateMany({
+      where: { userId: doctor.userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
     const effects = await this.suspensionEffects.handleDoctorSuspended(doctor.userId, adminUserId);
     await this.auditService.log({
       actorUserId: adminUserId,

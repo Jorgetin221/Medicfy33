@@ -96,11 +96,26 @@ export type AvailabilityExceptionCreateInput = z.infer<typeof availabilityExcept
 // opcionales — sin ellos, el controlador asume "hoy" y una ventana
 // por defecto, calculadas en el servidor (nunca en el navegador,
 // CLAUDE.md §4), igual que el default de GET /appointments.
-export const availabilityQuerySchema = z.object({
-  from: dateOnlySchema.optional(),
-  to: dateOnlySchema.optional(),
-  service_id: z.string().uuid(),
-});
+// M-08: endpoint público sin autenticación — sin tope, from=1900 y
+// to=9999 lo ponían a recorrer millones de días por petición.
+export const AVAILABILITY_MAX_RANGE_DAYS = 60;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export const availabilityQuerySchema = z
+  .object({
+    from: dateOnlySchema.optional(),
+    to: dateOnlySchema.optional(),
+    service_id: z.string().uuid(),
+  })
+  .superRefine((data, ctx) => {
+    if (!data.from || !data.to) return;
+    const spanDays = (Date.parse(`${data.to}T00:00:00Z`) - Date.parse(`${data.from}T00:00:00Z`)) / DAY_MS;
+    if (spanDays < 0) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["to"], message: "La fecha final debe ser posterior a la inicial." });
+    } else if (spanDays > AVAILABILITY_MAX_RANGE_DAYS) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["to"], message: "El rango de fechas no puede pasar de 60 días." });
+    }
+  });
 export type AvailabilityQueryInput = z.infer<typeof availabilityQuerySchema>;
 
 // Sprint 5c: DOC-01 "agenda del día" — filtra GET /appointments a un

@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import type { AuditLog, AuditResult } from "@prisma/client";
 import { PrismaService } from "../../../prisma/prisma.service";
 import { buildAuditLogChainHashInput, sha256Hex } from "../../../common/content-hash.util";
+import { currentRequestContext } from "../../../common/request-context";
 
 // M15-RN-002 agregó `sequence BigInt?` a audit_log. Express serializa
 // las respuestas con JSON.stringify, que lanza TypeError ante un BigInt
@@ -59,6 +60,9 @@ export class AuditService {
   async log(entry: AuditEntry): Promise<void> {
     const id = randomUUID();
     const occurredAt = new Date();
+    // M-14: request_id, IP y user-agent de la petición en curso cuando
+    // el llamador no los pasó explícitamente.
+    const context = currentRequestContext();
     const data = {
       actorUserId: entry.actorUserId ?? null,
       actorRole: entry.actorRole ?? null,
@@ -66,9 +70,9 @@ export class AuditService {
       resourceType: entry.resourceType,
       resourceId: entry.resourceId ?? null,
       patientId: entry.patientId ?? null,
-      ipAddress: entry.ipAddress ?? null,
-      userAgent: entry.userAgent ?? null,
-      requestId: entry.requestId ?? null,
+      ipAddress: entry.ipAddress ?? context?.ip ?? null,
+      userAgent: entry.userAgent ?? context?.userAgent ?? null,
+      requestId: entry.requestId ?? context?.requestId ?? null,
       justification: entry.justification ?? null,
       result: entry.result,
       metadata: entry.metadata !== undefined ? (entry.metadata as Prisma.InputJsonValue) : null,
@@ -149,7 +153,10 @@ export class AuditService {
   // pacientes" — agrega sobre TODOS los pacientes con care_relationship
   // activo con este médico, sin acotar a un paciente de la ruta (a
   // diferencia de listForPatient).
-  async listForDoctorPatients(doctorId: string, limit = 200): Promise<SerializableAuditLog[]> {
+  // B-18: con el nombre de quien accedió (antes la pantalla solo decía
+  // "Médico"). Es el nombre legal del médico actor — el dato que el
+  // titular necesita para saber quién vio a su paciente.
+  async listForDoctorPatients(doctorId: string, limit = 200): Promise<(SerializableAuditLog & { actorName: string | null })[]> {
     const relationships = await this.prisma.careRelationship.findMany({
       where: { doctorId, status: "ACTIVE" },
       select: { patientId: true },
@@ -161,6 +168,15 @@ export class AuditService {
       orderBy: { occurredAt: "desc" },
       take: limit,
     });
-    return rows.map(toSerializableAuditLog);
+    const actorIds = [...new Set(rows.map((r) => r.actorUserId).filter((id): id is string => id !== null))];
+    const actors = await this.prisma.doctor.findMany({
+      where: { userId: { in: actorIds } },
+      select: { userId: true, legalFirstName: true, legalLastName: true },
+    });
+    const nameByUserId = new Map(actors.map((a) => [a.userId, `${a.legalFirstName} ${a.legalLastName}`]));
+    return rows.map((row) => ({
+      ...toSerializableAuditLog(row),
+      actorName: row.actorUserId ? (nameByUserId.get(row.actorUserId) ?? null) : null,
+    }));
   }
 }

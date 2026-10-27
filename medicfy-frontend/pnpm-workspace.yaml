@@ -11,3 +11,9 @@ allowBuilds:
   esbuild: true
   prisma: true
   sharp: true
+# Auditoría 2026-10-21 (C-03, A-25): Next fija versiones vulnerables de
+# estas transitivas. Se fuerzan a la primera versión parcheada.
+overrides:
+  postcss: ^8.5.31
+  sharp: ^0.35.5
+  source-map-js: ^1.2.2

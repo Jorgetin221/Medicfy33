@@ -8,10 +8,12 @@ import {
   appointmentCreateSchema,
   appointmentListQuerySchema,
   appointmentRescheduleSchema,
+  walkInAppointmentCreateSchema,
   type AppointmentCancelInput,
   type AppointmentCompleteInput,
   type AppointmentCreateInput,
   type AppointmentRescheduleInput,
+  type WalkInAppointmentCreateInput,
 } from "@medicfy/contracts";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { ApiException } from "../../common/api-exception";
@@ -69,6 +71,16 @@ export class AppointmentsController {
     return this.appointments.create(doctor.id, user.sub, createdVia, body, idempotencyKey);
   }
 
+  @Post("walk-in")
+  @ApiOperation({ summary: "Crea una cita para AHORA MISMO y la deja en IN_PROGRESS — 'iniciar consulta sin cita' usa este camino para llegar a la misma pantalla que la agenda" })
+  @ApiResponse({ status: 201 })
+  @ApiResponse({ status: 422, description: "NO_SERVICE_CONFIGURED" })
+  async createWalkIn(@Body(new ZodValidationPipe(walkInAppointmentCreateSchema)) body: WalkInAppointmentCreateInput, @Req() req: Request) {
+    const { user } = req as AuthenticatedRequest;
+    const doctor = await this.actingDoctor(req);
+    return this.appointments.startWalkIn(doctor.id, body.patientId, user.sub);
+  }
+
   @Get(":id")
   @ApiOperation({ summary: "Detalle de una cita, con paciente/servicio/encounter — usado por /consulta/[appointmentId]" })
   async findOne(@Param("id") id: string, @Req() req: Request) {
@@ -112,9 +124,8 @@ export class AppointmentsController {
   }
 
   @Post(":id/video-room")
-  @ApiOperation({ summary: "M7 (MVP): genera/recupera el enlace de videollamada de proveedor externo de una cita en línea ya en curso" })
+  @ApiOperation({ summary: "M7 (MVP): genera/recupera el enlace de videollamada de proveedor externo de una cita ya en curso, sin importar su modalidad" })
   @ApiResponse({ status: 409, description: "APPOINTMENT_TRANSITION_INVALID" })
-  @ApiResponse({ status: 422, description: "APPOINTMENT_NOT_TELECONSULTATION" })
   async openVideoRoom(@Param("id") id: string, @Req() req: Request) {
     const appointment = await this.assertOwnedByCaller(id, req);
     return this.teleconsultation.openRoom(appointment);

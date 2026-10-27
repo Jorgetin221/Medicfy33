@@ -2,6 +2,7 @@ import { HttpStatus, Inject, Injectable } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import type { LabOrderCreateInput, LabResultUploadMetadataInput } from "@medicfy/contracts";
 import { ApiException } from "../../../common/api-exception";
+import { isIdempotencyKeyConflict } from "../../../common/idempotency";
 import { PrismaService } from "../../../prisma/prisma.service";
 import { sha256Hex } from "../../../common/content-hash.util";
 import { nextLabOrderFolio } from "../../../common/folio.util";
@@ -45,10 +46,21 @@ export class LabOrderService {
   // ruta ELECTRONIC — el discriminated union de LabOrderCreateInput
   // ya garantiza que password/totpCode ni siquiera existen en el
   // input cuando la ruta es HANDWRITTEN_AFTER_PRINT.
-  async create(encounterId: string, doctorId: string, doctorUserId: string, patientId: string, input: LabOrderCreateInput) {
+  async create(
+    encounterId: string,
+    doctorId: string,
+    doctorUserId: string,
+    patientId: string,
+    input: LabOrderCreateInput,
+    idempotencyKey?: string
+  ) {
     if (input.signatureRoute === "ELECTRONIC") {
       await this.signatureVerification.verify(doctorUserId, input.password);
     }
+
+    // A-14: un reintento con la misma llave devuelve la orden ya emitida.
+    const replay = await this.findByIdempotencyKey(doctorId, idempotencyKey, patientId);
+    if (replay) return replay;
 
     // Fase 4b: la orden se emite contra un encuentro DRAFT o SIGNED —
     // ver encounter-editable.util.ts (mismo cambio que prescriptions).
@@ -98,9 +110,11 @@ export class LabOrderService {
       );
     }
 
+    // El snapshot legal (que puede rechazar la emisión) va antes del
+    // folio: un rechazo no debe dejar un hueco en la numeración.
+    const snapshot = buildLegalSnapshot(doctor, patient, "LAB_ORDER_MISSING_LEGAL_FIELD");
     const folio = await nextLabOrderFolio(this.prisma);
     const issuedAt = new Date();
-    const snapshot = buildLegalSnapshot(doctor, patient);
     const fastingRequired = input.fastingRequired ?? false;
     const items = input.items.map((item) => {
       const motive = motiveByKey.get(item.motiveKey);
@@ -151,27 +165,39 @@ export class LabOrderService {
     const pdfFileKey = `lab-orders/${folio}/orden.pdf`;
     await this.fileStorage.store({ fileKey: pdfFileKey, buffer: pdfBuffer, contentType: "application/pdf" });
 
-    const labOrder = await this.prisma.labOrder.create({
-      data: {
-        encounterId,
-        patientId,
-        doctorId,
-        folio,
-        clinicalIndication: input.clinicalIndication,
-        fastingRequired,
-        ...snapshot,
-        signatureRoute: input.signatureRoute,
-        contentHashSha256,
-        qrVerificationToken,
-        pdfFileKey,
-        ...omitUndefined({
-          signatureMethod: input.signatureRoute === "ELECTRONIC" ? ("INTERNAL_SYSTEM" as const) : undefined,
-          signedAt: input.signatureRoute === "ELECTRONIC" ? issuedAt : undefined,
-        }),
-        items: { create: items },
-      },
-      include: { items: true },
-    });
+    // M-10: si el INSERT no ocurre, el PDF ya guardado se borra.
+    let labOrder;
+    try {
+      labOrder = await this.prisma.labOrder.create({
+          data: {
+            encounterId,
+            patientId,
+            doctorId,
+            folio,
+            clinicalIndication: input.clinicalIndication,
+            fastingRequired,
+            ...snapshot,
+            signatureRoute: input.signatureRoute,
+            contentHashSha256,
+            qrVerificationToken,
+            pdfFileKey,
+            ...omitUndefined({
+              signatureMethod: input.signatureRoute === "ELECTRONIC" ? ("INTERNAL_SYSTEM" as const) : undefined,
+              signedAt: input.signatureRoute === "ELECTRONIC" ? issuedAt : undefined,
+            }),
+            idempotencyKey: idempotencyKey ?? null,
+            items: { create: items },
+          },
+          include: { items: true },
+        });
+    } catch (error) {
+      await this.fileStorage.remove(pdfFileKey).catch(() => undefined);
+      if (isIdempotencyKeyConflict(error)) {
+        const existing = await this.findByIdempotencyKey(doctorId, idempotencyKey, patientId);
+        if (existing) return existing;
+      }
+      throw error;
+    }
 
     // M12/R2: solo "tienes una orden nueva" — nunca el estudio ni el
     // motivo clínico (verificado por notification-templates.spec.ts).
@@ -230,6 +256,7 @@ export class LabOrderService {
     meta: LabResultUploadMetadataInput,
     originalFileName?: string
   ) {
+    await this.assertLabOrderBelongsToPatient(meta.labOrderId, patientId);
     const result = await this.prisma.labResult.create({
       data: {
         patientId,
@@ -256,6 +283,29 @@ export class LabOrderService {
     }
 
     return result;
+  }
+
+  private async findByIdempotencyKey(doctorId: string, idempotencyKey: string | undefined, patientId: string) {
+    if (!idempotencyKey) return null;
+    const existing = await this.prisma.labOrder.findUnique({
+      where: { doctorId_idempotencyKey: { doctorId, idempotencyKey } },
+      include: { items: true },
+    });
+    if (existing && existing.patientId !== patientId) {
+      throw new ApiException("IDEMPOTENCY_KEY_REUSED", "Esta Idempotency-Key ya se usó para otra solicitud.", HttpStatus.CONFLICT);
+    }
+    return existing;
+  }
+
+  // A-06: labOrderId llega en el cuerpo/metadata. Debe ser una orden
+  // de ESTE paciente — si no, el resultado quedaría colgado de la
+  // orden de otro y aparecería en su expediente.
+  async assertLabOrderBelongsToPatient(labOrderId: string | undefined | null, patientId: string): Promise<void> {
+    if (!labOrderId) return;
+    const labOrder = await this.prisma.labOrder.findUnique({ where: { id: labOrderId }, select: { patientId: true } });
+    if (!labOrder || labOrder.patientId !== patientId) {
+      throw new ApiException("LAB_ORDER_NOT_FOUND", "Orden de laboratorio no encontrada.", HttpStatus.NOT_FOUND);
+    }
   }
 
   private async notifyResultAvailable(patientId: string, doctorUserId: string, resultId: string): Promise<void> {

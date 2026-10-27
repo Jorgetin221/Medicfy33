@@ -1086,6 +1086,33 @@ const server = http.createServer(async (req, res) => {
     return sendJson(newApt, 201);
   }
 
+  // Pedido explícito del usuario (2026-10-27): "iniciar consulta sin
+  // cita" crea una cita real para AHORA MISMO, directo en IN_PROGRESS
+  // — mismo contrato que AppointmentStateMachineService.startWalkIn.
+  // Así /consulta/:id es la ÚNICA pantalla de consulta que existe,
+  // con o sin cita de por medio.
+  if (pathname === '/appointments/walk-in' && method === 'POST') {
+    const patient = patients.find(p => p.id === body.patientId);
+    if (!patient) return sendError('PATIENT_NOT_FOUND', 'Paciente no encontrado.', 404);
+    const startsAt = new Date();
+    const newApt = {
+      id: `apt-${Date.now()}`,
+      patientId: patient.id,
+      doctorId: "doc-1",
+      startsAt: startsAt.toISOString(),
+      endsAt: new Date(startsAt.getTime() + 30 * 60000).toISOString(),
+      status: "IN_PROGRESS",
+      modality: "IN_PERSON",
+      videoRoomUrl: null,
+      completedWithoutNoteReason: null,
+      patient,
+      service: { id: "srv-1", name: "Consulta General", durationMinutes: 30 },
+      encounter: null
+    };
+    appointments.push(newApt);
+    return sendJson(newApt, 201);
+  }
+
   // M-27: siguiente cita confirmada del día (la decide el servidor).
   if (pathname.match(/^\/appointments\/[^\/]+\/next$/) && method === 'GET') {
     const id = pathname.split('/')[2];
@@ -1140,8 +1167,15 @@ const server = http.createServer(async (req, res) => {
       } else if (action === 'confirm') apt.status = 'CONFIRMED';
       else if (action === 'confirm-payment') apt.status = 'SCHEDULED';
       else if (action === 'no-show') apt.status = 'NO_SHOW';
-      else if (action === 'complete') apt.status = 'COMPLETED';
-      else if (action === 'cancel') apt.status = 'CANCELLED';
+      else if (action === 'complete') {
+        apt.status = 'COMPLETED';
+        apt.completedWithoutNoteReason = body.justification || null;
+      }
+      // Bug preexistente: 'CANCELLED' no es un valor real de
+      // AppointmentStatus (es CANCELLED_BY_PATIENT/CANCELLED_BY_DOCTOR)
+      // — EstadoCita (status-badge.tsx) no lo encuentra en su tabla y
+      // truena al leer `.className` de `undefined`.
+      else if (action === 'cancel') apt.status = body.cancelledAsRole === 'PATIENT' ? 'CANCELLED_BY_PATIENT' : 'CANCELLED_BY_DOCTOR';
       return sendJson(apt);
     }
     return sendJson({ ok: true });
@@ -1150,12 +1184,13 @@ const server = http.createServer(async (req, res) => {
   // M7 (MVP) — mismo contrato que AppointmentsController.openVideoRoom
   // (teleconsultationRoomOutcomeSchema). Habla con la API real de
   // Daily.co si DAILY_API_KEY está en .env; si no, responde "no
-  // disponible" igual que el backend real sin credenciales.
+  // disponible" igual que el backend real sin credenciales. Disponible
+  // en cualquier cita en curso, sin importar su modalidad (pedido
+  // explícito del usuario, 2026-10-27).
   if (pathname.match(/^\/appointments\/[^\/]+\/video-room$/) && method === 'POST') {
     const id = pathname.split('/')[2];
     const apt = appointments.find(a => a.id === id);
     if (!apt) return sendError('APPOINTMENT_NOT_FOUND', 'Cita no encontrada.', 404);
-    if (apt.modality !== 'ONLINE') return sendError('APPOINTMENT_NOT_TELECONSULTATION', 'Esta cita no es de modalidad en línea.', 422);
     if (apt.status !== 'IN_PROGRESS') return sendError('APPOINTMENT_TRANSITION_INVALID', 'La teleconsulta solo está disponible mientras la consulta está en curso.', 409);
     return sendJson(await openDailyRoom(apt));
   }

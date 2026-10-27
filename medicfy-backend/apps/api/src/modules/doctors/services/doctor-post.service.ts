@@ -4,6 +4,7 @@ import type { Doctor, DoctorPost, DoctorPostMedia } from "@prisma/client";
 import type { DoctorPostCreateInput, DoctorPostUpdateInput } from "@medicfy/contracts";
 import { PrismaService } from "../../../prisma/prisma.service";
 import { ApiException } from "../../../common/api-exception";
+import { assertContentMatchesDeclaredType } from "../../../common/file-signature.util";
 import { omitUndefined } from "../../../common/omit-undefined";
 import { AuditService } from "../../identity/services/audit.service";
 import type { RequestMeta } from "../../identity/services/auth.service";
@@ -128,6 +129,8 @@ export class DoctorPostService {
     if (!ALLOWED_IMAGE_MIME_TYPES.has(params.mimeType)) {
       throw new InvalidPostMediaError("Formato no permitido. Usa JPG, PNG o WebP.");
     }
+    // M-07: el contenido real tiene que corresponder al tipo declarado.
+    assertContentMatchesDeclaredType(params.buffer, params.mimeType);
     if (params.buffer.length > MAX_MEDIA_BYTES) {
       throw new InvalidPostMediaError("El archivo supera los 5 MB permitidos.");
     }

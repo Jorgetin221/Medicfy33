@@ -23,10 +23,19 @@ const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 // cookie correctamente de punta a punta — el navegador real de
 // verificación seguía sin adjuntarla con "strict" entre localhost:3000
 // y localhost:3001.
+// M-06: antes la cookie solo era Secure si NODE_ENV === "production";
+// un despliegue con NODE_ENV mal puesto la mandaba por HTTP en claro.
+// Ahora es Secure siempre, salvo cuando el propio API corre en
+// localhost por http (desarrollo y pruebas).
+function isLocalHttp(): boolean {
+  const base = process.env.APP_BASE_URL ?? "";
+  return /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/.test(base);
+}
+
 export function setRefreshCookie(res: Response, token: string): void {
   res.cookie(REFRESH_COOKIE_NAME, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: !isLocalHttp(),
     sameSite: "lax",
     maxAge: THIRTY_DAYS_MS,
     path: "/auth",

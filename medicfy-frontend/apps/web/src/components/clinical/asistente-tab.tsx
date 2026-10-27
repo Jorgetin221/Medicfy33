@@ -20,7 +20,7 @@ import { translateKeyed } from "@/lib/i18n/keyed";
 // siguiente incremento, no silenciado.
 type PassOutcome =
   | { kind: "ok"; reading: AssistantReading; readingId: string; createdAt: string }
-  | { kind: "unavailable"; reason: "TIMEOUT" | "NOT_CONFIGURED" | "PROVIDER_ERROR" | "INVALID_OUTPUT" | "SPEND_CAP_REACHED" }
+  | { kind: "unavailable"; reason: "TIMEOUT" | "NOT_CONFIGURED" | "PROVIDER_ERROR" | "INVALID_OUTPUT" | "SPEND_CAP_REACHED" | "PASS_IN_PROGRESS" }
   | { kind: "cancelled" };
 
 interface StoredReading {
@@ -61,6 +61,7 @@ const UNAVAILABLE_MESSAGE_KEY: Record<Exclude<PassOutcome, { kind: "ok" } | { ki
   PROVIDER_ERROR: "clinico.asistente.noDisponible.PROVIDER_ERROR",
   INVALID_OUTPUT: "clinico.asistente.noDisponible.INVALID_OUTPUT",
   SPEND_CAP_REACHED: "clinico.asistente.noDisponible.SPEND_CAP_REACHED",
+  PASS_IN_PROGRESS: "clinico.asistente.noDisponible.PASS_IN_PROGRESS",
 };
 
 // El modelo responde con estas claves en español; son parte del

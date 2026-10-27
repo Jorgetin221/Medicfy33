@@ -141,7 +141,7 @@ describe("Soporte de frontend M8 — catálogos, plantillas, firma completa la c
     return res.body.id as string;
   }
 
-  function signPayload(otpauthUri: string) {
+  function signPayload(_otpauthUri: string) {
     return {
       chiefComplaint: "Dolor de cabeza",
       currentIllness: "2 días de evolución",
@@ -151,8 +151,6 @@ describe("Soporte de frontend M8 — catálogos, plantillas, firma completa la c
       // Prompt 28: la FK exige un código EXISTENTE — el DGIS codifica
       // la cefalea como "R51.X", no "R51" a secas.
       diagnoses: [{ icd10Code: "R51.X", description: "Cefalea", diagnosisType: "PRINCIPAL", certainty: "CONFIRMED" }],
-      password: STRONG_PASSWORD,
-      totpCode: totpFromUri(otpauthUri),
     };
   }
 
@@ -240,8 +238,6 @@ describe("Soporte de frontend M8 — catálogos, plantillas, firma completa la c
         .set("Authorization", `Bearer ${doctor.accessToken}`)
         .send({ patientId, serviceId, startsAt: isoDaysFromNow(1) });
       expect(appt.status).toBe(201);
-
-      await appointmentService.confirmPayment(appt.body.id, doctor.userId);
       await appointmentService.start(appt.body.id, doctor.userId);
 
       const encounter = await request(app.getHttpServer())
@@ -296,7 +292,6 @@ describe("Soporte de frontend M8 — catálogos, plantillas, firma completa la c
         .post("/appointments")
         .set("Authorization", `Bearer ${doctor.accessToken}`)
         .send({ patientId, serviceId, startsAt: isoDaysFromNow(1) });
-      await appointmentService.confirmPayment(appt.body.id, doctor.userId);
       // Nunca se llama start() — se queda en SCHEDULED.
 
       const encounter = await request(app.getHttpServer())

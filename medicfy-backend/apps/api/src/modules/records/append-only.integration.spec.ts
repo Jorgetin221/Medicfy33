@@ -263,4 +263,62 @@ describe("append-only enforcement — clinical_notes, prescriptions, lab_orders"
       await expect(appDb.$executeRawUnsafe(`DELETE FROM "note_templates" WHERE id = 'no-existe'`)).resolves.toBe(0);
     });
   });
+  // Auditoría 2026-10-21 · C-02/A-07: el GRANT no basta — las FK ON
+  // UPDATE CASCADE corren con privilegios del dueño. Los triggers de la
+  // migración 20261022100000_immutability_in_depth cierran esa vía, y
+  // aplican también al dueño del esquema.
+  describe("C-02 — inmutabilidad en profundidad", () => {
+    it("rejects changing a referenced primary key (the cascade vector) for medicfy_app", async () => {
+      await expect(
+        appDb.$executeRaw`UPDATE clinical_encounters SET id = ${encounterId + "-T"} WHERE id = ${encounterId}`
+      ).rejects.toThrow(/inmutable/i);
+      await expect(appDb.$executeRaw`UPDATE patients SET id = ${patientId + "-T"} WHERE id = ${patientId}`).rejects.toThrow(
+        /inmutable/i
+      );
+    });
+
+    it("rejects the cascade even for the schema owner", async () => {
+      await expect(
+        ownerDb.$executeRaw`UPDATE clinical_encounters SET id = ${encounterId + "-T"} WHERE id = ${encounterId}`
+      ).rejects.toThrow(/inmutable/i);
+      const notes = await ownerDb.clinicalNote.findMany({ where: { id: noteId }, select: { encounterId: true } });
+      expect(notes[0]?.encounterId).toBe(encounterId);
+    });
+
+    it("rejects UPDATE/DELETE on clinical_notes for the schema owner too", async () => {
+      await expect(ownerDb.$executeRaw`UPDATE clinical_notes SET plan = 'tampered' WHERE id = ${noteId}`).rejects.toThrow(
+        /append-only/i
+      );
+      await expect(ownerDb.$executeRaw`DELETE FROM clinical_notes WHERE id = ${noteId}`).rejects.toThrow(/append-only/i);
+    });
+
+    it("rejects DELETE on patients for medicfy_app (NOM-004 retention)", async () => {
+      await expect(appDb.$executeRaw`DELETE FROM patients WHERE id = ${patientId}`).rejects.toThrow(/permission denied/i);
+    });
+
+    it("every table with an id column carries the primary-key trigger", async () => {
+      const missing = await ownerDb.$queryRaw<{ table_name: string }[]>`
+        SELECT c.table_name
+        FROM information_schema.columns c
+        JOIN information_schema.tables t ON t.table_schema = c.table_schema AND t.table_name = c.table_name
+        WHERE c.table_schema = 'public' AND c.column_name = 'id' AND t.table_type = 'BASE TABLE'
+          AND c.table_name <> '_prisma_migrations'
+          AND NOT EXISTS (
+            SELECT 1 FROM pg_trigger tr JOIN pg_class cl ON cl.oid = tr.tgrelid
+            WHERE cl.relname = c.table_name AND tr.tgname = 'medicfy_pk_immutable'
+          )
+      `;
+      expect(missing.map((r) => r.table_name)).toEqual([]);
+    });
+
+    it("A-07: seals a signed encounter — its hash cannot be rewritten", async () => {
+      const sealed = await ownerDb.clinicalEncounter.create({
+        data: { patientId, doctorId, encounterType: "FOLLOW_UP" },
+      });
+      await appDb.$executeRaw`UPDATE clinical_encounters SET status = 'SIGNED', "contentHashSha256" = 'h' WHERE id = ${sealed.id}`;
+      await expect(
+        appDb.$executeRaw`UPDATE clinical_encounters SET "contentHashSha256" = 'forged' WHERE id = ${sealed.id}`
+      ).rejects.toThrow(/firmado/i);
+    });
+  });
 });

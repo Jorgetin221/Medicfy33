@@ -126,7 +126,7 @@ describe("Cancelación de nota firmada — motivo de catálogo + firma", () => {
     return res.body.id as string;
   }
 
-  async function signNewNote(accessToken: string, patientId: string, otpauthUri: string): Promise<{ encounterId: string; noteId: string }> {
+  async function signNewNote(accessToken: string, patientId: string, _otpauthUri: string): Promise<{ encounterId: string; noteId: string }> {
     const encounter = await request(app.getHttpServer())
       .post(`/records/patients/${patientId}/encounters`)
       .set("Authorization", `Bearer ${accessToken}`)
@@ -137,7 +137,7 @@ describe("Cancelación de nota firmada — motivo de catálogo + firma", () => {
     const sign = await request(app.getHttpServer())
       .post(`/records/encounters/${encounterId}/sign`)
       .set("Authorization", `Bearer ${accessToken}`)
-      .send({ ...SIGN_BODY_BASE, password: STRONG_PASSWORD, totpCode: totpFromUri(otpauthUri) });
+      .send({ ...SIGN_BODY_BASE });
     expect(sign.status).toBe(201);
     return { encounterId, noteId: sign.body.note.id as string };
   }
@@ -156,7 +156,7 @@ describe("Cancelación de nota firmada — motivo de catálogo + firma", () => {
     const cancel = await request(app.getHttpServer())
       .post(`/records/encounters/${encounterId}/notes/${noteId}/cancel`)
       .set("Authorization", `Bearer ${doctor.accessToken}`)
-      .send({ reasonTermId: await reasonTermId("error_captura"), password: STRONG_PASSWORD, totpCode: totpFromUri(otpauthUri) });
+      .send({ reasonTermId: await reasonTermId("error_captura"), password: STRONG_PASSWORD });
     expect(cancel.status).toBe(201);
     expect(cancel.body.noteId).toBe(noteId);
 
@@ -179,7 +179,7 @@ describe("Cancelación de nota firmada — motivo de catálogo + firma", () => {
     const cancel = await request(app.getHttpServer())
       .post(`/records/encounters/${encounterId}/notes/${noteId}/cancel`)
       .set("Authorization", `Bearer ${doctor.accessToken}`)
-      .send({ reasonTermId: await reasonTermId("nota_duplicada"), password: "contraseña-incorrecta", totpCode: "000000" });
+      .send({ reasonTermId: await reasonTermId("nota_duplicada"), password: "contraseña-incorrecta" });
     expect(cancel.status).toBe(428);
 
     const stored = await prisma.clinicalNoteCancellation.findUnique({ where: { noteId } });
@@ -195,13 +195,13 @@ describe("Cancelación de nota firmada — motivo de catálogo + firma", () => {
     const first = await request(app.getHttpServer())
       .post(`/records/encounters/${encounterId}/notes/${noteId}/cancel`)
       .set("Authorization", `Bearer ${doctor.accessToken}`)
-      .send({ reasonTermId: await reasonTermId("paciente_equivocado"), password: STRONG_PASSWORD, totpCode: totpFromUri(otpauthUri) });
+      .send({ reasonTermId: await reasonTermId("paciente_equivocado"), password: STRONG_PASSWORD });
     expect(first.status).toBe(201);
 
     const second = await request(app.getHttpServer())
       .post(`/records/encounters/${encounterId}/notes/${noteId}/cancel`)
       .set("Authorization", `Bearer ${doctor.accessToken}`)
-      .send({ reasonTermId: await reasonTermId("otro"), reasonFreeText: "segundo intento", password: STRONG_PASSWORD, totpCode: totpFromUri(otpauthUri) });
+      .send({ reasonTermId: await reasonTermId("otro"), reasonFreeText: "segundo intento", password: STRONG_PASSWORD });
     expect(second.status).toBe(409);
   });
 
@@ -219,7 +219,7 @@ describe("Cancelación de nota firmada — motivo de catálogo + firma", () => {
     const res = await request(app.getHttpServer())
       .post(`/records/encounters/${attackerEncounterId}/notes/${ajenoNoteId}/cancel`)
       .set("Authorization", `Bearer ${attacker.accessToken}`)
-      .send({ reasonTermId: await reasonTermId("otro"), reasonFreeText: "ataque", password: STRONG_PASSWORD, totpCode: totpFromUri(attackerOtp) });
+      .send({ reasonTermId: await reasonTermId("otro"), reasonFreeText: "ataque", password: STRONG_PASSWORD });
     expect(res.status).toBe(404);
 
     const stored = await prisma.clinicalNoteCancellation.findUnique({ where: { noteId: ajenoNoteId } });

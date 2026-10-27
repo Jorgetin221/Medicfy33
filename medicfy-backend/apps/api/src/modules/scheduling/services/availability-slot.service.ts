@@ -1,7 +1,7 @@
 import { HttpStatus, Injectable } from "@nestjs/common";
 import { PrismaService } from "../../../prisma/prisma.service";
 import { ApiException } from "../../../common/api-exception";
-import { zonedDateAndMinutesToUtc } from "../timezone";
+import { todayInTimeZone, zonedDateAndMinutesToUtc } from "../timezone";
 import { modalityForServiceType } from "../service-modality";
 import { NON_OCCUPYING_APPOINTMENT_STATUSES } from "../appointment-status";
 
@@ -46,7 +46,23 @@ function eachDateInRange(fromStr: string, toStr: string): string[] {
 export class AvailabilitySlotService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async computeSlots(doctorId: string, query: ResolvedAvailabilityQuery): Promise<AvailableSlot[]> {
+  // A-12: la reserva pública solo acepta un inicio que sea exactamente
+  // uno de los espacios que este mismo servicio calcula (horario,
+  // excepciones, citas, buffer, antelación y ventana). Al reagendar, la
+  // cita que se mueve no cuenta como ocupación de sí misma.
+  async assertBookableSlot(doctorId: string, serviceId: string, startsAt: Date, ignoreAppointmentId?: string): Promise<void> {
+    const localDate = todayInTimeZone(undefined, startsAt);
+    const slots = await this.computeSlots(doctorId, { from: localDate, to: localDate, service_id: serviceId }, ignoreAppointmentId);
+    if (!slots.some((slot) => slot.startAt === startsAt.toISOString())) {
+      throw new ApiException(
+        "SLOT_NOT_AVAILABLE",
+        "Este horario no está dentro de la disponibilidad del médico.",
+        HttpStatus.UNPROCESSABLE_ENTITY
+      );
+    }
+  }
+
+  async computeSlots(doctorId: string, query: ResolvedAvailabilityQuery, ignoreAppointmentId?: string): Promise<AvailableSlot[]> {
     const doctor = await this.prisma.doctor.findUnique({ where: { id: doctorId } });
     if (!doctor) {
       throw new ApiException("DOCTOR_NOT_FOUND", "Médico no encontrado.", HttpStatus.NOT_FOUND);
@@ -83,6 +99,7 @@ export class AvailabilitySlotService {
           status: { notIn: [...NON_OCCUPYING_APPOINTMENT_STATUSES] },
           startsAt: { lt: rangeEndExclusive },
           endsAt: { gt: rangeStart },
+          ...(ignoreAppointmentId ? { id: { not: ignoreAppointmentId } } : {}),
         },
       }),
     ]);
@@ -113,8 +130,13 @@ export class AvailabilitySlotService {
           const blockedByException = exceptions.some((exception) => startAt < exception.endAt && exception.startAt < endAt);
           if (blockedByException) continue;
 
+          // A-12: el buffer de la regla separa también este espacio de
+          // las citas ya agendadas, no solo del fin del horario.
+          const bufferMs = rule.bufferMinutes * 60_000;
           const blockedByAppointment = activeAppointments.some(
-            (appointment) => startAt < appointment.endsAt && appointment.startsAt < endAt
+            (appointment) =>
+              startAt.getTime() < appointment.endsAt.getTime() + bufferMs &&
+              appointment.startsAt.getTime() < endAt.getTime() + bufferMs
           );
           if (blockedByAppointment) continue;
 

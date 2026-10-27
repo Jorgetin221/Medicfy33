@@ -4,7 +4,7 @@
 export const teleconsulta = {
   titulo: "Teleconsulta",
   cargando: "Conectando con la videollamada…",
-  salir: "Salir",
+  ocultar: "Ocultar video",
   avisoGrabacion: "Esta llamada no se grabará y no se comparte con nadie fuera de la consulta.",
   proveedorExterno: "La videollamada corre sobre un proveedor externo; Medicfy no almacena su contenido.",
   sinConexion: "Sin conexión a internet",

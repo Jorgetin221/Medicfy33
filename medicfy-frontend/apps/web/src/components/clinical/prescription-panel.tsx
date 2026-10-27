@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { PrescriptionCreateInput, PrescriptionItemCreateInput } from "@medicfy/contracts";
-import { apiFetch, ApiError } from "@/lib/api-client";
+import { apiFetch, ApiError, newIdempotencyKey } from "@/lib/api-client";
 import { Panel } from "@/components/ui/panel";
 import { Button } from "@/components/ui/button";
 import { FieldWrapper, TextInput, Textarea } from "@/components/ui/field";
@@ -109,7 +109,14 @@ export function PrescriptionPanel({
   const [externalError, setExternalError] = useState<unknown>(null);
   const [externalRegistered, setExternalRegistered] = useState(false);
 
+  // A-14: una llave por receta que el médico intenta emitir. Se
+  // conserva si reintenta tras un error (de red o de validación) y se
+  // renueva al empezar otra — el servidor nunca emite dos folios para
+  // el mismo intento.
+  const idempotencyKeyRef = useRef(newIdempotencyKey());
+
   function resetAll() {
+    idempotencyKeyRef.current = newIdempotencyKey();
     setItems([]);
     setDiagnosisSnapshot(defaultDiagnosis);
     setGeneralInstructions("");
@@ -157,7 +164,7 @@ export function PrescriptionPanel({
         prescription: { id: string; folio: string; qrVerificationToken: string | null; signatureRoute: SignatureRoute };
         warnings: { therapeuticDuplicates: string[]; therapeuticClassDuplicates: TherapeuticClassDuplicate[] };
         interactionWarnings: InteractionWarning[];
-      }>(`/prescriptions/encounters/${encounterId}`, { method: "POST", accessToken, body });
+      }>(`/prescriptions/encounters/${encounterId}`, { method: "POST", accessToken, body, idempotencyKey: idempotencyKeyRef.current });
       setIssued({
         id: result.prescription.id,
         folio: result.prescription.folio,
@@ -372,7 +379,7 @@ export function PrescriptionPanel({
                   <TextInput id="ext-duration" value={extDuration} onChange={(e) => setExtDuration(e.target.value)} />
                 </FieldWrapper>
               </div>
-              {externalError ? <Aviso variant="critico" title={t("clinico.receta.noSePudoRegistrar")}>
+              {externalError ? <Aviso variant="error" title={t("clinico.receta.noSePudoRegistrar")}>
                   {externalError instanceof ApiError ? externalError.message : t("clinico.receta.intentaDeNuevo")}
                 </Aviso> : null}
               <div className="flex gap-3">
@@ -487,7 +494,7 @@ export function PrescriptionPanel({
           )}
 
           {submitError ? (
-            <Aviso variant="critico" title={t("clinico.receta.noSePudoEmitir")}>
+            <Aviso variant="error" title={t("clinico.receta.noSePudoEmitir")}>
               {submitError instanceof ApiError ? submitError.message : t("clinico.receta.intentaDeNuevo")}
             </Aviso>
           ) : null}

@@ -1,4 +1,5 @@
-import { forwardRef, type ButtonHTMLAttributes } from "react";
+import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
+import Link from "next/link";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
@@ -6,12 +7,11 @@ import { cn } from "@/lib/utils";
 //
 // Gramática de las cuatro variantes — el rojo sólido nunca está en reposo.
 //
-// §5 reserva el rojo a alertas de seguridad del paciente, pero `--danger-600`
-// y `--critical-600` son el mismo #b3261e (ver globals.css: "la separación es
-// de gobernanza de uso, no de matiz visual"). Esa gobernanza vive en el código
-// y el médico solo ve color: mientras "Quitar" y "Cancelar" fueran superficies
-// rojas llenas, el rojo aparecía una docena de veces por jornada en acciones
-// rutinarias y dejaba de alertar de nada.
+// §5 reserva el rojo a alertas de seguridad del paciente. Desde A-23
+// (auditoría 2026-10-21) `--danger-600` ya no es rojo sino ladrillo, distinto
+// a la vista de `--critical-600`; aun así, mientras "Quitar" y "Cancelar"
+// fueran superficies llenas, aparecían una docena de veces por jornada en
+// acciones rutinarias.
 //
 //   primary     — la acción que la pantalla existe para provocar. Una por vista.
 //   secondary   — acciones de apoyo.
@@ -52,3 +52,25 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   )
 );
 Button.displayName = "Button";
+
+// B-16 (auditoría 2026-10-21): <Link><Button> es HTML inválido (un
+// botón dentro de un enlace) y obliga a pasar dos veces por el mismo
+// destino con Tab. Un enlace con el aspecto de botón es un solo
+// elemento enfocable.
+export function ButtonLink({
+  href,
+  variant,
+  className,
+  children,
+}: {
+  href: string;
+  variant?: VariantProps<typeof buttonVariants>["variant"];
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <Link href={href} className={cn(buttonVariants({ variant }), className)}>
+      {children}
+    </Link>
+  );
+}

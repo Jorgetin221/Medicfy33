@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { apiFetch, ApiError, expectArray } from "@/lib/api-client";
 import { LoadingState, ErrorState } from "@/components/ui/states";
-import { FieldWrapper, SelectInput, TextInput } from "@/components/ui/field";
+import { FieldWrapper, SelectInput, Textarea, TextInput } from "@/components/ui/field";
 import { DateInput } from "@/components/ui/date-input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Button } from "@/components/ui/button";
@@ -117,6 +117,114 @@ function NoteBody({ note }: { note: NoteBodyFields }) {
 // firma. El registro se marca cancelado, NUNCA se elimina, y sigue
 // siendo consultable." Mismo mecanismo de reautenticación
 // (contraseña, SignatureVerificationService) que firmar/corregir.
+interface EncounterDiagnosisForCorrection {
+  icd10Code: string | null;
+  codeAbsentReason: string | null;
+  description: string;
+  diagnosisType: "PRINCIPAL" | "SECONDARY";
+  certainty: "SUSPECTED" | "CONFIRMED" | "DESCARTADO";
+  discardedAt: string | null;
+}
+
+// M-33 (auditoría 2026-10-21): POST .../correct-note existía sin
+// pantalla. Una nota firmada nunca se edita (R1): la corrección es una
+// adenda nueva, ligada a la original, con su propio autor y sello. Se
+// precarga con el texto original y los diagnósticos vigentes del
+// encuentro para que el médico solo cambie lo que corrige.
+function CorrectNoteForm({
+  encounterId,
+  note,
+  accessToken,
+  onCorrected,
+  onClose,
+}: {
+  encounterId: string;
+  note: NoteBodyFields;
+  accessToken: string;
+  onCorrected: () => void;
+  onClose: () => void;
+}) {
+  const t = useT();
+  const [fields, setFields] = useState({
+    chiefComplaint: note.chiefComplaint,
+    currentIllness: note.currentIllness,
+    physicalExam: note.physicalExam ?? "",
+    assessment: note.assessment,
+    plan: note.plan,
+  });
+  const [diagnoses, setDiagnoses] = useState<EncounterDiagnosisForCorrection[] | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+
+  useEffect(() => {
+    apiFetch<{ diagnoses: EncounterDiagnosisForCorrection[] }>(`/records/encounters/${encounterId}`, { accessToken })
+      .then((encounter) => setDiagnoses(encounter.diagnoses.filter((d) => d.discardedAt === null && d.certainty !== "DESCARTADO")))
+      .catch(setError);
+  }, [encounterId, accessToken]);
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!diagnoses) return;
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      await apiFetch(`/records/encounters/${encounterId}/correct-note`, {
+        method: "POST",
+        accessToken,
+        body: {
+          chiefComplaint: fields.chiefComplaint,
+          currentIllness: fields.currentIllness,
+          assessment: fields.assessment,
+          plan: fields.plan,
+          ...(fields.physicalExam.trim() ? { physicalExam: fields.physicalExam } : {}),
+          vitals: {},
+          diagnoses: diagnoses.map((d) => ({
+            description: d.description,
+            diagnosisType: d.diagnosisType,
+            certainty: d.certainty === "DESCARTADO" ? "CONFIRMED" : d.certainty,
+            ...(d.icd10Code ? { icd10Code: d.icd10Code } : d.codeAbsentReason ? { codeAbsentReason: d.codeAbsentReason } : {}),
+          })),
+          isCorrectionOfNoteId: note.id,
+        },
+      });
+      onCorrected();
+    } catch (err) {
+      setError(err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  if (!diagnoses && !error) return <LoadingState />;
+
+  const textField = (name: keyof typeof fields, labelKey: MessageKey) => (
+    <FieldWrapper label={t(labelKey)} htmlFor={`correct-${name}-${note.id}`}>
+      <Textarea id={`correct-${name}-${note.id}`} value={fields[name]} onChange={(e) => setFields({ ...fields, [name]: e.target.value })} />
+    </FieldWrapper>
+  );
+
+  return (
+    <form onSubmit={onSubmit} className="mt-2 flex flex-col gap-3 rounded-md border border-brand-700 bg-brand-100 p-3" noValidate>
+      <p className="text-base font-medium text-brand-900">{t("clinico.notasTimeline.corregirTitulo")}</p>
+      <p className="text-base text-gray-700">{t("clinico.notasTimeline.corregirAyuda")}</p>
+      {textField("chiefComplaint", "consulta.campos.motivoConsulta")}
+      {textField("currentIllness", "consulta.campos.padecimientoActual")}
+      {textField("physicalExam", "consulta.campos.exploracionFisica")}
+      {textField("assessment", "consulta.campos.analisis")}
+      {textField("plan", "consulta.campos.plan")}
+      {error ? <ErrorState error={error} /> : null}
+      <div className="flex flex-wrap gap-3">
+        <Button type="submit" isLoading={isSubmitting} disabled={!diagnoses || diagnoses.length === 0}>
+          {t("clinico.notasTimeline.guardarAdenda")}
+        </Button>
+        <Button type="button" variant="secondary" onClick={onClose}>
+          {t("common.acciones.cancelar")}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
 function CancelNoteForm({
   encounterId,
   noteId,
@@ -224,26 +332,47 @@ export function NotasTimeline({ patientId, accessToken }: { patientId: string; a
   const [q, setQ] = useState("");
   const [expandedNoteId, setExpandedNoteId] = useState<string | null>(null);
   const [cancellingNoteId, setCancellingNoteId] = useState<string | null>(null);
+  const [correctingNoteId, setCorrectingNoteId] = useState<string | null>(null);
 
+  // M-23: los filtros (y sobre todo el texto buscado) van en el cuerpo,
+  // nunca en la URL — quedarían en los logs de acceso.
   const load = useCallback(() => {
-    const params = new URLSearchParams();
-    if (type) params.set("type", type);
-    if (from) params.set("from", from);
-    if (to) params.set("to", to);
-    if (q.trim()) params.set("q", q.trim());
-    const qs = params.toString();
-    apiFetch<unknown>(`/records/patients/${patientId}/notes-timeline${qs ? `?${qs}` : ""}`, { accessToken })
+    const body = {
+      ...(type ? { type } : {}),
+      ...(from ? { from } : {}),
+      ...(to ? { to } : {}),
+      ...(q.trim() ? { q: q.trim() } : {}),
+    };
+    apiFetch<unknown>(`/records/patients/${patientId}/notes-timeline/search`, { method: "POST", accessToken, body })
       .then((data) => setThreads(expectArray<NoteThread>(data)))
       .catch(setError);
   }, [patientId, accessToken, type, from, to, q]);
 
   useEffect(load, [load]);
 
-  function noteAndButton(encounterId: string, note: NoteBodyFields) {
+  function noteAndButton(encounterId: string, note: NoteBodyFields, isOriginal = false) {
     const isCancelling = cancellingNoteId === note.id;
+    const isCorrecting = correctingNoteId === note.id;
     return (
       <div>
         <NoteBody note={note} />
+        {isOriginal && !note.cancellation && isCorrecting ? (
+          <CorrectNoteForm
+            encounterId={encounterId}
+            note={note}
+            accessToken={accessToken}
+            onCorrected={() => {
+              setCorrectingNoteId(null);
+              load();
+            }}
+            onClose={() => setCorrectingNoteId(null)}
+          />
+        ) : null}
+        {isOriginal && !note.cancellation && !isCorrecting && !isCancelling ? (
+          <button type="button" className="mt-2 mr-4 min-h-11 text-base font-medium text-brand-700 underline" onClick={() => setCorrectingNoteId(note.id)}>
+            {t("clinico.notasTimeline.corregirNota")}
+          </button>
+        ) : null}
         {!note.cancellation ? (
           isCancelling ? (
             <CancelNoteForm
@@ -258,7 +387,7 @@ export function NotasTimeline({ patientId, accessToken }: { patientId: string; a
             />
           ) : (
             <button type="button" className="mt-2 text-sm font-medium text-danger-600 underline" onClick={() => setCancellingNoteId(note.id)}>
-              Cancelar esta nota
+              {t("clinico.notasTimeline.cancelarEstaNota")}
             </button>
           )
         ) : null}
@@ -325,7 +454,7 @@ export function NotasTimeline({ patientId, accessToken }: { patientId: string; a
               </button>
               {expandedNoteId === thread.note.id ? (
                 <div className="mt-2 flex flex-col gap-2 border-t border-gray-100 pt-2">
-                  {noteAndButton(thread.encounterId, thread.note)}
+                  {noteAndButton(thread.encounterId, thread.note, true)}
                   {thread.corrections.map((c) => (
                     <div key={c.id} className="rounded-md border border-warn-600 bg-warn-50 p-2">
                       <p className="mb-1 flex items-center text-xs font-semibold uppercase tracking-wide text-warn-600">

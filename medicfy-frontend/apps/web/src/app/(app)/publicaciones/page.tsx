@@ -25,6 +25,7 @@ const POST_PHOTO_ACCEPT = "image/jpeg,image/png,image/webp";
 import { useT } from "@/lib/i18n/context";
 import { useZodResolver } from "@/lib/i18n/validation";
 import type { MessageKey } from "@/lib/i18n/dictionaries";
+import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 
 // Mismas categorías que el perfil público: una sola traducción para
 // las dos pantallas.
@@ -321,6 +322,7 @@ function PostCard({
   onChanged: () => void;
 }) {
   const t = useT();
+  const { confirm, dialog } = useConfirmDialog();
   const [actionError, setActionError] = useState<unknown>(null);
   const photoFormat = useAcceptedFile(POST_PHOTO_ACCEPT);
   const [isBusy, setIsBusy] = useState(false);
@@ -353,7 +355,7 @@ function PostCard({
   }
 
   async function remove() {
-    if (!window.confirm(t("publicaciones.confirmarBorrar"))) return;
+    if (!(await confirm({ title: t("publicaciones.confirmarBorrar"), destructive: true }))) return;
     setActionError(null);
     setIsBusy(true);
     try {
@@ -380,73 +382,76 @@ function PostCard({
   }
 
   return (
-    <Card>
-      <div className="flex flex-wrap items-center gap-2 text-sm">
-        <span className="rounded-full border border-gray-300 px-2 py-0.5 text-gray-700">{t(CATEGORY_LABEL_KEYS[post.category])}</span>
-        <span className="rounded-full border border-gray-300 px-2 py-0.5 text-gray-700">
-          {visibility.icon} {t(visibility.labelKey)}
-        </span>
-        <span className="rounded-full border border-gray-300 px-2 py-0.5 text-gray-700">{t(STATUS_LABEL_KEYS[post.status])}</span>
-      </div>
-
-      {post.title ? <p className="mt-3 font-heading text-lg text-brand-900">{post.title}</p> : null}
-      <p className="mt-2 whitespace-pre-line text-base text-gray-900">{post.body}</p>
-
-      {EDUCATIONAL_SET.has(post.category) ? <p className="mt-2 text-sm text-gray-500">{t("perfilPublico.disclaimerEducativo")}</p> : null}
-
-      {post.media.length > 0 ? (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {post.media.map((m) => (
-            <PostMediaThumbnail key={m.id} accessToken={accessToken} postId={post.id} mediaId={m.id} />
-          ))}
+    <>
+      {dialog}
+      <Card>
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="rounded-full border border-gray-300 px-2 py-0.5 text-gray-700">{t(CATEGORY_LABEL_KEYS[post.category])}</span>
+          <span className="rounded-full border border-gray-300 px-2 py-0.5 text-gray-700">
+            {visibility.icon} {t(visibility.labelKey)}
+          </span>
+          <span className="rounded-full border border-gray-300 px-2 py-0.5 text-gray-700">{t(STATUS_LABEL_KEYS[post.status])}</span>
         </div>
-      ) : null}
 
-      {photoFormat.notice ? (
-        <div className="mt-3">
-          <FileFormatNotice notice={photoFormat.notice} />
-        </div>
-      ) : null}
-      {actionError ? (
-        <div className="mt-3">
-          <ErrorState error={actionError} />
-        </div>
-      ) : null}
+        {post.title ? <p className="mt-3 font-heading text-lg text-brand-900">{post.title}</p> : null}
+        <p className="mt-2 whitespace-pre-line text-base text-gray-900">{post.body}</p>
 
-      <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-gray-300 pt-4">
-        <Button type="button" variant="secondary" disabled={isBusy} onClick={onEdit}>
-          {t("common.acciones.editar")}
-        </Button>
-        {post.status === "DRAFT" ? (
-          <Button type="button" isLoading={isBusy} onClick={() => void publish()}>
-            {t("publicaciones.publicar")}
+        {EDUCATIONAL_SET.has(post.category) ? <p className="mt-2 text-sm text-gray-500">{t("perfilPublico.disclaimerEducativo")}</p> : null}
+
+        {post.media.length > 0 ? (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {post.media.map((m) => (
+              <PostMediaThumbnail key={m.id} accessToken={accessToken} postId={post.id} mediaId={m.id} />
+            ))}
+          </div>
+        ) : null}
+
+        {photoFormat.notice ? (
+          <div className="mt-3">
+            <FileFormatNotice notice={photoFormat.notice} />
+          </div>
+        ) : null}
+        {actionError ? (
+          <div className="mt-3">
+            <ErrorState error={actionError} />
+          </div>
+        ) : null}
+
+        <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-gray-300 pt-4">
+          <Button type="button" variant="secondary" disabled={isBusy} onClick={onEdit}>
+            {t("common.acciones.editar")}
           </Button>
-        ) : null}
-        {post.status === "PUBLISHED" ? (
-          <Button type="button" variant="secondary" isLoading={isBusy} onClick={() => void archive()}>
-            {t("publicaciones.archivar")}
+          {post.status === "DRAFT" ? (
+            <Button type="button" isLoading={isBusy} onClick={() => void publish()}>
+              {t("publicaciones.publicar")}
+            </Button>
+          ) : null}
+          {post.status === "PUBLISHED" ? (
+            <Button type="button" variant="secondary" isLoading={isBusy} onClick={() => void archive()}>
+              {t("publicaciones.archivar")}
+            </Button>
+          ) : null}
+          {post.status !== "ARCHIVED" ? (
+            <label className="min-h-[44px] cursor-pointer rounded-md border border-gray-300 bg-white px-4 text-base font-medium text-gray-900 hover:bg-gray-100 inline-flex items-center">
+              {isBusy ? t("publicaciones.subiendo") : t("publicaciones.agregarFoto")}
+              <input
+                type="file"
+                className="hidden"
+                disabled={isBusy}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) void uploadPhoto(file);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+          ) : null}
+          <Button type="button" variant="destructive" isLoading={isBusy} onClick={() => void remove()} className="ml-auto">
+            {t("publicaciones.eliminar")}
           </Button>
-        ) : null}
-        {post.status !== "ARCHIVED" ? (
-          <label className="min-h-[44px] cursor-pointer rounded-md border border-gray-300 bg-white px-4 text-base font-medium text-gray-900 hover:bg-gray-100 inline-flex items-center">
-            {isBusy ? t("publicaciones.subiendo") : t("publicaciones.agregarFoto")}
-            <input
-              type="file"
-              className="hidden"
-              disabled={isBusy}
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) void uploadPhoto(file);
-                e.target.value = "";
-              }}
-            />
-          </label>
-        ) : null}
-        <Button type="button" variant="destructive" isLoading={isBusy} onClick={() => void remove()} className="ml-auto">
-          {t("publicaciones.eliminar")}
-        </Button>
-      </div>
-    </Card>
+        </div>
+      </Card>
+    </>
   );
 }
 

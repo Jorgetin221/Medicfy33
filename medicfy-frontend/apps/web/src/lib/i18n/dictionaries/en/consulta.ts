@@ -22,6 +22,10 @@ export const consulta: typeof es = {
     ayuda: "Document this consultation as a new note from the patient's record. The appointment stays as it was.",
   },
   volverAgenda: "Back to the schedule",
+  cerrarSinNota: {
+    titulo: "Close the consultation without a clinical note?",
+    etiquetaJustificacion: "Justification",
+  },
   irAlExpediente: "Go to the record",
   campos: {
     motivoConsulta: "Chief complaint",

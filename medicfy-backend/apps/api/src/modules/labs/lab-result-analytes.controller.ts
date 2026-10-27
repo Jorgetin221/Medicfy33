@@ -47,7 +47,7 @@ export class LabResultAnalytesController {
         const ageYears = (a.measuredAt.getTime() - patient.birthDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
         const printedRange =
           a.referenceMin !== null && a.referenceMax !== null ? { min: Number(a.referenceMin), max: Number(a.referenceMax) } : null;
-        const evaluation = await this.ranges.evaluateForAnalyte(a.analyteName, Number(a.value), sex, ageYears, printedRange);
+        const evaluation = await this.ranges.evaluateForAnalyte(a.analyteName, Number(a.value), sex, ageYears, printedRange, a.unit);
         return { ...a, ...evaluation };
       })
     );

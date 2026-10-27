@@ -12,13 +12,15 @@ import type { MessageKey } from "@/lib/i18n/dictionaries";
 // disponibles) — decirle al médico "se está guardando en este
 // dispositivo" en ese caso sería una falsa garantía, y CLAUDE.md §5
 // es explícito en que perder texto clínico es el peor bug posible.
-export type SaveState = "guardado" | "guardando" | "sin-conexion" | "sin-respaldo";
+export type SaveState = "guardado" | "guardando" | "sin-conexion" | "sin-respaldo" | "conflicto";
 
 const STATE_CONFIG: Record<SaveState, { labelKey: MessageKey; dot: string; text: string }> = {
   guardado: { labelKey: "ui.guardado.guardado", dot: "bg-success-600", text: "text-gray-500" },
   guardando: { labelKey: "ui.guardado.guardando", dot: "bg-brand-700 animate-pulse", text: "text-gray-500" },
   "sin-conexion": { labelKey: "ui.guardado.sinConexion", dot: "bg-warn-600", text: "text-warn-600" },
   "sin-respaldo": { labelKey: "ui.guardado.sinRespaldo", dot: "bg-danger-600 animate-pulse", text: "text-danger-600" },
+  // M-13: otra pestaña o dispositivo guardó este borrador.
+  conflicto: { labelKey: "ui.guardado.conflicto", dot: "bg-warn-600", text: "text-warn-600" },
 };
 
 export function IndicadorGuardado({ state, lastSavedAt, className }: { state: SaveState; lastSavedAt?: Date | null; className?: string }) {

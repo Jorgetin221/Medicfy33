@@ -173,6 +173,15 @@ export class DoctorProfileService {
     // M3-RN-001: mismo umbral que el resto de vistas públicas del médico.
     const where: Prisma.DoctorWhereInput = {
       verificationStatus: { notIn: ["DRAFT", "REJECTED", "SUSPENDED"] },
+      // O-12 / A-26 (auditoría 2026-10-21): el directorio mostraba
+      // perfiles "en configuración" — sin nombre público, sin servicio,
+      // sin dónde atender — y algunos con sello de verificado. Solo
+      // aparece quien un paciente puede de verdad encontrar y agendar:
+      // nombre público, al menos un servicio activo, y consultorio
+      // activo o teleconsulta. El perfil por slug sigue accesible.
+      displayName: { not: null },
+      services: { some: { isActive: true } },
+      AND: [{ OR: [{ acceptsTeleconsultation: true }, { locations: { some: { isActive: true } } }] }],
     };
     // M3-RN-002: displayName o nombre de especialidad — el nombre
     // legal nunca es buscable públicamente (mismo criterio que

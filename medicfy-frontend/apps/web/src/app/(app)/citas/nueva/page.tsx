@@ -1,13 +1,14 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { apiFetch, ApiError, expectArray } from "@/lib/api-client";
+import { apiFetch, ApiError, expectArray, newIdempotencyKey } from "@/lib/api-client";
+import { startWalkInAppointment } from "@/lib/start-walk-in";
 import { useAuth } from "@/lib/auth-context";
 import { FieldWrapper, SelectInput } from "@/components/ui/field";
 import { Card, LoadingState, EmptyState, ErrorState } from "@/components/ui/states";
-import { Button } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { useI18n } from "@/lib/i18n/context";
 import { formatTime, formatWeekdayLong, toIsoDateKey } from "@/lib/i18n/format";
 import type { Locale } from "@/lib/i18n/config";
@@ -86,6 +87,25 @@ function NuevaCitaForm() {
   const [bookingError, setBookingError] = useState<unknown>(null);
   const [bookingSlot, setBookingSlot] = useState<string | null>(null);
   const [booked, setBooked] = useState<{ patientId: string; startAt: string } | null>(null);
+  const [isStartingConsultation, setIsStartingConsultation] = useState(false);
+  const [startConsultationError, setStartConsultationError] = useState<unknown>(null);
+
+  // Pedido explícito del usuario (2026-10-27): "atender ahora" ya NO
+  // navega a una pantalla distinta — crea una cita real para ahora
+  // mismo y entra a la MISMA /consulta/[appointmentId] que usa la
+  // agenda.
+  async function startConsultationNow() {
+    if (!accessToken) return;
+    setIsStartingConsultation(true);
+    setStartConsultationError(null);
+    try {
+      const appointmentId = await startWalkInAppointment(patientId, accessToken);
+      router.push(`/consulta/${appointmentId}`);
+    } catch (err) {
+      setStartConsultationError(err);
+      setIsStartingConsultation(false);
+    }
+  }
 
   const loadBase = useCallback(async () => {
     if (!accessToken) return;
@@ -123,6 +143,14 @@ function NuevaCitaForm() {
     void loadSlots();
   }, [loadSlots]);
 
+  // A-14: misma llave si el médico reintenta el mismo horario tras un
+  // error de red; otro horario es otra intención.
+  const bookingKeyRef = useRef<{ startAt: string; key: string } | null>(null);
+  function idempotencyKeyFor(startAt: string): string {
+    if (bookingKeyRef.current?.startAt !== startAt) bookingKeyRef.current = { startAt, key: newIdempotencyKey() };
+    return bookingKeyRef.current.key;
+  }
+
   async function book(slot: Slot) {
     if (!patientId || !serviceId || !accessToken) return;
     setBookingError(null);
@@ -132,6 +160,7 @@ function NuevaCitaForm() {
         method: "POST",
         accessToken,
         body: { patientId, serviceId, startsAt: slot.startAt },
+        idempotencyKey: idempotencyKeyFor(`${patientId}|${serviceId}|${slot.startAt}`),
       });
       // Antes esto mandaba directo a /agenda sin ningún link al
       // paciente — y si la cita no era para hoy, /agenda ni siquiera
@@ -184,9 +213,7 @@ function NuevaCitaForm() {
           })}
         </p>
         <div className="flex gap-3">
-          <Link href={`/pacientes/${booked.patientId}`}>
-            <Button type="button">{t("citaNueva.verPerfilPaciente")}</Button>
-          </Link>
+          <ButtonLink href={`/pacientes/${booked.patientId}`}>{t("citaNueva.verPerfilPaciente")}</ButtonLink>
           <Button variant="secondary" onClick={() => router.push("/agenda")}>
             {t("citaNueva.irALaAgenda")}
           </Button>
@@ -253,13 +280,12 @@ function NuevaCitaForm() {
       {patientId ? (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-brand-700 bg-brand-100 p-6">
           <p className="text-base text-brand-900">{t("citaNueva.atenderAhora")}</p>
-          <Link href={`/consulta/paciente/${patientId}`}>
-            <Button type="button" variant="secondary" className="whitespace-nowrap">
-              {t("citaNueva.atenderAhoraBoton")}
-            </Button>
-          </Link>
+          <Button type="button" variant="secondary" className="whitespace-nowrap" isLoading={isStartingConsultation} onClick={() => void startConsultationNow()}>
+            {t("citaNueva.atenderAhoraBoton")}
+          </Button>
         </div>
       ) : null}
+      {startConsultationError ? <ErrorState error={startConsultationError} onRetry={() => void startConsultationNow()} /> : null}
 
       {bookingError ? <ErrorState error={bookingError} /> : null}
 

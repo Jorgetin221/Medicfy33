@@ -84,7 +84,7 @@ function renderSidebar(overrides: Partial<Parameters<typeof ConsultaSidebar>[0]>
       timeline={TIMELINE}
       pregnancy={null}
       activeDiagnoses={[]}
-      isLoadingClinical={false}
+      clinicalLoadState="ready"
       {...overrides}
     />
     </I18nProvider>

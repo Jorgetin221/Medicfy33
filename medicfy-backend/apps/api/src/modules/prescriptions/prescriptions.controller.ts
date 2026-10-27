@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Req, StreamableFile, UseGuards, Param } from "@nestjs/common";
+import { Body, Controller, Headers, Get, Post, Req, StreamableFile, UseGuards, Param } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import {
   prescriptionCreateSchema,
@@ -9,9 +9,11 @@ import {
   type ExternalPhysicalPrescriptionCreateInput,
 } from "@medicfy/contracts";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
+import { parseIdempotencyKey } from "../../common/idempotency";
 import { JwtAuthGuard } from "../identity/guards/jwt-auth.guard";
 import { DoctorVerifiedGuard } from "../identity/guards/doctor-verified.guard";
 import { CareRelationshipGuard, type ClinicalRequest } from "../../common/guards/care-relationship.guard";
+import { ResourceAuthorshipGuard } from "../../common/guards/resource-authorship.guard";
 import { AuditService } from "../identity/services/audit.service";
 import { getRequestMeta } from "../identity/request-meta";
 import { PrescriptionService } from "./services/prescription.service";
@@ -30,11 +32,12 @@ export class PrescriptionsController {
   ) {}
 
   @Post("prescriptions/encounters/:encounterId")
-  @UseGuards(DoctorVerifiedGuard)
+  @UseGuards(DoctorVerifiedGuard, ResourceAuthorshipGuard)
   @ApiOperation({ summary: "M9-RN-001/002: emite receta ligada al encuentro; M9-CA-007 firma con contraseña" })
   async create(
     @Param("encounterId") encounterId: string,
     @Body(new ZodValidationPipe(prescriptionCreateSchema)) body: PrescriptionCreateInput,
+    @Headers("idempotency-key") idempotencyKeyHeader: string | undefined,
     @Req() req: ClinicalRequest
   ) {
     const result = await this.prescriptions.create(
@@ -42,14 +45,15 @@ export class PrescriptionsController {
       req.actingDoctorId as string,
       req.user.sub,
       req.clinicalPatientId as string,
-      body
+      body,
+      parseIdempotencyKey(idempotencyKeyHeader)
     );
     await this.audit(req, "prescriptions.create", result.prescription.id);
     return result;
   }
 
   @Post("prescriptions/encounters/:encounterId/external-physical")
-  @UseGuards(DoctorVerifiedGuard)
+  @UseGuards(DoctorVerifiedGuard, ResourceAuthorshipGuard)
   @ApiOperation({ summary: "M9-RN-014: registra receta ya emitida en recetario físico (Grupos I/II)" })
   async createExternalPhysical(
     @Param("encounterId") encounterId: string,
@@ -67,6 +71,7 @@ export class PrescriptionsController {
   }
 
   @Post("prescriptions/:prescriptionId/cancel")
+  @UseGuards(ResourceAuthorshipGuard)
   @ApiOperation({ summary: "M9-RN-006: cancelar — nunca UPDATE, inserta PrescriptionCancellation" })
   async cancel(
     @Param("prescriptionId") prescriptionId: string,
@@ -94,6 +99,7 @@ export class PrescriptionsController {
   // verificación criptográfica — ver el comentario en
   // PrescriptionService.confirmHandwrittenDelivery().
   @Post("prescriptions/:prescriptionId/confirm-handwritten-delivery")
+  @UseGuards(ResourceAuthorshipGuard)
   @ApiOperation({ summary: "Marca 'firmada y entregada' — solo ruta HANDWRITTEN_AFTER_PRINT" })
   async confirmHandwrittenDelivery(@Param("prescriptionId") prescriptionId: string, @Req() req: ClinicalRequest) {
     const confirmation = await this.prescriptions.confirmHandwrittenDelivery(prescriptionId, req.user.sub);

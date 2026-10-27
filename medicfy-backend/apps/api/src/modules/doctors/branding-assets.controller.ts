@@ -9,6 +9,11 @@ import type { AuthenticatedRequest } from "../identity/guards/jwt-auth.guard";
 import { DoctorProfileService } from "./services/doctor-profile.service";
 import { DoctorBrandingService, InvalidBrandingAssetError } from "./services/doctor-branding.service";
 
+// M-07: sin límite, multer cargaba en memoria archivos de cualquier
+// tamaño antes de que el servicio los rechazara. Mismo tope que valida
+// el servicio.
+const BRANDING_UPLOAD_LIMIT_BYTES = 5 * 1024 * 1024;
+
 // Parte B §1.2/§5.1: logo y firma visual, con "vista previa
 // inmediata" real — GET sirve los bytes (no solo metadata, a
 // diferencia de doctors/me/documents).
@@ -23,7 +28,7 @@ export class BrandingAssetsController {
   ) {}
 
   @Post()
-  @UseInterceptors(FileInterceptor("file"))
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: BRANDING_UPLOAD_LIMIT_BYTES } }))
   @ApiConsumes("multipart/form-data")
   @ApiQuery({ name: "kind", enum: ["logo", "signature"] })
   @ApiOperation({ summary: "Sube el logo o la firma visual del médico (Parte B §1.2)" })

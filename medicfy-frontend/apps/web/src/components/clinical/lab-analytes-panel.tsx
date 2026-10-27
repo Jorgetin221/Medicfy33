@@ -123,7 +123,7 @@ function AddAnalyteForm({ patientId, accessToken, onCreated }: { patientId: stri
           {t("clinico.analitos.guardar")}
         </Button>
         <Button type="button" variant="secondary" onClick={() => setIsOpen(false)}>
-          Cancelar
+          {t("common.acciones.cancelar")}
         </Button>
       </div>
     </form>

@@ -1,10 +1,11 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { HttpStatus } from "@nestjs/common";
 import { randomBytes, createHash } from "node:crypto";
-import jwt from "jsonwebtoken";
+import { z } from "zod";
+import { hash as argon2Hash } from "argon2";
 import type { RegisterDoctorInput, RegisterPatientInput } from "@medicfy/contracts";
 import { IDENTITY_ERROR_CODES } from "@medicfy/contracts";
-import type { RoleName } from "@prisma/client";
+import type { RoleName, UserStatus } from "@prisma/client";
 import { PrismaService } from "../../../prisma/prisma.service";
 import { ApiException } from "../../../common/api-exception";
 import { PasswordService } from "./password.service";
@@ -18,14 +19,19 @@ import { NOTIFICATION_PORT, type NotificationPort } from "./notification.port";
 import { CURRENT_PRIVACY_NOTICE_VERSION } from "../legal-document-versions";
 import { generateDoctorSlug } from "../../../common/slug.util";
 import { nextMedicfyId } from "../../../common/medicfy-id.util";
+import { signPurposeToken, verifyPurposeToken } from "../../../common/purpose-token.util";
 
 // M1-RN-005: PATIENT is the only role that never requires MFA.
 const MFA_REQUIRED_ROLES: readonly RoleName[] = ["DOCTOR", "ASSISTANT", "LAB", "SUPPORT", "ADMIN", "SUPERADMIN"];
 const MAX_LOGINS_WITHOUT_MFA = 3;
 const MAX_FAILED_ATTEMPTS = 5;
 const BASE_LOCKOUT_MS = 15 * 60 * 1000;
+// M-03: el bloqueo exponencial no tenía tope — un atacante que conoce
+// el correo de un médico podía dejarlo fuera días enteros.
+const MAX_LOCKOUT_MS = 24 * 60 * 60 * 1000;
 const MFA_SESSION_TOKEN_TTL_SECONDS = 5 * 60;
 const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
+const mfaSessionTokenSchema = z.object({ sub: z.string().uuid() });
 
 export interface RequestMeta {
   ip: string;
@@ -239,6 +245,9 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({ where: { email } });
 
     if (!user) {
+      // M-03: mismo costo de argon2 que con un usuario real, para que el
+      // tiempo de respuesta no revele si el correo existe.
+      await this.passwordService.verify(await decoyPasswordHash(), password).catch(() => false);
       await this.auditService.log({
         action: "auth.login",
         resourceType: "user",
@@ -281,6 +290,23 @@ export class AuthService {
       );
     }
 
+    // A-05: una cuenta suspendida o dada de baja no inicia sesión. Va
+    // después de verificar la contraseña para no revelar el estado de
+    // la cuenta a quien no la conoce.
+    if (isBlockedUserStatus(user.status)) {
+      await this.auditService.log({
+        actorUserId: user.id,
+        action: "auth.login",
+        resourceType: "user",
+        resourceId: user.id,
+        result: "DENIED",
+        ipAddress: meta.ip,
+        userAgent: meta.userAgent,
+        metadata: { reason: "account_blocked", status: user.status },
+      });
+      throw new ApiException("AUTH_ACCOUNT_SUSPENDED", "Esta cuenta está suspendida. Contacta a soporte.", HttpStatus.FORBIDDEN);
+    }
+
     await this.prisma.user.update({
       where: { id: user.id },
       data: { failedLoginAttempts: 0, lockoutCount: 0 },
@@ -316,11 +342,7 @@ export class AuthService {
 
     if (MFA_REQUIRED_ROLES.includes(user.primaryRole)) {
       if (user.mfaEnabled) {
-        const mfaSessionToken = jwt.sign(
-          { sub: user.id, purpose: "mfa_pending" },
-          mustGetJwtSecret(),
-          { expiresIn: MFA_SESSION_TOKEN_TTL_SECONDS }
-        );
+        const mfaSessionToken = signPurposeToken("mfa_pending", { sub: user.id }, MFA_SESSION_TOKEN_TTL_SECONDS);
         return { mfaRequired: true, mfaSessionToken };
       }
 
@@ -347,13 +369,42 @@ export class AuthService {
     const payload = this.verifyMfaSessionToken(mfaSessionToken);
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: payload.sub } });
 
-    const validTotp = user.mfaSecretEncrypted
-      ? this.totpService.verify(this.cryptoService.decrypt(user.mfaSecretEncrypted), code)
-      : false;
-    const validBackup = validTotp ? false : this.totpService.verifyBackupCode(user.mfaBackupCodesHashed, code);
+    // M-01: el bloqueo por intentos fallidos aplica también al segundo
+    // factor — antes el paso TOTP lo ignoraba y permitía seguir
+    // probando códigos durante el bloqueo.
+    if (user.lockedUntil && user.lockedUntil > new Date()) {
+      throw new ApiException(
+        "AUTH_ACCOUNT_LOCKED",
+        "Cuenta bloqueada temporalmente por múltiples intentos fallidos.",
+        IDENTITY_ERROR_CODES.AUTH_ACCOUNT_LOCKED,
+        { retry_after: user.lockedUntil.toISOString() }
+      );
+    }
 
-    if (!validTotp && !validBackup) {
-      await this.handleFailedLogin(user.id, meta);
+    const totpStep = user.mfaSecretEncrypted ? this.totpService.verifyStep(this.cryptoService.decrypt(user.mfaSecretEncrypted), code) : null;
+    // M-01: anti-repetición — el mismo código (mismo paso de 30 s) solo
+    // entra una vez. El compare-and-set evita que dos peticiones
+    // simultáneas con el mismo código pasen las dos.
+    const validTotp =
+      totpStep !== null &&
+      (
+        await this.prisma.user.updateMany({
+          where: { id: user.id, OR: [{ mfaLastTotpStep: null }, { mfaLastTotpStep: { lt: totpStep } }] },
+          data: { mfaLastTotpStep: totpStep },
+        })
+      ).count === 1;
+    const matchedBackupHash = validTotp ? null : await this.totpService.matchBackupCode(user.mfaBackupCodesHashed, code);
+
+    if (!validTotp && !matchedBackupHash) {
+      const lockedUntil = await this.handleFailedLogin(user.id, meta);
+      if (lockedUntil) {
+        throw new ApiException(
+          "AUTH_ACCOUNT_LOCKED",
+          "Cuenta bloqueada temporalmente por múltiples intentos fallidos.",
+          IDENTITY_ERROR_CODES.AUTH_ACCOUNT_LOCKED,
+          { retry_after: lockedUntil.toISOString() }
+        );
+      }
       throw new ApiException(
         "AUTH_INVALID_CREDENTIALS",
         "Código de verificación inválido.",
@@ -361,16 +412,12 @@ export class AuthService {
       );
     }
 
-    if (validBackup) {
+    if (matchedBackupHash) {
       // Casos límite: "recuperación solo con código de respaldo...
       // Registrado en auditoría." Consume the used backup code.
       await this.prisma.user.update({
         where: { id: user.id },
-        data: {
-          mfaBackupCodesHashed: user.mfaBackupCodesHashed.filter(
-            (hashed) => hashed !== hashBackupCodeForComparison(code)
-          ),
-        },
+        data: { mfaBackupCodesHashed: user.mfaBackupCodesHashed.filter((hashed) => hashed !== matchedBackupHash) },
       });
       await this.auditService.log({
         actorUserId: user.id,
@@ -384,6 +431,7 @@ export class AuthService {
       });
     }
 
+    await this.prisma.user.update({ where: { id: user.id }, data: { failedLoginAttempts: 0 } });
     return this.completeLogin(user.id, user.primaryRole, meta);
   }
 
@@ -417,14 +465,16 @@ export class AuthService {
   // triggered the lockout, so the caller can respond with
   // AUTH_ACCOUNT_LOCKED (423) instead of the generic 401 — a real bug
   // caught by the M1-CA-004 test: the caller used to always throw 401.
-  private async handleFailedLogin(userId: string, meta: RequestMeta): Promise<Date | null> {
+  // M-05: público para que la reautenticación al firmar recetas/órdenes
+  // (SignatureVerificationService) cuente contra el mismo bloqueo.
+  async handleFailedLogin(userId: string, meta: RequestMeta): Promise<Date | null> {
     const user = await this.prisma.user.update({
       where: { id: userId },
       data: { failedLoginAttempts: { increment: 1 } },
     });
 
     if (user.failedLoginAttempts >= MAX_FAILED_ATTEMPTS) {
-      const lockoutMs = BASE_LOCKOUT_MS * 2 ** user.lockoutCount;
+      const lockoutMs = Math.min(BASE_LOCKOUT_MS * 2 ** user.lockoutCount, MAX_LOCKOUT_MS);
       const lockedUntil = new Date(Date.now() + lockoutMs);
       await this.prisma.user.update({
         where: { id: userId },
@@ -465,6 +515,26 @@ export class AuthService {
       include: { user: true },
     });
     if (!existing) {
+      const reusedByUserId = await this.tokenService.revokeIfReused(plainRefreshToken);
+      if (reusedByUserId) {
+        await this.auditService.log({
+          actorUserId: reusedByUserId,
+          action: "auth.refresh_token_reused",
+          resourceType: "session",
+          result: "DENIED",
+          metadata: { reason: "rotated_refresh_token_presented_again" },
+        });
+      }
+      throw new ApiException(
+        "AUTH_INVALID_CREDENTIALS",
+        "Sesión inválida o expirada.",
+        IDENTITY_ERROR_CODES.AUTH_INVALID_CREDENTIALS
+      );
+    }
+
+    // A-05: suspender una cuenta corta también las sesiones abiertas.
+    if (isBlockedUserStatus(existing.user.status)) {
+      await this.tokenService.revoke(plainRefreshToken);
       throw new ApiException(
         "AUTH_INVALID_CREDENTIALS",
         "Sesión inválida o expirada.",
@@ -507,7 +577,9 @@ export class AuthService {
         expiresAt: new Date(Date.now() + PASSWORD_RESET_TTL_MS),
       },
     });
-    const resetUrl = `${mustGetAppBaseUrl()}/reset-password?token=${plainToken}`;
+    // M-33: el enlace lleva a la pantalla de la aplicación web (antes
+    // apuntaba al dominio del API, donde esa ruta no existe).
+    const resetUrl = `${process.env.WEB_ORIGIN ?? "http://localhost:3000"}/restablecer-contrasena?token=${plainToken}`;
     await this.notifications.sendPasswordResetLink(user.email, resetUrl);
   }
 
@@ -546,11 +618,7 @@ export class AuthService {
 
   private verifyMfaSessionToken(token: string): { sub: string } {
     try {
-      const payload = jwt.verify(token, mustGetJwtSecret()) as { sub: string; purpose: string };
-      if (payload.purpose !== "mfa_pending") {
-        throw new Error("wrong token purpose");
-      }
-      return payload;
+      return verifyPurposeToken("mfa_pending", token, mfaSessionTokenSchema);
     } catch {
       throw new ApiException(
         "AUTH_INVALID_CREDENTIALS",
@@ -561,26 +629,17 @@ export class AuthService {
   }
 }
 
-function mustGetJwtSecret(): string {
-  const secret = process.env.JWT_ACCESS_SECRET;
-  if (!secret) {
-    throw new Error("JWT_ACCESS_SECRET is not set");
-  }
-  return secret;
+let decoyHashPromise: Promise<string> | null = null;
+function decoyPasswordHash(): Promise<string> {
+  decoyHashPromise ??= argon2Hash(randomBytes(32).toString("hex"));
+  return decoyHashPromise;
 }
 
-function mustGetAppBaseUrl(): string {
-  const url = process.env.APP_BASE_URL;
-  if (!url) {
-    throw new Error("APP_BASE_URL is not set");
-  }
-  return url;
+export function isBlockedUserStatus(status: UserStatus): boolean {
+  return status === "SUSPENDED" || status === "DEACTIVATED";
 }
 
 function hashRefreshTokenForLookup(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
-function hashBackupCodeForComparison(code: string): string {
-  return createHash("sha256").update(code).digest("hex");
-}

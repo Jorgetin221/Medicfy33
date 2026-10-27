@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { LabOrderCreateInput } from "@medicfy/contracts";
-import { apiFetch, ApiError, expectArray } from "@/lib/api-client";
+import { apiFetch, ApiError, expectArray, newIdempotencyKey } from "@/lib/api-client";
 import { Panel } from "@/components/ui/panel";
 import { Button } from "@/components/ui/button";
 import { FieldWrapper, TextInput } from "@/components/ui/field";
@@ -99,7 +99,14 @@ export function LabOrderPanel({
     apiFetch<unknown>("/catalogs/MOTIVO_ESTUDIO", { accessToken }).then((data) => setMotivos(expectArray<CatalogTerm>(data))).catch(() => setMotivos([]));
   }, [open, accessToken]);
 
+  // A-14: una llave por orden que el médico intenta emitir. Se
+  // conserva si reintenta tras un error (de red o de validación) y se
+  // renueva al empezar otra — el servidor nunca emite dos folios para
+  // el mismo intento.
+  const idempotencyKeyRef = useRef(newIdempotencyKey());
+
   function resetAll() {
+    idempotencyKeyRef.current = newIdempotencyKey();
     setItems([]);
     setTipoKey("");
     setStudyKey("");
@@ -160,7 +167,7 @@ export function LabOrderPanel({
           : { ...base, signatureRoute: "ELECTRONIC", password };
       const result = await apiFetch<{ id: string; folio: string; qrVerificationToken: string; signatureRoute: SignatureRoute }>(
         `/lab-orders/encounters/${encounterId}`,
-        { method: "POST", accessToken, body }
+        { method: "POST", accessToken, body, idempotencyKey: idempotencyKeyRef.current }
       );
       setIssued({ id: result.id, folio: result.folio, qrVerificationToken: result.qrVerificationToken, signatureRoute: result.signatureRoute });
       onIssued();
@@ -351,7 +358,7 @@ export function LabOrderPanel({
           )}
 
           {submitError ? (
-            <Aviso variant="critico" title={t("clinico.orden.noSePudoEmitir")}>
+            <Aviso variant="error" title={t("clinico.orden.noSePudoEmitir")}>
               {submitError instanceof ApiError ? submitError.message : t("clinico.receta.intentaDeNuevo")}
             </Aviso>
           ) : null}

@@ -1,4 +1,4 @@
-import type { agenda as esAgenda, citaNueva as esCitaNueva } from "../es/agenda";
+import type { agenda as esAgenda, citaNueva as esCitaNueva, citaReprogramar as esCitaReprogramar } from "../es/agenda";
 
 export const agenda: typeof esAgenda = {
   titulo: "Schedule",
@@ -17,9 +17,11 @@ export const agenda: typeof esAgenda = {
     cerrarSinNota: "Close without a clinical note",
     confirmarCierre: "Confirm closing",
     abrirConsulta: "Open consultation",
+    confirmarPago: "Confirm payment received",
+    reprogramar: "Reschedule",
   },
   justificacionCierre:
-    'Justification — M5-RN-006 exception: this closes the appointment without a signed clinical note. The normal path is to sign the consultation from "Resume consultation".',
+    'Justification (M5-RN-006 exception): this closes the appointment without a signed clinical note. The normal path is to sign the consultation from "Resume consultation".',
   resumen: {
     titulo: "Day summary",
     atendidas: "Seen",
@@ -41,7 +43,7 @@ export const citaNueva: typeof esCitaNueva = {
   sinEspacios: "No slots available",
   sinEspaciosAyuda: "Try another service, or set up more availability.",
   elPaciente: "The patient",
-  agendadaCuerpo: "{paciente} — {fecha} at {hora}.",
+  agendadaCuerpo: "{paciente}, {fecha} at {hora}.",
   irALaAgenda: "Go to the schedule",
   paciente: "Patient",
   sinPacientes: "No patients registered.",
@@ -53,4 +55,19 @@ export const citaNueva: typeof esCitaNueva = {
   irADisponibilidad: "Go to Availability",
   agendando: "Booking…",
   seleccionaPaciente: "Select a patient to book an appointment.",
+};
+
+export const citaReprogramar: typeof esCitaReprogramar = {
+  titulo: "Reschedule appointment",
+  subtitulo: "Choose the new time. The original appointment is cancelled and linked to the new one.",
+  horarioActual: "Current time: {fecha} at {hora}",
+  quienSolicita: "Who is asking for the change?",
+  solicitaPaciente: "The patient",
+  solicitaMedico: "The practice",
+  nuevoHorario: "New time",
+  reprogramando: "Rescheduling…",
+  reprogramada: "Appointment rescheduled",
+  reprogramadaCuerpo: "New time: {fecha} at {hora}.",
+  volverAgenda: "Back to the schedule",
+  noReprogramable: "This appointment can no longer be rescheduled in its current status.",
 };

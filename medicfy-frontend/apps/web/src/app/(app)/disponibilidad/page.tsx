@@ -527,7 +527,7 @@ function RulesSection({ accessToken }: { accessToken: string }) {
         {createError ? <ErrorState error={createError} /> : null}
 
         <Button type="submit" isLoading={form.formState.isSubmitting}>
-          Agregar horario
+          {t("disponibilidad.agregarHorario")}
         </Button>
       </form>
     </Card>

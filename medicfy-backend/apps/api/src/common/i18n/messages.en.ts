@@ -66,6 +66,8 @@ export const MESSAGES_EN: Record<string, string> = {
   "Candidata no encontrada.": "Candidate not found.",
   "Captura la FUM o la FPP por ultrasonido.": "Enter the last menstrual period or the ultrasound-estimated due date.",
   "Cita no encontrada.": "Appointment not found.",
+  "Configura al menos un servicio en tu perfil antes de iniciar una consulta sin cita.":
+    "Set up at least one service in your profile before starting a walk-in consultation.",
   "Consultorio no encontrado.": "Practice location not found.",
   "Contraseña incorrecta.": "Incorrect password.",
   "Código de verificación inválido.": "Invalid verification code.",
@@ -102,7 +104,6 @@ export const MESSAGES_EN: Record<string, string> = {
   "Especialidad no encontrada en el catálogo.": "Specialty not found in the catalog.",
   "Esta cita cambió de estado antes de poder reagendarla.":
     "This appointment changed status before it could be rescheduled.",
-  "Esta cita no es de modalidad en línea.": "This appointment is not online-modality.",
   "Esta cita no se puede reagendar en su estado actual.": "This appointment cannot be rescheduled in its current status.",
   "Esta cita ya alcanzó el máximo de reagendas (2).": "This appointment has reached the maximum number of reschedules (2).",
   "Esta cédula profesional ya está registrada en otra cuenta.":

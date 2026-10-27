@@ -10,6 +10,7 @@ import { ApiExceptionFilter } from "../../common/api-exception.filter";
 import { PrismaService } from "../../prisma/prisma.service";
 import { NOTIFICATION_PORT, type NotificationPort } from "../identity/services/notification.port";
 import { TokenService } from "../identity/services/token.service";
+import { givePrimaryPracticeLocation } from "../../testing/practice-location.fixture";
 
 class TestNotificationAdapter implements NotificationPort {
   async sendEmailVerificationCode(): Promise<void> {}
@@ -87,6 +88,7 @@ describe("Fase 4 · Plan del paciente (prompt 38B)", () => {
     expect(res.status).toBe(201);
     const userId = res.body.userId as string;
     await prisma.doctor.update({ where: { userId }, data: { verificationStatus: "VERIFIED" } });
+    await givePrimaryPracticeLocation(prisma, userId);
     return { userId, accessToken: tokenService.signAccessToken({ sub: userId, primaryRole: "DOCTOR" }) };
   }
 
@@ -139,8 +141,6 @@ describe("Fase 4 · Plan del paciente (prompt 38B)", () => {
       .send({
         ...BASE_NOTE,
         diagnoses: [{ icd10Code, description: "Control", diagnosisType: "PRINCIPAL", certainty: "CONFIRMED" }],
-        password: STRONG_PASSWORD,
-        totpCode: totpFromUri(otpauthUri),
         ...extra,
       });
     expect(signed.status).toBe(201);

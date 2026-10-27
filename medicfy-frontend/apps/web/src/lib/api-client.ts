@@ -46,6 +46,14 @@ interface RequestOptions {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
   body?: unknown;
   accessToken?: string | null;
+  // A-21: una petición colgada (red que "conecta" pero no responde)
+  // dejaba el autoguardado en "guardando…" para siempre. Pasado este
+  // tiempo se aborta y se trata como falta de red (NETWORK_ERROR), que
+  // es lo que activa el respaldo local cifrado.
+  timeoutMs?: number;
+  // A-14: misma llave en cada reintento de UNA acción del usuario; el
+  // servidor devuelve el documento ya creado en vez de duplicarlo.
+  idempotencyKey?: string;
 }
 
 // El access token dura 15 min (token.service.ts, ACCESS_TOKEN_TTL_SECONDS)
@@ -68,9 +76,22 @@ export function setAuthRefreshHandlers(handlers: { onTokenRefreshed: (token: str
 // Deduplicado: si 3 llamadas fallan por token vencido casi al mismo
 // tiempo, solo la primera dispara POST /auth/refresh; las otras dos
 // esperan la misma promesa en vez de pedir 3 refresh tokens nuevos.
+// M-24: el deduplicado de arriba es por pestaña. Dos pestañas que
+// renuevan a la vez presentan el mismo refresh token; el servidor rota
+// con la primera y la segunda llega con uno ya usado y perdía la sesión.
+// Un candado del navegador (Web Locks) serializa la renovación entre
+// pestañas: la segunda espera, y para entonces la cookie ya trae el
+// token nuevo.
+async function withCrossTabRefreshLock<T>(fn: () => Promise<T>): Promise<T> {
+  if (typeof navigator !== "undefined" && "locks" in navigator && navigator.locks) {
+    return navigator.locks.request("medicfy-auth-refresh", fn);
+  }
+  return fn();
+}
+
 async function refreshAccessToken(): Promise<string | null> {
   if (!refreshPromise) {
-    refreshPromise = (async () => {
+    refreshPromise = withCrossTabRefreshLock(async () => {
       try {
         const res = await fetch(`${API_BASE_URL}/auth/refresh`, {
           method: "POST",
@@ -83,7 +104,7 @@ async function refreshAccessToken(): Promise<string | null> {
       } catch {
         return null;
       }
-    })().finally(() => {
+    }).finally(() => {
       refreshPromise = null;
     });
   }
@@ -107,6 +128,7 @@ async function sendOrNetworkError(send: SendWithToken, token: string | null | un
   try {
     return await send(token);
   } catch {
+    // Incluye el AbortError de un timeoutMs vencido (A-21).
     // Network failure (offline, DNS, server down) — distinct from a
     // real HTTP error response, so screens can show "sin conexión"
     // instead of a generic error (CLAUDE.md §5: cuatro estados).
@@ -159,17 +181,36 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
       fetch(`${API_BASE_URL}${path}`, {
         method: options.method ?? "GET",
         credentials: "include",
-        headers: { "Content-Type": "application/json", ...authHeaders(token) },
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders(token),
+          ...(options.idempotencyKey ? { "Idempotency-Key": options.idempotencyKey } : {}),
+        },
         ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
+        ...(options.timeoutMs !== undefined ? { signal: AbortSignal.timeout(options.timeoutMs) } : {}),
       }),
     options.accessToken
   );
 }
 
+// A-14: una llave por intención del usuario. Se crea al empezar la
+// acción y se reutiliza si el médico reintenta tras un error de red;
+// se descarta solo cuando el servidor confirmó la creación.
+export function newIdempotencyKey(): string {
+  return crypto.randomUUID();
+}
+
 // Perfil (Parte B §1.2/§5.1): subida de logo/firma visual. Sin
 // Content-Type manual — el navegador arma el boundary de multipart.
-export async function apiUpload<T>(path: string, file: File, options: { accessToken?: string | null } = {}): Promise<T> {
+// `fields` viaja como campos del formulario multipart — nunca en la URL
+// (M-23: un texto clínico en la query queda en los logs de acceso).
+export async function apiUpload<T>(
+  path: string,
+  file: File,
+  options: { accessToken?: string | null; fields?: Record<string, string> } = {}
+): Promise<T> {
   const formData = new FormData();
+  for (const [name, value] of Object.entries(options.fields ?? {})) formData.append(name, value);
   formData.append("file", file);
   return requestJson<T>(
     (token) => fetch(`${API_BASE_URL}${path}`, { method: "POST", credentials: "include", headers: authHeaders(token), body: formData }),

@@ -141,3 +141,21 @@ export function buildSignedNoteHashInput(input: SignedNoteHashInput): unknown {
     encounterId: input.encounterId,
   };
 }
+
+// Auditoría 2026-10-21 (A-10): sello propio de una adenda. Es el mismo
+// contenido que se sella al firmar, más la identidad de la nota que
+// corrige y de quién la escribe, encadenado al sello de la nota
+// original (previousHashSha256 = contentHashSha256 del encuentro).
+export interface CorrectionNoteHashInput extends SignedNoteHashInput {
+  isCorrectionOfNoteId: string;
+  authorUserId: string;
+}
+
+export function buildCorrectionNoteHashInput(input: CorrectionNoteHashInput): unknown {
+  return {
+    kind: "correction",
+    isCorrectionOfNoteId: input.isCorrectionOfNoteId,
+    authorUserId: input.authorUserId,
+    signed: buildSignedNoteHashInput(input),
+  };
+}

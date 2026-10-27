@@ -6,8 +6,8 @@ import { useRouter } from "next/navigation";
 import { apiFetch, expectArray } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
 import { useSpecialties } from "@/lib/use-specialties";
-import { Card, LoadingState, EmptyState } from "@/components/ui/states";
-import { Button } from "@/components/ui/button";
+import { Card, LoadingState, EmptyState, ErrorState } from "@/components/ui/states";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { TextInput } from "@/components/ui/field";
 import { IconShieldCheck, IconLock, IconClipboardList, IconStethoscope } from "@/components/ui/landing-icons";
 import { SiteHeader } from "@/components/site-header";
@@ -207,11 +207,7 @@ function FeaturedDoctorsSection() {
                 {t("landing.destacados.verificado")}
               </span>
             ) : null}
-            <Link href={`/dr/${d.slug}`}>
-              <Button type="button" variant="secondary" className="w-full">
-                {t("landing.destacados.verPerfil")}
-              </Button>
-            </Link>
+            <ButtonLink href={`/dr/${d.slug}`} variant="secondary" className="w-full">{t("landing.destacados.verPerfil")}</ButtonLink>
           </Card>
         ))}
       </div>
@@ -242,16 +238,19 @@ interface FeedPost {
 function MyDoctorsSection({ accessToken }: { accessToken: string }) {
   const t = useT();
   const [doctors, setDoctors] = useState<LinkedDoctor[] | null>(null);
+  const [doctorsError, setDoctorsError] = useState<unknown>(null);
   const [feed, setFeed] = useState<FeedPost[] | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    setDoctorsError(null);
     apiFetch<unknown>("/patients/me/doctors", { accessToken })
       .then((data) => {
         if (!cancelled) setDoctors(expectArray<LinkedDoctor>(data));
       })
-      .catch(() => {
-        if (!cancelled) setDoctors([]);
+      // B-12: un fallo ya no se ve igual que "no tienes médicos".
+      .catch((error: unknown) => {
+        if (!cancelled) setDoctorsError(error);
       });
     return () => {
       cancelled = true;
@@ -283,6 +282,7 @@ function MyDoctorsSection({ accessToken }: { accessToken: string }) {
     };
   }, [doctors]);
 
+  if (doctorsError) return <ErrorState error={doctorsError} />;
   if (doctors === null) return null;
   if (doctors.length === 0) return null;
 

@@ -10,6 +10,7 @@ import { ApiExceptionFilter } from "../../common/api-exception.filter";
 import { PrismaService } from "../../prisma/prisma.service";
 import { NOTIFICATION_PORT, type NotificationPort } from "../identity/services/notification.port";
 import { TokenService } from "../identity/services/token.service";
+import { givePrimaryPracticeLocation } from "../../testing/practice-location.fixture";
 
 class TestNotificationAdapter implements NotificationPort {
   async sendEmailVerificationCode(): Promise<void> {}
@@ -90,6 +91,7 @@ describe("Receta — rutas de firma (autógrafa post-impresión vs. electrónica
     // 403 DOCTOR_NOT_VERIFIED antes de llegar a la lógica que este
     // archivo prueba.
     await prisma.doctor.update({ where: { userId }, data: { verificationStatus: "VERIFIED" } });
+    await givePrimaryPracticeLocation(prisma, userId);
     const accessToken = tokenService.signAccessToken({ sub: userId, primaryRole: "DOCTOR" });
     return { userId, email, accessToken };
   }
@@ -230,7 +232,7 @@ describe("Receta — rutas de firma (autógrafa post-impresión vs. electrónica
   describe("Ruta ELECTRONIC — comportamiento existente, sin cambios observables", () => {
     it("sigue exigiendo password+TOTP reales, y ahora también genera un PDF", async () => {
       const doctor = await registerDoctor();
-      const otpauthUri = await enrollMfa(doctor.accessToken);
+      await enrollMfa(doctor.accessToken);
       const patientId = await createPatient(doctor.accessToken);
       const encounterId = await createEncounter(doctor.accessToken, patientId);
       const medicationCatalogId = await paracetamolId();
@@ -243,7 +245,6 @@ describe("Receta — rutas de firma (autógrafa post-impresión vs. electrónica
           diagnosisSnapshot: "Dx",
           items: [medicationItem(medicationCatalogId)],
           password: "contraseña-incorrecta-Segura123!",
-          totpCode: totpFromUri(otpauthUri),
         });
       expect(wrongPassword.status).toBe(428);
 
@@ -255,7 +256,6 @@ describe("Receta — rutas de firma (autógrafa post-impresión vs. electrónica
           diagnosisSnapshot: "Dx",
           items: [medicationItem(medicationCatalogId)],
           password: STRONG_PASSWORD,
-          totpCode: totpFromUri(otpauthUri),
         });
       expect(res.status).toBe(201);
       expect(res.body.prescription.signatureMethod).toBe("INTERNAL_SYSTEM");

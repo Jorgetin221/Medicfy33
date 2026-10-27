@@ -20,6 +20,11 @@ import type { AuthenticatedRequest } from "../identity/guards/jwt-auth.guard";
 import { DoctorProfileService } from "./services/doctor-profile.service";
 import { DoctorDocumentService, InvalidDocumentError } from "./services/doctor-document.service";
 
+// M-07: sin límite, multer cargaba en memoria archivos de cualquier
+// tamaño antes de que el servicio los rechazara. Mismo tope que valida
+// el servicio.
+const DOCTOR_DOCUMENT_UPLOAD_LIMIT_BYTES = 10 * 1024 * 1024;
+
 @ApiTags("doctors")
 @ApiBearerAuth()
 @Controller("doctors/me/documents")
@@ -31,7 +36,7 @@ export class DoctorDocumentsController {
   ) {}
 
   @Post()
-  @UseInterceptors(FileInterceptor("file"))
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: DOCTOR_DOCUMENT_UPLOAD_LIMIT_BYTES } }))
   @ApiConsumes("multipart/form-data")
   @ApiQuery({ name: "docType", enum: ["CEDULA_PROFESIONAL", "CEDULA_ESPECIALIDAD", "INE", "CV", "CERTIFICADO_CONSEJO", "COMPROBANTE_DOMICILIO"] })
   @ApiOperation({ summary: "Sube un documento del expediente de verificación (spec §7 M2 validaciones)" })

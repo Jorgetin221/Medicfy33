@@ -55,7 +55,7 @@ export type AssistantPassOutcome =
   | { kind: "ok"; reading: AssistantReading; readingId: string; createdAt: Date }
   | {
       kind: "unavailable";
-      reason: "TIMEOUT" | "NOT_CONFIGURED" | "PROVIDER_ERROR" | "INVALID_OUTPUT" | "SPEND_CAP_REACHED";
+      reason: "TIMEOUT" | "NOT_CONFIGURED" | "PROVIDER_ERROR" | "INVALID_OUTPUT" | "SPEND_CAP_REACHED" | "PASS_IN_PROGRESS";
     }
   | { kind: "cancelled" };
 
@@ -68,6 +68,13 @@ export interface AssistantReadingSummary {
 
 @Injectable()
 export class AssistantPassOrchestratorService {
+  // M-09: el tope de gasto se revisaba y luego se gastaba (check-then-
+  // act): dos pases simultáneos del mismo encuentro pasaban los dos el
+  // chequeo. Un solo pase en vuelo por encuentro cierra esa carrera.
+  // PENDIENTE(jorge): es por proceso; si el API llega a correr en
+  // varias instancias, mover este candado a la base o a Redis.
+  private readonly passesInFlight = new Set<string>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly contextAssembler: ContextAssemblerService,
@@ -76,7 +83,16 @@ export class AssistantPassOrchestratorService {
 
   async requestPass(encounterId: string, pase: AssistantPass, locale: Locale, callerSignal: AbortSignal): Promise<AssistantPassOutcome> {
     if (callerSignal.aborted) return { kind: "cancelled" };
+    if (this.passesInFlight.has(encounterId)) return { kind: "unavailable", reason: "PASS_IN_PROGRESS" };
+    this.passesInFlight.add(encounterId);
+    try {
+      return await this.runPass(encounterId, pase, locale, callerSignal);
+    } finally {
+      this.passesInFlight.delete(encounterId);
+    }
+  }
 
+  private async runPass(encounterId: string, pase: AssistantPass, locale: Locale, callerSignal: AbortSignal): Promise<AssistantPassOutcome> {
     const spend = await this.spentTokens(encounterId);
     const cap = Number(process.env.ASSISTANT_MAX_TOKENS_PER_ENCOUNTER ?? DEFAULT_MAX_TOKENS_PER_ENCOUNTER);
     if (spend >= cap) return { kind: "unavailable", reason: "SPEND_CAP_REACHED" };

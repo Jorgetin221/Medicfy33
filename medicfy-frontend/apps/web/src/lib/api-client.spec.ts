@@ -90,3 +90,34 @@ describe("api-client", () => {
     expect(authHeader(call(3))).toBe("Bearer t2");
   });
 });
+
+// Auditoría 2026-10-21: A-21 (timeout) y A-14 (idempotencia).
+describe("api-client — timeout e idempotencia", () => {
+  const fetchMock = vi.fn<typeof fetch>();
+
+  beforeEach(() => {
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    fetchMock.mockReset();
+  });
+
+  it("una petición que no responde dentro de timeoutMs se reporta como NETWORK_ERROR", async () => {
+    fetchMock.mockImplementationOnce(
+      (_url, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new DOMException("timeout", "TimeoutError")));
+        })
+    );
+    await expect(apiFetch("/lento", { method: "PATCH", body: {}, timeoutMs: 20 })).rejects.toMatchObject({ code: "NETWORK_ERROR" });
+  });
+
+  it("manda la Idempotency-Key cuando se le pasa", async () => {
+    fetchMock.mockResolvedValueOnce(json(201, { id: "r1" }));
+    await apiFetch("/prescriptions/encounters/e1", { method: "POST", body: {}, idempotencyKey: "k-1" });
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect((init.headers as Record<string, string>)["Idempotency-Key"]).toBe("k-1");
+  });
+});

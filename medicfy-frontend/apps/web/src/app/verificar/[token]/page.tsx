@@ -67,7 +67,7 @@ export default function VerificarPage() {
         ) : result ? (
           <div className="flex flex-col gap-4">
             {result.status === "CANCELLED" ? (
-              <Aviso variant="critico" title={t("verificacionPublica.canceladoTitulo")}>
+              <Aviso variant="advertencia" title={t("verificacionPublica.canceladoTitulo")}>
                 {isPrescription ? t("verificacionPublica.canceladoReceta") : t("verificacionPublica.canceladoOrden")}
               </Aviso>
             ) : (

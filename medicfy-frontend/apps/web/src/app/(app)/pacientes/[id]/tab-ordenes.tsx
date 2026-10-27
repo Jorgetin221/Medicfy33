@@ -14,6 +14,7 @@ import { DocumentTile, DocumentViewer } from "@/components/clinical/document-til
 import { useI18n } from "@/lib/i18n/context";
 import { formatDateLong } from "@/lib/i18n/format";
 import type { MessageKey } from "@/lib/i18n/dictionaries";
+import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 
 // Un resultado subido — GET /lab-results/patients/:patientId, la
 // misma forma que devuelve el POST de subida. TimelineLabOrder /
@@ -60,6 +61,7 @@ export function TabOrdenes({
   onChanged: () => void;
 }) {
   const { t, locale } = useI18n();
+  const { askReason, dialog } = useConfirmDialog();
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [isUploadingStandalone, setIsUploadingStandalone] = useState(false);
@@ -132,7 +134,7 @@ export function TabOrdenes({
   }
 
   async function markReviewed(resultId: string) {
-    const doctorComment = window.prompt(t("pacientes.ordenes.comentarioRevision"));
+    const doctorComment = await askReason({ title: t("pacientes.ordenes.revisarTitulo"), label: t("pacientes.ordenes.comentarioRevision"), minLength: 1 });
     if (!doctorComment || !doctorComment.trim()) return;
     setError(null);
     setReviewingId(resultId);
@@ -179,7 +181,7 @@ export function TabOrdenes({
   }
 
   async function cancelOrder(id: string) {
-    const reason = window.prompt(t("pacientes.ordenes.motivoCancelacion"));
+    const reason = await askReason({ title: t("pacientes.ordenes.cancelarTitulo"), label: t("pacientes.ordenes.motivoCancelacion"), destructive: true });
     if (!reason) return;
     setError(null);
     setCancellingId(id);
@@ -410,14 +412,17 @@ export function TabOrdenes({
   ) : null;
 
   return (
-    <div className="flex flex-col gap-6">
-      {error ? <ErrorState error={error} /> : null}
-      <div className="grid items-start gap-8 xl:grid-cols-2">
-        {resultsColumn}
-        {ordersColumn}
+    <>
+      {dialog}
+      <div className="flex flex-col gap-6">
+        {error ? <ErrorState error={error} /> : null}
+        <div className="grid items-start gap-8 xl:grid-cols-2">
+          {resultsColumn}
+          {ordersColumn}
+        </div>
+        {previewPanel}
+        {orderPanel}
       </div>
-      {previewPanel}
-      {orderPanel}
-    </div>
+    </>
   );
 }

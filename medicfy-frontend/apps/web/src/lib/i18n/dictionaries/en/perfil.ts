@@ -56,6 +56,8 @@ export const perfil: typeof es = {
       "If you lose access to your authenticator app, they are the only way to recover your account. They are shown only once.",
     paso2: "2. Confirm with the 6-digit code shown in the app",
     codigo: "Code",
+    contrasena: "Your password",
+    codigoActualORespaldo: "Current code from your app or a backup code",
   },
   verificados: {
     titulo: "Verified details",
@@ -67,7 +69,7 @@ export const perfil: typeof es = {
   especialidad: {
     titulo: "Specialty license",
     explicacion:
-      "Optional. If your specialty requires board certification, record it here — the verified badge downgrades automatically when it expires, with nothing for you to do.",
+      "Optional. If your specialty requires board certification, record it here: the verified badge downgrades automatically when it expires, with nothing for you to do.",
     vence: "Expires",
     noRegistrada: "Not recorded.",
     numero: "Specialty license number",
@@ -80,13 +82,13 @@ export const perfil: typeof es = {
     fotoAyuda: "A link to a photo of your face, not a logo.",
     urlCompleta: "It must be a full URL (https://...).",
     biografia: "Biography",
-    biografiaAyuda: "Between 50 and 2,000 characters. No phone or email — those already live in your contact details.",
+    biografiaAyuda: "Between 50 and 2,000 characters. No phone or email: those already live in your contact details.",
     biografiaSinContacto: "The biography cannot include a contact phone number or email address.",
     aniosExperiencia: "Years of experience",
     aniosRango: "It must be a whole number between 0 and 70.",
     universidad: "University",
     idiomas: "Languages",
-    idiomasAyuda: "Separate them with commas — for example: Spanish, English",
+    idiomasAyuda: "Separate them with commas, for example: Spanish, English",
     guardado: "Saved",
   },
   consultorios: {
@@ -109,14 +111,14 @@ export const perfil: typeof es = {
   },
   contacto: {
     titulo: "Professional contact details",
-    subtitulo: "Different from the email you sign in with — these are what appear on your documents.",
+    subtitulo: "Different from the email you sign in with: these are what appear on your documents.",
     telefono: "Phone",
     telefonoAyuda: "+52 and 10 digits.",
     correo: "Professional email",
   },
   marca: {
     titulo: "Letterhead, logo and signature image",
-    subtitulo: "This is how your documents' letterhead will look. The signature is visual only — it carries no legal validity.",
+    subtitulo: "This is how your documents' letterhead will look. The signature is visual only: it carries no legal validity.",
     frase: "Letterhead line (if you don't use a logo)",
     guardarFrase: "Save line",
     logo: "Logo",

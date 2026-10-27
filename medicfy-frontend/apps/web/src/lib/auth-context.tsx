@@ -1,8 +1,18 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { apiFetch, setAuthRefreshHandlers } from "./api-client";
 import { tokenPrimaryRole } from "./jwt-claims";
+import { syncAndClearLocalDrafts } from "./sync-local-drafts";
+
+const AUTH_CHANNEL = "medicfy-auth";
+
+function broadcastLogout(): void {
+  if (typeof BroadcastChannel === "undefined") return;
+  const channel = new BroadcastChannel(AUTH_CHANNEL);
+  channel.postMessage({ type: "logout" });
+  channel.close();
+}
 
 interface AuthState {
   accessToken: string | null;
@@ -93,10 +103,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAccessToken(token);
   };
 
+  // M-21: antes de cerrar, los respaldos locales de notas se suben (si
+  // hay red) y se borran del equipo.
+  const accessTokenRef = useRef(accessToken);
+  accessTokenRef.current = accessToken;
   const logout = useCallback(async (): Promise<void> => {
+    await syncAndClearLocalDrafts(accessTokenRef.current).catch(() => 0);
     await apiFetch("/auth/logout", { method: "POST" }).catch(() => {});
     setAccessToken(null);
     setInactivityWarning(false);
+    broadcastLogout();
+  }, []);
+
+  // M-24: cerrar sesión en una pestaña la cierra en todas — antes las
+  // demás seguían mostrando expedientes con su token en memoria.
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") return undefined;
+    const channel = new BroadcastChannel(AUTH_CHANNEL);
+    channel.onmessage = (event: MessageEvent<{ type?: string }>) => {
+      if (event.data?.type === "logout") {
+        setAccessToken(null);
+        setInactivityWarning(false);
+      }
+    };
+    return () => channel.close();
   }, []);
 
   const markActive = useCallback(() => {

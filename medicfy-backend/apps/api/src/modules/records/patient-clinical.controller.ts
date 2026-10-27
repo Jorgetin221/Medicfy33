@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import {
   gynecoHistoryUpsertSchema,
@@ -148,7 +148,7 @@ export class PatientClinicalController {
   }
 
   @Post("diagnoses/:diagnosisId/discard")
-  @ApiOperation({ summary: "Prompt 28: descartar no borra — DESCARTADO con fecha y autor, fuera de vigentes" })
+  @ApiOperation({ summary: "Prompt 28: descartar no borra ni reescribe — sello de fecha y autor, fuera de vigentes" })
   async discardDiagnosis(
     @Param("patientId") patientId: string,
     @Param("diagnosisId") diagnosisId: string,
@@ -317,6 +317,21 @@ export class PatientClinicalController {
     await this.auditRead(req, patientId, "records.notesTimeline.read");
     const query: NotesTimelineQueryInput = notesTimelineQueryPipe.transform({ type, from, to, q });
     return this.patientClinical.notesTimeline(patientId, query);
+  }
+
+  // M-23 (auditoría 2026-10-21): misma búsqueda, con los filtros en el
+  // CUERPO. Un texto de búsqueda en la URL ("diabetes", "VIH") queda en
+  // los logs de acceso de nginx y del navegador (R2).
+  @Post("notes-timeline/search")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "M-23: búsqueda en notas con los filtros en el cuerpo (no en la URL)" })
+  async searchNotesTimeline(
+    @Param("patientId") patientId: string,
+    @Body(notesTimelineQueryPipe) body: NotesTimelineQueryInput,
+    @Req() req: ClinicalRequest
+  ) {
+    await this.auditRead(req, patientId, "records.notesTimeline.read");
+    return this.patientClinical.notesTimeline(patientId, body);
   }
 
   // ── Fase 6 · Prompt 45: integridad y bitácora de acceso ──────────

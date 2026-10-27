@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useId, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ResultadosCharts } from "@/components/clinical/resultados-charts";
@@ -12,6 +12,7 @@ import { LabAnalytesPanel } from "@/components/clinical/lab-analytes-panel";
 import { LabSheetUpload } from "@/components/clinical/lab-sheet-upload";
 import { AsistenteTab } from "@/components/clinical/asistente-tab";
 import { useT } from "@/lib/i18n/context";
+import { trapTabKey } from "@/lib/focus-trap";
 
 // Prompt 14 — Zona 3, esqueleto: pestañas Hoja frontal / Historia /
 // Notas / Estudios / Resultados, VACÍAS por ahora (el contenido llega
@@ -62,7 +63,11 @@ export function ConsultaZona3({
   const [activeTab, setActiveTab] = useState<Zona3Tab>("Hoja frontal");
   // Carga diferida real: solo las pestañas que el médico ABRIÓ en esta
   // sesión existen en el DOM.
-  const [openedTabs, setOpenedTabs] = useState<Set<Zona3Tab>>(new Set());
+  // M-28: la pestaña por omisión también cuenta como abierta — antes la
+  // pestaña recordada quedaba seleccionada pero sin panel montado.
+  const [openedTabs, setOpenedTabs] = useState<Set<Zona3Tab>>(new Set(["Hoja frontal"]));
+  const tabsBaseId = useId();
+  const drawerRef = useRef<HTMLDivElement>(null);
   // Capa 1 (v2.5): forzar que LabAnalytesPanel vuelva a cargar tras
   // aceptar una hoja — sube su `key` en vez de levantarle una prop de
   // recarga, más simple que refactorizar su estado interno.
@@ -73,6 +78,7 @@ export function ConsultaZona3({
       const remembered = localStorage.getItem(storageKey(doctorKey));
       if (remembered && (TABS as readonly string[]).includes(remembered)) {
         setActiveTab(remembered as Zona3Tab);
+        setOpenedTabs((prev) => new Set(prev).add(remembered as Zona3Tab));
       }
     } catch {
       // sin localStorage, la pestaña por omisión basta
@@ -89,16 +95,53 @@ export function ConsultaZona3({
     }
   }
 
+  // M-28: patrón APG de pestañas — flechas, Inicio/Fin, foco itinerante.
+  function handleTabKeyDown(e: React.KeyboardEvent, index: number) {
+    const keyToIndex: Record<string, number> = {
+      ArrowRight: (index + 1) % TABS.length,
+      ArrowLeft: (index - 1 + TABS.length) % TABS.length,
+      Home: 0,
+      End: TABS.length - 1,
+    };
+    const target = keyToIndex[e.key];
+    const tab = target === undefined ? undefined : TABS[target];
+    if (tab === undefined) return;
+    e.preventDefault();
+    openTab(tab);
+    document.getElementById(`${tabsBaseId}-tab-${target}`)?.focus();
+  }
+
+  // M-28: el cajón (tableta) es un diálogo modal de verdad: Esc lo
+  // cierra y el foco no se escapa a la nota de atrás.
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    drawerRef.current?.querySelector<HTMLElement>("button")?.focus();
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setIsOpen(false);
+      trapTabKey(e, drawerRef.current);
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      previouslyFocused?.focus();
+    };
+  }, [isOpen]);
+
   const panel = (
     <div className="flex h-full flex-col" data-testid="zona3-panel">
       <div role="tablist" aria-label={t("consulta.zona3.panelConsulta")} className="flex flex-wrap gap-1 border-b border-gray-300 pb-2">
-        {TABS.map((tab) => (
+        {TABS.map((tab, index) => (
           <button
             key={tab}
+            id={`${tabsBaseId}-tab-${index}`}
             role="tab"
             aria-selected={activeTab === tab}
+            aria-controls={`${tabsBaseId}-panel-${index}`}
+            tabIndex={activeTab === tab ? 0 : -1}
             type="button"
             onClick={() => openTab(tab)}
+            onKeyDown={(e) => handleTabKeyDown(e, index)}
             className={cn(
               "min-h-11 rounded-md px-3 text-sm font-medium",
               activeTab === tab ? "bg-brand-100 text-brand-900" : "text-gray-500 hover:bg-gray-100"
@@ -109,9 +152,9 @@ export function ConsultaZona3({
         ))}
       </div>
       <div className="flex-1 overflow-y-auto pt-3">
-        {TABS.map((tab) =>
+        {TABS.map((tab, index) =>
           openedTabs.has(tab) && activeTab === tab ? (
-            <div key={tab} role="tabpanel" aria-label={t(`consulta.zona3.tabs.${tab}`)}>
+            <div key={tab} id={`${tabsBaseId}-panel-${index}`} role="tabpanel" aria-labelledby={`${tabsBaseId}-tab-${index}`}>
               {tab === "Hoja frontal" && patientId && accessToken ? (
                 <HojaFrontal patientId={patientId} accessToken={accessToken} />
               ) : tab === "Historia" && patientId && accessToken ? (
@@ -195,7 +238,7 @@ export function ConsultaZona3({
           {t("consulta.zona3.expediente")}
         </Button>
         {isOpen ? (
-          <div className="fixed inset-0 z-30" role="dialog" aria-label={t("consulta.zona3.cajon")}>
+          <div ref={drawerRef} className="fixed inset-0 z-30" role="dialog" aria-modal="true" aria-label={t("consulta.zona3.cajon")}>
             <button
               type="button"
               aria-label={t("consulta.zona3.cerrarPanel")}

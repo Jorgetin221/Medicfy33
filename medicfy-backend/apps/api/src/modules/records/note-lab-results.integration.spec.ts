@@ -119,7 +119,7 @@ describe("Capa 3 — note_lab_results, congelado al firmar (mismo patrón que vi
 
   it("un analito fuera de rango, seleccionado, se congela en la nota firmada con status=HIGH y su procedencia", async () => {
     const doctor = await registerDoctor();
-    const otpauthUri = await enrollMfa(doctor.accessToken);
+    await enrollMfa(doctor.accessToken);
     const patientId = await createAdultPatient(doctor.accessToken);
     const encounterId = await createDraftEncounter(doctor.accessToken, patientId);
 
@@ -132,7 +132,7 @@ describe("Capa 3 — note_lab_results, congelado al firmar (mismo patrón que vi
     const signed = await request(app.getHttpServer())
       .post(`/records/encounters/${encounterId}/sign`)
       .set("Authorization", `Bearer ${doctor.accessToken}`)
-      .send({ ...VALID_NOTE, labResultAnalyteIds: [analyte.body.id], password: STRONG_PASSWORD, totpCode: totpFromUri(otpauthUri) });
+      .send({ ...VALID_NOTE, labResultAnalyteIds: [analyte.body.id] });
     expect(signed.status).toBe(201);
 
     const noteId = signed.body.note.id as string;
@@ -153,14 +153,14 @@ describe("Capa 3 — note_lab_results, congelado al firmar (mismo patrón que vi
 
   it("sin labResultAnalyteIds, la nota se firma normalmente y no crea ninguna fila de note_lab_results", async () => {
     const doctor = await registerDoctor();
-    const otpauthUri = await enrollMfa(doctor.accessToken);
+    await enrollMfa(doctor.accessToken);
     const patientId = await createAdultPatient(doctor.accessToken);
     const encounterId = await createDraftEncounter(doctor.accessToken, patientId);
 
     const signed = await request(app.getHttpServer())
       .post(`/records/encounters/${encounterId}/sign`)
       .set("Authorization", `Bearer ${doctor.accessToken}`)
-      .send({ ...VALID_NOTE, password: STRONG_PASSWORD, totpCode: totpFromUri(otpauthUri) });
+      .send({ ...VALID_NOTE });
     expect(signed.status).toBe(201);
 
     const frozen = await prisma.noteLabResult.findMany({ where: { noteId: signed.body.note.id } });
@@ -177,14 +177,14 @@ describe("Capa 3 — note_lab_results, congelado al firmar (mismo patrón que vi
     expect(strangerAnalyte.status).toBe(201);
 
     const doctor = await registerDoctor();
-    const otpauthUri = await enrollMfa(doctor.accessToken);
+    await enrollMfa(doctor.accessToken);
     const patientId = await createAdultPatient(doctor.accessToken);
     const encounterId = await createDraftEncounter(doctor.accessToken, patientId);
 
     const signed = await request(app.getHttpServer())
       .post(`/records/encounters/${encounterId}/sign`)
       .set("Authorization", `Bearer ${doctor.accessToken}`)
-      .send({ ...VALID_NOTE, labResultAnalyteIds: [strangerAnalyte.body.id], password: STRONG_PASSWORD, totpCode: totpFromUri(otpauthUri) });
+      .send({ ...VALID_NOTE, labResultAnalyteIds: [strangerAnalyte.body.id] });
     expect(signed.status).toBe(201);
 
     const frozen = await prisma.noteLabResult.findMany({ where: { noteId: signed.body.note.id } });

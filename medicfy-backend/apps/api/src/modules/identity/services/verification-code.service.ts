@@ -4,6 +4,10 @@ import type { VerificationChannel } from "@prisma/client";
 import { PrismaService } from "../../../prisma/prisma.service";
 
 const CODE_TTL_MS = 10 * 60 * 1000;
+// M-02: con 10^6 combinaciones y sin límite, un código de 6 dígitos se
+// agotaba por fuerza bruta. Tras 5 fallos el código muere y hay que
+// pedir otro.
+const MAX_ATTEMPTS_PER_CODE = 5;
 
 // Registration flow step 2: "código de 6 dígitos, 10 min de vigencia".
 @Injectable()
@@ -23,20 +27,25 @@ export class VerificationCodeService {
     return code;
   }
 
+  // Solo cuenta el código vigente más reciente: emitir uno nuevo deja
+  // sin efecto los anteriores.
   async verify(userId: string, channel: VerificationChannel, candidate: string): Promise<boolean> {
-    const codeHash = hashCode(candidate);
-    const match = await this.prisma.verificationCode.findFirst({
-      where: { userId, channel, codeHash, consumedAt: null },
+    const current = await this.prisma.verificationCode.findFirst({
+      where: { userId, channel, consumedAt: null },
       orderBy: { createdAt: "desc" },
     });
-    if (!match || match.expiresAt < new Date()) {
+    if (!current || current.expiresAt < new Date() || current.attempts >= MAX_ATTEMPTS_PER_CODE) {
       return false;
     }
-    await this.prisma.verificationCode.update({
-      where: { id: match.id },
+    if (current.codeHash !== hashCode(candidate)) {
+      await this.prisma.verificationCode.update({ where: { id: current.id }, data: { attempts: { increment: 1 } } });
+      return false;
+    }
+    const consumed = await this.prisma.verificationCode.updateMany({
+      where: { id: current.id, consumedAt: null },
       data: { consumedAt: new Date() },
     });
-    return true;
+    return consumed.count === 1;
   }
 }
 

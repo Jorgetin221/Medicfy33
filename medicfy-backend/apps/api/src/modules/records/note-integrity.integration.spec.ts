@@ -151,8 +151,6 @@ describe("Integridad de la cadena de firmas y bitácora de acceso", () => {
         currentIllness: `Padecimiento de prueba #${seq}`,
         assessment: `Análisis de prueba #${seq}`,
         plan: `Plan de prueba #${seq}`,
-        password: STRONG_PASSWORD,
-        totpCode: totpFromUri(otpauthUri),
       });
     expect(sign.status).toBe(201);
     return { encounterId, noteId: sign.body.note.id as string };
@@ -176,10 +174,17 @@ describe("Integridad de la cadena de firmas y bitácora de acceso", () => {
 
     // Alteración directa como dueño del esquema (jorgetinoco) — la app
     // (medicfy_app) NO PUEDE hacer esto (ver append-only.integration.spec.ts).
-    // Solo cambia el CONTENIDO, no la columna contentHashSha256 —
-    // exactamente lo que un ataque directo a la base haría sin conocer
-    // el algoritmo de hash.
-    await ownerDb.$executeRaw`UPDATE clinical_notes SET plan = 'PLAN ALTERADO SIN AUTORIZACION' WHERE id = ${middle.noteId}`;
+    // Desde C-02 ni el dueño puede sin antes desactivar el trigger
+    // append-only: se simula a quien tiene acceso de DBA y lo hace. El
+    // DISABLE vive dentro de la transacción, así que ninguna otra
+    // conexión ve la tabla desprotegida. Solo cambia el CONTENIDO, no la
+    // columna contentHashSha256 — exactamente lo que un ataque directo a
+    // la base haría sin conocer el algoritmo de hash.
+    await ownerDb.$transaction([
+      ownerDb.$executeRaw`ALTER TABLE clinical_notes DISABLE TRIGGER medicfy_append_only`,
+      ownerDb.$executeRaw`UPDATE clinical_notes SET plan = 'PLAN ALTERADO SIN AUTORIZACION' WHERE id = ${middle.noteId}`,
+      ownerDb.$executeRaw`ALTER TABLE clinical_notes ENABLE TRIGGER medicfy_append_only`,
+    ]);
 
     const after = await request(app.getHttpServer())
       .get(`/records/patients/${patientId}/integrity-check`)

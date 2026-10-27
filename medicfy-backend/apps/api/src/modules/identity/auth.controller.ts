@@ -86,6 +86,8 @@ export class AuthController {
     return this.authService.registerDoctor(body, getRequestMeta(req));
   }
 
+  // M-02: sin límite, el código de 6 dígitos se agotaba por fuerza bruta.
+  @AuthThrottle()
   @Post("email/verify")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Flow step 2: código de 6 dígitos, 10 min de vigencia" })
@@ -96,6 +98,8 @@ export class AuthController {
     return { verified: true };
   }
 
+  // M-02: sin límite, el código de 6 dígitos se agotaba por fuerza bruta.
+  @AuthThrottle()
   @Post("phone/verify")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Verificación de teléfono, código de 6 dígitos" })

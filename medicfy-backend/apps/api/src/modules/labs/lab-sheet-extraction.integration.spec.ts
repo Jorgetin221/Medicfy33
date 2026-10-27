@@ -211,8 +211,8 @@ describe("Capa 1 — extracción automática de hojas de laboratorio (visión de
         measuredAt: "2026-09-01",
         labName: "Laboratorio Confirmado",
         candidates: [
-          { candidateId: glucosa!.id, included: true, analyteName: "Glucosa", value: 95, unit: "mg/dL", referenceMin: 70, referenceMax: 99 },
-          { candidateId: tsh!.id, included: true, analyteName: "TSH", value: 2.1, unit: "mUI/L", confirmedLowConfidence: true },
+          { candidateId: glucosa?.id ?? "", included: true, analyteName: "Glucosa", value: 95, unit: "mg/dL", referenceMin: 70, referenceMax: 99 },
+          { candidateId: tsh?.id ?? "", included: true, analyteName: "TSH", value: 2.1, unit: "mUI/L", confirmedLowConfidence: true },
         ],
       });
     expect(reviewed.status).toBe(201);

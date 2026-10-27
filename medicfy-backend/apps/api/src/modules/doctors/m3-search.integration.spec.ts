@@ -85,6 +85,14 @@ describe("M3 — directorio y búsqueda pública de médicos", () => {
     await request(app.getHttpServer()).post("/auth/email/verify").send({ userId, code });
     const accessToken = tokenService.signAccessToken({ sub: userId, primaryRole: "DOCTOR" });
     await request(app.getHttpServer()).patch("/doctors/me").set("Authorization", `Bearer ${accessToken}`).send({ displayName });
+    // O-12: el directorio solo lista perfiles agendables — servicio
+    // activo y teleconsulta (o consultorio).
+    await prisma.doctor.update({ where: { userId }, data: { acceptsTeleconsultation: true } });
+    const service = await request(app.getHttpServer())
+      .post("/doctors/me/services")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ serviceType: "TELECONSULTATION", name: "Teleconsulta", durationMinutes: 30, priceMxn: 500 });
+    expect(service.status).toBe(201);
     return { userId, accessToken };
   }
 
@@ -131,7 +139,7 @@ describe("M3 — directorio y búsqueda pública de médicos", () => {
       const tag = randomUUID().slice(0, 8);
       const doctor = await registerAndVerifyDoctor(`Sin relación con la especialidad ${tag}`);
       const doctorRow = await prisma.doctor.findUniqueOrThrow({ where: { userId: doctor.userId } });
-      const specialty = await prisma.specialty.findUniqueOrThrow({ where: { id: doctorRow.primarySpecialtyId! } });
+      const specialty = await prisma.specialty.findUniqueOrThrow({ where: { id: doctorRow.primarySpecialtyId ?? "" } });
 
       // La base de dev acumula muchos médicos "Medicina General" de
       // pruebas previas de esta sesión — se recorre por cursor en vez
@@ -180,6 +188,22 @@ describe("M3 — directorio y búsqueda pública de médicos", () => {
       const allNames = [...page1.body.items, ...page2.body.items].map((d: { displayName: string }) => d.displayName);
       expect(new Set(allNames).size).toBe(3);
       expect(allNames.sort()).toEqual(names.sort());
+    });
+  });
+
+  describe("O-12 — el directorio solo muestra perfiles completos y agendables", () => {
+    it("excluye un perfil sin ningún servicio activo", async () => {
+      const tag = randomUUID().slice(0, 8);
+      const complete = await registerAndVerifyDoctor(`Completo-${tag}`);
+      const incomplete = await registerAndVerifyDoctor(`Incompleto-${tag}`);
+      const incompleteDoctor = await prisma.doctor.findUniqueOrThrow({ where: { userId: incomplete.userId } });
+      await prisma.doctorService.updateMany({ where: { doctorId: incompleteDoctor.id }, data: { isActive: false } });
+      void complete;
+
+      const res = await request(app.getHttpServer()).get(`/doctors/public?q=${tag}`);
+      const names = res.body.items.map((d: { displayName: string }) => d.displayName);
+      expect(names).toContain(`Completo-${tag}`);
+      expect(names).not.toContain(`Incompleto-${tag}`);
     });
   });
 

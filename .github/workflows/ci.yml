@@ -1,0 +1,90 @@
+# Auditoría 2026-10-21 (O-08, M-32): el "verde" dependía de que alguien
+# corriera las pruebas en su máquina. Esto corre en cada push y PR:
+# typecheck, lint, pruebas unitarias e integración contra PostgreSQL 16
+# real, y pnpm audit. Las pruebas E2E de Playwright quedan fuera por
+# ahora: necesitan el API y la web levantados (ver playwright.config.ts).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: medicfy-backend
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: medicfy_owner
+          POSTGRES_DB: medicfy_mvp_dev
+          # Solo CI: el rol medicfy_app lo crea la primera migración sin
+          # contraseña (las credenciales reales viven fuera del repo).
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U medicfy_owner"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://medicfy_owner@localhost:5432/medicfy_mvp_dev?schema=public
+      APP_DATABASE_URL: postgresql://medicfy_app@localhost:5432/medicfy_mvp_dev?schema=public
+      # Valores sintéticos solo para CI (R7); nunca los de producción.
+      JWT_ACCESS_SECRET: ci-only-jwt-secret-0123456789abcdef0123456789abcdef
+      MFA_SECRET_ENCRYPTION_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+      APP_BASE_URL: http://localhost:3001
+      WEB_ORIGIN: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: medicfy-backend/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: node ./node_modules/typescript/bin/tsc
+        working-directory: medicfy-backend/packages/contracts
+      - run: pnpm db:generate
+      - run: node ./node_modules/prisma/build/index.js migrate deploy
+      - run: pnpm db:seed
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm audit --prod --audit-level=high
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: medicfy-frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: medicfy-frontend/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: node ./node_modules/typescript/bin/tsc
+        working-directory: medicfy-frontend/packages/contracts
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm audit --prod --audit-level=high
+
+  contracts-in-sync:
+    # B-15: packages/contracts está duplicado entre los dos repos y se
+    # sincroniza a mano; esto falla si se desalinean.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: diff -r --exclude='*.spec.ts' medicfy-backend/packages/contracts/src medicfy-frontend/packages/contracts/src

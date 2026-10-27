@@ -30,11 +30,17 @@ export const ui: typeof es = {
     borrar: "Clear",
     listo: "Done",
   },
+  confirmacion: {
+    confirmar: "Confirm",
+    cancelar: "Cancel",
+    longitudMotivo: "Between {min} and {max} characters ({n} typed).",
+  },
   guardado: {
     guardado: "Saved",
     guardando: "Saving…",
-    sinConexion: "Offline — your changes are being saved on this device",
-    sinRespaldo: "Offline with no local backup — do not close or reload this tab",
+    sinConexion: "Offline: your changes are being saved on this device",
+    sinRespaldo: "Offline with no local backup: do not close or reload this tab",
+    conflicto: "This draft changed in another tab or device",
     alas: " at {hora}",
   },
   cita: {

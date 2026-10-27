@@ -60,6 +60,23 @@ export class CareRelationshipGuard implements CanActivate {
       throw new ApiException("CARE_RELATIONSHIP_REQUIRED", "Solo un médico con vínculo activo puede acceder a este expediente.", HttpStatus.FORBIDDEN);
     }
 
+    // A-05: un médico suspendido conserva su cuenta (sus expedientes no
+    // se borran ni se ocultan a los pacientes), pero no vuelve a abrir
+    // un expediente hasta que se le reactive.
+    if (doctor.verificationStatus === "SUSPENDED") {
+      await this.auditService.log({
+        actorUserId: req.user.sub,
+        actorRole: "DOCTOR",
+        action: "clinical.access",
+        resourceType: "patient",
+        result: "DENIED",
+        ipAddress: meta.ip,
+        userAgent: meta.userAgent,
+        metadata: { reason: "doctor_suspended" },
+      });
+      throw new ApiException("DOCTOR_SUSPENDED", "Tu cuenta de médico está suspendida. Contacta a soporte.", HttpStatus.FORBIDDEN);
+    }
+
     const patientId = await this.resolvePatientId(req);
     if (!patientId) {
       throw new ApiException("VALIDATION_ERROR", "No se pudo determinar el paciente de la solicitud.", HttpStatus.BAD_REQUEST);

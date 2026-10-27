@@ -424,14 +424,13 @@ describe("M5a — Pacientes y citas (núcleo)", () => {
   });
 
   describe("M5-CA-001 — máquina de estados íntegra", () => {
-    it("walks the full valid chain: pending_payment -> scheduled -> confirmed -> in_progress -> completed", async () => {
+    it("walks the full valid chain from the doctor panel: scheduled (A-11) -> confirmed -> in_progress -> completed", async () => {
       const doctor = await registerDoctor();
       const service = await createService(doctor.accessToken);
       const patient = await createAdultPatient(doctor.accessToken);
       const created = await bookAppointment(doctor.accessToken, patient.id, service.id, isoDaysFromNow(10));
-      expect(created.status).toBe("PENDING_PAYMENT");
+      expect(created.status).toBe("SCHEDULED");
 
-      await appointmentService.confirmPayment(created.id, doctor.userId);
       const confirm = await request(app.getHttpServer()).post(`/appointments/${created.id}/confirm`).set("Authorization", `Bearer ${doctor.accessToken}`);
       expect(confirm.status).toBe(201);
       expect(confirm.body.status).toBe("CONFIRMED");
@@ -458,7 +457,33 @@ describe("M5a — Pacientes y citas (núcleo)", () => {
       expect(complete.body.status).toBe("COMPLETED");
 
       const history = await prisma.appointmentStatusHistory.findMany({ where: { appointmentId: created.id }, orderBy: { changedAt: "asc" } });
-      expect(history.map((h) => h.toStatus)).toEqual(["PENDING_PAYMENT", "SCHEDULED", "CONFIRMED", "IN_PROGRESS", "COMPLETED"]);
+      expect(history.map((h) => h.toStatus)).toEqual(["SCHEDULED", "CONFIRMED", "IN_PROGRESS", "COMPLETED"]);
+    });
+
+    it("A-11: the practice confirms payment of a pending public booking (pending_payment -> scheduled), and only its own", async () => {
+      const doctor = await registerDoctor();
+      const service = await createService(doctor.accessToken);
+      const patient = await createAdultPatient(doctor.accessToken);
+      const created = await bookAppointment(doctor.accessToken, patient.id, service.id, isoDaysFromNow(10));
+      await prisma.appointment.update({ where: { id: created.id }, data: { status: "PENDING_PAYMENT" } });
+
+      const before = await request(app.getHttpServer()).post(`/appointments/${created.id}/start`).set("Authorization", `Bearer ${doctor.accessToken}`);
+      expect(before.status).toBe(409);
+
+      const intruso = await registerDoctor();
+      const foreign = await request(app.getHttpServer())
+        .post(`/appointments/${created.id}/confirm-payment`)
+        .set("Authorization", `Bearer ${intruso.accessToken}`);
+      expect(foreign.status).toBe(404);
+
+      const paid = await request(app.getHttpServer())
+        .post(`/appointments/${created.id}/confirm-payment`)
+        .set("Authorization", `Bearer ${doctor.accessToken}`);
+      expect(paid.status).toBe(201);
+      expect(paid.body.status).toBe("SCHEDULED");
+
+      const start = await request(app.getHttpServer()).post(`/appointments/${created.id}/start`).set("Authorization", `Bearer ${doctor.accessToken}`);
+      expect(start.status).toBe(201);
     });
 
     it("rejects an invalid transition (409) and leaves the appointment completely unmodified", async () => {
@@ -469,8 +494,11 @@ describe("M5a — Pacientes y citas (núcleo)", () => {
 
       const before = await prisma.appointment.findUniqueOrThrow({ where: { id: created.id } });
 
-      // pending_payment -> in_progress no está en la tabla de la spec.
-      const res = await request(app.getHttpServer()).post(`/appointments/${created.id}/start`).set("Authorization", `Bearer ${doctor.accessToken}`);
+      // scheduled -> completed no está en la tabla de la spec.
+      const res = await request(app.getHttpServer())
+        .post(`/appointments/${created.id}/complete`)
+        .set("Authorization", `Bearer ${doctor.accessToken}`)
+        .send({ justification: "Intento de cerrar una cita que no ha iniciado." });
       expect(res.status).toBe(409);
       expect(res.body.error.code).toBe("APPOINTMENT_TRANSITION_INVALID");
 
@@ -486,12 +514,80 @@ describe("M5a — Pacientes y citas (núcleo)", () => {
       const service = await createService(doctor.accessToken);
       const patient = await createAdultPatient(doctor.accessToken);
       const created = await bookAppointment(doctor.accessToken, patient.id, service.id, isoDaysFromNow(10));
-      await appointmentService.confirmPayment(created.id, doctor.userId);
       await appointmentService.start(created.id, doctor.userId);
       await appointmentService.complete(created.id, doctor.userId, "Consulta realizada, nota pendiente de captura.");
 
       const res = await request(app.getHttpServer()).post(`/appointments/${created.id}/confirm`).set("Authorization", `Bearer ${doctor.accessToken}`);
       expect(res.status).toBe(409);
+    });
+  });
+
+  // Pedido explícito del usuario (2026-10-27): POST /appointments/walk-in
+  // — "iniciar consulta sin cita" y "iniciar consulta desde agenda"
+  // deben llegar a LA MISMA pantalla, así que ambas necesitan una
+  // Appointment real.
+  describe("POST /appointments/walk-in — consulta sin cita como cita real para AHORA MISMO", () => {
+    it("crea la cita directo en IN_PROGRESS, sin pasar por scheduled/confirmed", async () => {
+      const doctor = await registerDoctor();
+      await createService(doctor.accessToken);
+      const patient = await createAdultPatient(doctor.accessToken);
+
+      const res = await request(app.getHttpServer())
+        .post("/appointments/walk-in")
+        .set("Authorization", `Bearer ${doctor.accessToken}`)
+        .send({ patientId: patient.id });
+      expect(res.status).toBe(201);
+      expect(res.body.status).toBe("IN_PROGRESS");
+      expect(res.body.patientId).toBe(patient.id);
+
+      const history = await prisma.appointmentStatusHistory.findMany({ where: { appointmentId: res.body.id as string } });
+      expect(history).toHaveLength(1);
+      expect(history[0]?.toStatus).toBe("IN_PROGRESS");
+      expect(history[0]?.fromStatus).toBeNull();
+    });
+
+    it("422 NO_SERVICE_CONFIGURED si el médico no tiene ningún servicio activo", async () => {
+      const doctor = await registerDoctor();
+      const patient = await createAdultPatient(doctor.accessToken);
+
+      const res = await request(app.getHttpServer())
+        .post("/appointments/walk-in")
+        .set("Authorization", `Bearer ${doctor.accessToken}`)
+        .send({ patientId: patient.id });
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("NO_SERVICE_CONFIGURED");
+    });
+
+    it("R4: 403 CARE_RELATIONSHIP_REQUIRED para un paciente sin vínculo con este médico", async () => {
+      const owner = await registerDoctor();
+      const ownerPatient = await createAdultPatient(owner.accessToken);
+      const other = await registerDoctor();
+      await createService(other.accessToken);
+
+      const res = await request(app.getHttpServer())
+        .post("/appointments/walk-in")
+        .set("Authorization", `Bearer ${other.accessToken}`)
+        .send({ patientId: ownerPatient.id });
+      expect(res.status).toBe(403);
+      expect(res.body.error.code).toBe("CARE_RELATIONSHIP_REQUIRED");
+    });
+
+    it("la cita sin cita ya en IN_PROGRESS funciona con el resto de la máquina de estados (completar sin nota)", async () => {
+      const doctor = await registerDoctor();
+      await createService(doctor.accessToken);
+      const patient = await createAdultPatient(doctor.accessToken);
+
+      const created = await request(app.getHttpServer())
+        .post("/appointments/walk-in")
+        .set("Authorization", `Bearer ${doctor.accessToken}`)
+        .send({ patientId: patient.id });
+
+      const complete = await request(app.getHttpServer())
+        .post(`/appointments/${created.body.id}/complete`)
+        .set("Authorization", `Bearer ${doctor.accessToken}`)
+        .send({ justification: "Consulta sin cita cerrada sin nota, prueba." });
+      expect(complete.status).toBe(201);
+      expect(complete.body.status).toBe("COMPLETED");
     });
   });
 
@@ -501,7 +597,6 @@ describe("M5a — Pacientes y citas (núcleo)", () => {
       const service = await createService(doctor.accessToken);
       const patient = await createAdultPatient(doctor.accessToken);
       const created = await bookAppointment(doctor.accessToken, patient.id, service.id, isoDaysFromNow(10));
-      await appointmentService.confirmPayment(created.id, doctor.userId);
 
       const res = await request(app.getHttpServer())
         .post(`/appointments/${created.id}/cancel`)
@@ -520,7 +615,6 @@ describe("M5a — Pacientes y citas (núcleo)", () => {
       await prisma.doctor.update({ where: { id: doctorRecord.id }, data: { minBookingNoticeMinutes: 0 } });
       const startsAt = new Date(Date.now() + 10 * 60 * 60 * 1000).toISOString();
       const created = await bookAppointment(doctor.accessToken, patient.id, service.id, startsAt);
-      await appointmentService.confirmPayment(created.id, doctor.userId);
 
       const res = await request(app.getHttpServer())
         .post(`/appointments/${created.id}/cancel`)
@@ -537,7 +631,6 @@ describe("M5a — Pacientes y citas (núcleo)", () => {
       await prisma.doctor.update({ where: { id: doctorRecord.id }, data: { minBookingNoticeMinutes: 0 } });
       const startsAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
       const created = await bookAppointment(doctor.accessToken, patient.id, service.id, startsAt);
-      await appointmentService.confirmPayment(created.id, doctor.userId);
 
       const res = await request(app.getHttpServer())
         .post(`/appointments/${created.id}/cancel`)
@@ -554,7 +647,6 @@ describe("M5a — Pacientes y citas (núcleo)", () => {
       await prisma.doctor.update({ where: { id: doctorRecord.id }, data: { minBookingNoticeMinutes: 0 } });
       const startsAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
       const created = await bookAppointment(doctor.accessToken, patient.id, service.id, startsAt);
-      await appointmentService.confirmPayment(created.id, doctor.userId);
 
       const res = await request(app.getHttpServer())
         .post(`/appointments/${created.id}/cancel`)
@@ -573,7 +665,6 @@ describe("M5a — Pacientes y citas (núcleo)", () => {
 
       const startsAt = new Date(Date.now() + 10 * 60 * 60 * 1000).toISOString(); // 10h: 50% bajo la política default
       const created = await bookAppointment(doctor.accessToken, patient.id, service.id, startsAt);
-      await appointmentService.confirmPayment(created.id, doctor.userId);
 
       // El médico cambia su política DESPUÉS de crear la cita — a 100%
       // de reembolso siempre. La cita ya creada no debe verse afectada.
@@ -598,7 +689,6 @@ describe("M5a — Pacientes y citas (núcleo)", () => {
       const service = await createService(doctor.accessToken);
       const patient = await createAdultPatient(doctor.accessToken);
       const created = await bookAppointment(doctor.accessToken, patient.id, service.id, isoDaysFromNow(10));
-      await appointmentService.confirmPayment(created.id, doctor.userId);
 
       const res = await request(app.getHttpServer())
         .post(`/appointments/${created.id}/reschedule`)
@@ -618,7 +708,6 @@ describe("M5a — Pacientes y citas (núcleo)", () => {
       const service = await createService(doctor.accessToken);
       const patient = await createAdultPatient(doctor.accessToken);
       let current = await bookAppointment(doctor.accessToken, patient.id, service.id, isoDaysFromNow(10));
-      await appointmentService.confirmPayment(current.id, doctor.userId);
 
       for (let i = 0; i < 2; i++) {
         const res = await request(app.getHttpServer())
@@ -681,7 +770,10 @@ describe("M5a — Pacientes y citas (núcleo)", () => {
       const patient = await createAdultPatient(doctor.accessToken);
       const created = await bookAppointment(doctor.accessToken, patient.id, service.id, isoDaysFromNow(10));
 
-      await prisma.appointment.update({ where: { id: created.id }, data: { paymentDeadlineAt: new Date(Date.now() - 1000) } });
+      await prisma.appointment.update({
+        where: { id: created.id },
+        data: { status: "PENDING_PAYMENT", paymentDeadlineAt: new Date(Date.now() - 1000) },
+      });
 
       const releasedCount = await appointmentService.releaseExpiredPendingPayments();
       expect(releasedCount).toBeGreaterThanOrEqual(1);
@@ -690,12 +782,29 @@ describe("M5a — Pacientes y citas (núcleo)", () => {
       expect(after.status).toBe("CANCELLED_BY_PATIENT");
     });
 
+    it("A-11: releases a pending public booking whose start time already passed, and leaves future ones alone", async () => {
+      const doctor = await registerDoctor();
+      const service = await createService(doctor.accessToken);
+      const patient = await createAdultPatient(doctor.accessToken);
+      const past = await bookAppointment(doctor.accessToken, patient.id, service.id, isoDaysFromNow(10));
+      const future = await bookAppointment(doctor.accessToken, patient.id, service.id, isoDaysFromNow(12));
+      await prisma.appointment.update({
+        where: { id: past.id },
+        data: { status: "PENDING_PAYMENT", startsAt: new Date(Date.now() - 120 * 60_000), endsAt: new Date(Date.now() - 90 * 60_000) },
+      });
+      await prisma.appointment.update({ where: { id: future.id }, data: { status: "PENDING_PAYMENT" } });
+
+      await appointmentService.releasePastPendingPayments();
+
+      expect((await prisma.appointment.findUniqueOrThrow({ where: { id: past.id } })).status).toBe("CANCELLED_BY_PATIENT");
+      expect((await prisma.appointment.findUniqueOrThrow({ where: { id: future.id } })).status).toBe("PENDING_PAYMENT");
+    });
+
     it("marks a scheduled appointment as no_show 60 minutes after its end time", async () => {
       const doctor = await registerDoctor();
       const service = await createService(doctor.accessToken);
       const patient = await createAdultPatient(doctor.accessToken);
       const created = await bookAppointment(doctor.accessToken, patient.id, service.id, isoDaysFromNow(10));
-      await appointmentService.confirmPayment(created.id, doctor.userId);
 
       // startsAt/endsAt must stay ordered (the EXCLUDE constraint's
       // tstzrange requires lower <= upper) — move both into the past.
@@ -784,7 +893,6 @@ describe("M5a — Pacientes y citas (núcleo)", () => {
       const patient = await createAdultPatient(doctor.accessToken);
       const startsAtIso = isoDaysFromNow(15);
       const created = await bookAppointment(doctor.accessToken, patient.id, service.id, startsAtIso);
-      await appointmentService.confirmPayment(created.id, doctor.userId);
 
       const startsAt = new Date(startsAtIso);
       const dayStart = new Date(startsAt);
@@ -811,7 +919,6 @@ describe("M5a — Pacientes y citas (núcleo)", () => {
       const patient = await createAdultPatient(doctor.accessToken);
       const startsAtIso = isoDaysFromNow(16);
       const created = await bookAppointment(doctor.accessToken, patient.id, service.id, startsAtIso);
-      await appointmentService.confirmPayment(created.id, doctor.userId);
 
       await request(app.getHttpServer())
         .post(`/appointments/${created.id}/cancel`)
