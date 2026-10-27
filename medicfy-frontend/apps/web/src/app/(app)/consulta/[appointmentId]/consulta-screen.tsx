@@ -13,6 +13,7 @@ import { ConsultaForm } from "./consulta-form";
 import { useT } from "@/lib/i18n/context";
 import type { MessageKey } from "@/lib/i18n/dictionaries";
 import { ConsultaReadonly } from "./consulta-readonly";
+import { TeleconsultaButton } from "./teleconsulta-button";
 import { EmisionDocumentos } from "@/components/clinical/emision-documentos";
 import { patientFullName, type AppointmentDetail, type EncounterDetail } from "./types";
 
@@ -82,12 +83,12 @@ export function ConsultaScreen({ appointmentId, accessToken }: { appointmentId: 
         return;
       }
 
-      const priorEncounters = await apiFetch<{ status: string }[]>(`/records/patients/${appt.patientId}/encounters`, { accessToken });
-      const encounterType = priorEncounters.some((e) => e.status === "SIGNED") ? "FOLLOW_UP" : "FIRST_VISIT";
+      // M-27: el tipo de encuentro (primera vez / seguimiento) lo decide
+      // el servidor.
       const created = await apiFetch<{ id: string }>(`/records/patients/${appt.patientId}/encounters`, {
         method: "POST",
         accessToken,
-        body: { patientId: appt.patientId, appointmentId, encounterType },
+        body: { patientId: appt.patientId, appointmentId },
       });
       const encounterDetail = await apiFetch<EncounterDetail>(`/records/encounters/${created.id}`, { accessToken });
       setEncounter(encounterDetail);
@@ -111,7 +112,7 @@ export function ConsultaScreen({ appointmentId, accessToken }: { appointmentId: 
     timeline,
     pregnancy,
     activeDiagnoses,
-    isLoading: isLoadingClinical,
+    loadState: clinicalLoadState,
     reload: reloadClinical,
   } = usePatientClinical(appointment?.patientId ?? null, accessToken);
 
@@ -209,10 +210,10 @@ export function ConsultaScreen({ appointmentId, accessToken }: { appointmentId: 
       return;
     }
     try {
-      const todays = await apiFetch<{ id: string; startsAt: string; status: string }[]>("/appointments", { accessToken: accessToken ?? undefined });
-      const next = todays
-        .filter((a) => a.id !== appointmentId && a.status === "CONFIRMED" && new Date(a.startsAt) >= new Date(appointment.startsAt))
-        .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime())[0];
+      // M-27: cuál es la siguiente cita lo decide el servidor.
+      const { next } = await apiFetch<{ next: { id: string } | null }>(`/appointments/${appointmentId}/next`, {
+        accessToken: accessToken ?? undefined,
+      });
       router.push(next ? `/consulta/${next.id}` : "/agenda");
     } catch {
       router.push("/agenda");
@@ -220,58 +221,72 @@ export function ConsultaScreen({ appointmentId, accessToken }: { appointmentId: 
   }
 
   return (
-    // El ancho sobrante pertenece a la nota. Zona 1 (w-72) y Zona 3 (w-96)
-    // muestran contenido de tamaño conocido y no ganan nada con más espacio;
-    // la nota es el único contenido productivo de la pantalla. Antes el tope
-    // era `max-w-6xl` (1152 px) —un ancho de columna de lectura, pensado para
-    // artículos— y con las dos laterales fijas la aritmética dejaba la nota en
-    // 384 px: más angosta que el panel de consulta de al lado, e idéntica en
-    // un monitor de 1440 y en uno de 1920. El tope holgado evita el extremo
-    // opuesto: a 2200 px de main la nota queda en ~1400, todavía legible.
-    <main className="mx-auto flex max-w-[2200px] flex-col gap-6 p-6 lg:flex-row">
-      <ConsultaSidebar
-        patientId={appointment.patientId}
-        patient={appointment.patient}
-        allergies={allergies}
-        medications={medications}
-        historyItems={historyItems}
-        timeline={timeline}
-        pregnancy={pregnancy}
-        activeDiagnoses={activeDiagnoses}
-        isLoadingClinical={isLoadingClinical}
-        encounterId={encounter.id}
-        accessToken={accessToken}
+    // M7 (Teleconsulta, MVP): el botón vive fuera de <main> (fragmento
+    // propio) porque <main> es el landmark de la nota clínica — esta
+    // barra no es contenido de la nota. Pestaña nueva, no navegación:
+    // así el médico no pierde la nota que ya tiene abierta (DOC-06
+    // sigue siendo la pantalla principal; la videollamada es un
+    // enlace de proveedor externo, no un panel integrado — Fase 3,
+    // fuera de este MVP).
+    <>
+      <TeleconsultaButton
+        visible={appointment.modality === "ONLINE" && (phase === "ready" || phase === "readonly")}
+        appointmentId={appointmentId}
       />
-      {phase === "readonly" ? (
-        <div className="flex flex-1 flex-col gap-4">
-          <EmisionDocumentos
-            accessToken={accessToken}
-            encounterId={encounter.id}
-            patientId={appointment.patientId}
-            defaultDiagnosis={encounter.diagnoses.find((d) => d.diagnosisType === "PRINCIPAL")?.description ?? ""}
-            hasPatientInstructions={Boolean(encounter.notes[0]?.patientInstructions)}
-            {...(justSigned ? { onNextPatient: () => void goToNextPatient() } : {})}
-          />
-          <ConsultaReadonly encounter={encounter} patientId={appointment.patientId} historyItems={historyItems} />
-        </div>
-      ) : (
-        <ConsultaForm
-          accessToken={accessToken}
-          encounter={encounter}
+      {/* El ancho sobrante pertenece a la nota. Zona 1 (w-72) y Zona 3 (w-96)
+          muestran contenido de tamaño conocido y no ganan nada con más espacio;
+          la nota es el único contenido productivo de la pantalla. Antes el tope
+          era `max-w-6xl` (1152 px) —un ancho de columna de lectura, pensado para
+          artículos— y con las dos laterales fijas la aritmética dejaba la nota en
+          384 px: más angosta que el panel de consulta de al lado, e idéntica en
+          un monitor de 1440 y en uno de 1920. El tope holgado evita el extremo
+          opuesto: a 2200 px de main la nota queda en ~1400, todavía legible. */}
+      <main className="mx-auto flex max-w-[2200px] flex-col gap-6 p-6 lg:flex-row">
+        <ConsultaSidebar
+          patientId={appointment.patientId}
+          patient={appointment.patient}
+          allergies={allergies}
+          medications={medications}
           historyItems={historyItems}
-          patientBirthDate={appointment.patient.birthDate}
-          onHistoryChanged={reloadClinical}
-          onSigned={() => void handleSigned()}
-          onAbandoned={() => setPhase("abandoned")}
+          timeline={timeline}
+          pregnancy={pregnancy}
+          activeDiagnoses={activeDiagnoses}
+          clinicalLoadState={clinicalLoadState}
+          onRetryClinical={reloadClinical}
+          encounterId={encounter.id}
+          accessToken={accessToken}
         />
-      )}
-      <ConsultaZona3
-        doctorKey={tokenSubject(accessToken)}
-        patientId={appointment.patientId}
-        accessToken={accessToken}
-        birthDate={appointment.patient.birthDate}
-        encounterId={encounter.id}
-      />
-    </main>
+        {phase === "readonly" ? (
+          <div className="flex flex-1 flex-col gap-4">
+            <EmisionDocumentos
+              accessToken={accessToken}
+              encounterId={encounter.id}
+              patientId={appointment.patientId}
+              defaultDiagnosis={encounter.diagnoses.find((d) => d.diagnosisType === "PRINCIPAL")?.description ?? ""}
+              hasPatientInstructions={Boolean(encounter.notes[0]?.patientInstructions)}
+              {...(justSigned ? { onNextPatient: () => void goToNextPatient() } : {})}
+            />
+            <ConsultaReadonly encounter={encounter} patientId={appointment.patientId} historyItems={historyItems} />
+          </div>
+        ) : (
+          <ConsultaForm
+            accessToken={accessToken}
+            encounter={encounter}
+            historyItems={historyItems}
+            patientBirthDate={appointment.patient.birthDate}
+            onHistoryChanged={reloadClinical}
+            onSigned={() => void handleSigned()}
+            onAbandoned={() => setPhase("abandoned")}
+          />
+        )}
+        <ConsultaZona3
+          doctorKey={tokenSubject(accessToken)}
+          patientId={appointment.patientId}
+          accessToken={accessToken}
+          birthDate={appointment.patient.birthDate}
+          encounterId={encounter.id}
+        />
+      </main>
+    </>
   );
 }

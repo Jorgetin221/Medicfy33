@@ -5,9 +5,11 @@ import type { consulta as es } from "../es/consulta";
 // SOAP que un médico anglófono reconoce. "Antecedentes" es
 // "(past) history"; "pronóstico" es "prognosis".
 export const consulta: typeof es = {
+  iniciarNotaNueva: "Start a new note",
+  iniciarTeleconsulta: "Start teleconsultation",
   preparando: "Preparing the consultation…",
   tiempo: "Elapsed: {transcurrido} · target {objetivo}",
-  rebasado: " — over target",
+  rebasado: " · over target",
   emisionAlFirmar: "Prescriptions and orders are issued when you sign the consultation.",
   bloqueada: {
     prefijo: "This appointment is ",
@@ -16,7 +18,7 @@ export const consulta: typeof es = {
   },
   abandonada: {
     prefijo: "This draft for ",
-    sufijo: " has gone more than 72 hours without being signed and was marked abandoned — it can no longer be edited (M8-RN-003).",
+    sufijo: " has gone more than 72 hours without being signed and was marked abandoned; it can no longer be edited (M8-RN-003).",
     ayuda: "Document this consultation as a new note from the patient's record. The appointment stays as it was.",
   },
   volverAgenda: "Back to the schedule",
@@ -34,15 +36,18 @@ export const consulta: typeof es = {
     plan: "Plan",
     indicaciones: "Patient instructions (optional)",
     indicacionesAyuda:
-      "What to do, how to care for themselves, and warning signs — in the patient's own words. Printed as a separate document.",
+      "What to do, how to care for themselves, and warning signs, in the patient's own words. Printed as a separate document.",
     proximaCita: "Suggested follow-up (days, optional)",
     pronostico: "Prognosis (optional)",
   },
   firma: {
+    vitalesCriticosTitulo: "⚠ Vital signs in CRITICAL range",
+    vitalesCriticosCuerpo: "Fields: {campos}. Do you confirm the values entered are correct? The note will be signed with the critical-value mark.",
+    vitalesCriticosConfirmar: "Yes, the values are correct",
     cierraPanel: "Close the prescription/orders panel before signing.",
     firmarYCerrar: "Sign and close consultation",
     confirmarTitulo: "Close this consultation?",
-    advertencia: "Once signed, this consultation cannot be edited — it can only be corrected with a new note (addendum).",
+    advertencia: "Once signed, this consultation cannot be edited: it can only be corrected with a new note (addendum).",
     siCerrar: "Yes, close consultation",
     faltanDatos: "Some required fields are missing. Check the highlighted fields.",
     terminadaTitulo: "Consultation finished",
@@ -68,7 +73,7 @@ export const consulta: typeof es = {
     sinConsultasPrevias: "No previous signed consultations.",
   },
   zona3: {
-    titulo: "Zone 3 — record lookup",
+    titulo: "Zone 3: record lookup",
     cajon: "Lookup panel (drawer)",
     panelConsulta: "Lookup panel",
     expediente: "Record",
@@ -88,7 +93,7 @@ export const consulta: typeof es = {
     },
   },
   lectura: {
-    antecedentesNota: "Past history (§10 — lives on the patient, not on this note)",
+    antecedentesNota: "Past history (§10: lives on the patient, not on this note)",
     sinContenido: "The note's content couldn't be found.",
     exploracionFisica: "Physical examination",
     pronostico: "Prognosis",
@@ -103,5 +108,11 @@ export const consulta: typeof es = {
     CANCELLED_BY_PATIENT: "cancelled by the patient",
     CANCELLED_BY_DOCTOR: "cancelled by the physician",
     NO_SHOW: "no-show",
+  },
+  conflictoBorrador: {
+    titulo: "This draft was saved from another tab or device",
+    cuerpo: "What you wrote here is still backed up on this device. Choose which version to keep.",
+    conservarMia: "Keep this tab's version",
+    usarServidor: "Use the other version",
   },
 };

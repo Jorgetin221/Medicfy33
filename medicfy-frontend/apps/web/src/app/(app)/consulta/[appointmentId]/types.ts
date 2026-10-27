@@ -7,6 +7,9 @@ export interface AppointmentDetail {
   patientId: string;
   doctorId: string;
   status: "PENDING_PAYMENT" | "SCHEDULED" | "CONFIRMED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED_BY_PATIENT" | "CANCELLED_BY_DOCTOR" | "NO_SHOW";
+  // M7 (Teleconsulta, MVP): el botón "Iniciar teleconsulta" solo se
+  // muestra para modalidad ONLINE.
+  modality: "IN_PERSON" | "ONLINE";
   startsAt: string;
   endsAt: string;
   completedWithoutNoteReason: string | null;
@@ -73,6 +76,9 @@ export interface EncounterDetail {
   encounterType: EncounterType;
   status: "DRAFT" | "SIGNED";
   draftContent: Record<string, unknown>;
+  // M-13 / A-20: versión del borrador y última escritura en servidor.
+  draftVersion?: number;
+  updatedAt?: string;
   startedAt: string;
   signedAt: string | null;
   notes: ClinicalNoteRecord[];

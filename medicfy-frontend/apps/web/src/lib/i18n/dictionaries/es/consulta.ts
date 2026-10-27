@@ -2,9 +2,11 @@
 // (CLAUDE.md §6). Terminología clínica estándar: aquí un término mal
 // traducido se lee mal en el momento de prescribir.
 export const consulta = {
+  iniciarNotaNueva: "Iniciar una nota nueva",
+  iniciarTeleconsulta: "Iniciar teleconsulta",
   preparando: "Preparando la consulta…",
   tiempo: "Tiempo transcurrido: {transcurrido} · objetivo {objetivo}",
-  rebasado: " — rebasado",
+  rebasado: " · rebasado",
   emisionAlFirmar: "Receta y órdenes se emiten al firmar la consulta.",
   bloqueada: {
     prefijo: "Esta cita está ",
@@ -13,7 +15,7 @@ export const consulta = {
   },
   abandonada: {
     prefijo: "Este borrador de ",
-    sufijo: " lleva más de 72 horas sin firmarse y se marcó como abandonado — ya no se puede continuar editando (M8-RN-003).",
+    sufijo: " lleva más de 72 horas sin firmarse y se marcó como abandonado; ya no se puede continuar editando (M8-RN-003).",
     ayuda: "Documenta esta consulta como una nota nueva desde el expediente del paciente. La cita queda como estaba.",
   },
   volverAgenda: "Volver a la agenda",
@@ -36,10 +38,13 @@ export const consulta = {
     pronostico: "Pronóstico (opcional)",
   },
   firma: {
+    vitalesCriticosTitulo: "⚠ Signos vitales en rango CRÍTICO",
+    vitalesCriticosCuerpo: "Campos: {campos}. ¿Confirmas que los valores capturados son correctos? La nota se firmará con la marca de valor crítico.",
+    vitalesCriticosConfirmar: "Sí, los valores son correctos",
     cierraPanel: "Cierra el panel de receta/estudios para firmar.",
     firmarYCerrar: "Firmar y cerrar consulta",
     confirmarTitulo: "¿Desea cerrar la consulta?",
-    advertencia: "Una vez firmada, esta consulta no se puede editar — solo corregir con una nota nueva (adenda).",
+    advertencia: "Una vez firmada, esta consulta no se puede editar: solo corregir con una nota nueva (adenda).",
     siCerrar: "Sí, cerrar consulta",
     faltanDatos: "Faltan datos obligatorios para cerrar la consulta. Revisa los campos marcados.",
     terminadaTitulo: "Consulta terminada",
@@ -65,7 +70,7 @@ export const consulta = {
     sinConsultasPrevias: "Sin consultas previas firmadas.",
   },
   zona3: {
-    titulo: "Zona 3 — consulta del expediente",
+    titulo: "Zona 3: consulta del expediente",
     cajon: "Panel de consulta (cajón)",
     panelConsulta: "Panel de consulta",
     expediente: "Expediente",
@@ -89,7 +94,7 @@ export const consulta = {
     },
   },
   lectura: {
-    antecedentesNota: "Antecedentes (§10 — vive en el paciente, no en esta nota)",
+    antecedentesNota: "Antecedentes (§10: vive en el paciente, no en esta nota)",
     sinContenido: "No se encontró el contenido de la nota.",
     exploracionFisica: "Exploración física",
     pronostico: "Pronóstico",
@@ -104,5 +109,12 @@ export const consulta = {
     CANCELLED_BY_PATIENT: "cancelada por el paciente",
     CANCELLED_BY_DOCTOR: "cancelada por el médico",
     NO_SHOW: "no se presentó",
+  },
+  // M-13: dos pestañas sobre el mismo borrador.
+  conflictoBorrador: {
+    titulo: "Este borrador se guardó desde otra pestaña o dispositivo",
+    cuerpo: "Lo que escribiste aquí sigue respaldado en este equipo. Elige qué versión conservar.",
+    conservarMia: "Conservar lo de esta pestaña",
+    usarServidor: "Usar la otra versión",
   },
 };

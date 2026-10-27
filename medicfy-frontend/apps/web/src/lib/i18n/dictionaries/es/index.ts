@@ -9,9 +9,10 @@ import { paraMedicos } from "./paraMedicos";
 import { directorio, verificacionPublica } from "./directorio";
 import { perfilPublico } from "./perfilPublico";
 import { cuenta } from "./cuenta";
-import { agenda, citaNueva } from "./agenda";
+import { agenda, citaNueva, citaReprogramar } from "./agenda";
 import { pacientes, tipoEncuentro } from "./pacientes";
 import { consulta } from "./consulta";
+import { teleconsulta } from "./teleconsulta";
 import { clinico, red } from "./clinico";
 import { perfil } from "./perfil";
 import { disponibilidad } from "./disponibilidad";
@@ -37,9 +38,11 @@ export const es = {
   cuenta,
   agenda,
   citaNueva,
+  citaReprogramar,
   pacientes,
   tipoEncuentro,
   consulta,
+  teleconsulta,
   clinico,
   red,
   perfil,
