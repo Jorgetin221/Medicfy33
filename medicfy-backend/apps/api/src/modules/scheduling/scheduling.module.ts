@@ -10,6 +10,10 @@ import { CareRelationshipService } from "./services/care-relationship.service";
 import { PatientGuardianService } from "./services/patient-guardian.service";
 import { PatientService } from "./services/patient.service";
 import { AppointmentStateMachineService } from "./services/appointment-state-machine.service";
+import { AppointmentSweepService } from "./services/appointment-sweep.service";
+import { TeleconsultationService } from "./services/teleconsultation.service";
+import { VIDEO_PROVIDER_PORT } from "./services/video-provider.port";
+import { DailyVideoProviderAdapter } from "./services/daily-video-provider.adapter";
 import { AvailabilityController } from "./availability.controller";
 import { AvailabilityRulesController } from "./availability-rules.controller";
 import { AvailabilityExceptionsController } from "./availability-exceptions.controller";
@@ -51,6 +55,9 @@ import { PublicBookingController } from "./public-booking.controller";
     PatientGuardianService,
     PatientService,
     AppointmentStateMachineService,
+    AppointmentSweepService,
+    TeleconsultationService,
+    { provide: VIDEO_PROVIDER_PORT, useFactory: () => new DailyVideoProviderAdapter() },
   ],
   // CareRelationshipService: M8/M9/M10 (records/prescriptions/labs)
   // necesitan esto para CareRelationshipGuard (AUTH-RN-001) — mismo

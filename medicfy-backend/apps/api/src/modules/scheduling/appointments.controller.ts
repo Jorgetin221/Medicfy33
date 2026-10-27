@@ -1,5 +1,5 @@
-import { Body, Controller, Get, HttpStatus, Param, Post, Query, Req, UseGuards } from "@nestjs/common";
-import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from "@nestjs/swagger";
+import { Body, Controller, Get, Headers, HttpStatus, Param, Post, Query, Req, UseGuards } from "@nestjs/common";
+import { ApiBearerAuth, ApiHeader, ApiOperation, ApiQuery, ApiResponse, ApiTags } from "@nestjs/swagger";
 import type { Request } from "express";
 import type { Doctor } from "@prisma/client";
 import {
@@ -15,10 +15,12 @@ import {
 } from "@medicfy/contracts";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { ApiException } from "../../common/api-exception";
+import { parseIdempotencyKey } from "../../common/idempotency";
 import { JwtAuthGuard } from "../identity/guards/jwt-auth.guard";
 import type { AuthenticatedRequest } from "../identity/guards/jwt-auth.guard";
 import { SchedulingAuthService } from "./services/scheduling-auth.service";
 import { AppointmentStateMachineService } from "./services/appointment-state-machine.service";
+import { TeleconsultationService } from "./services/teleconsultation.service";
 
 const appointmentListQueryPipe = new ZodValidationPipe(appointmentListQuerySchema);
 
@@ -36,7 +38,8 @@ const appointmentListQueryPipe = new ZodValidationPipe(appointmentListQuerySchem
 export class AppointmentsController {
   constructor(
     private readonly schedulingAuth: SchedulingAuthService,
-    private readonly appointments: AppointmentStateMachineService
+    private readonly appointments: AppointmentStateMachineService,
+    private readonly teleconsultation: TeleconsultationService
   ) {}
 
   @Get()
@@ -53,11 +56,17 @@ export class AppointmentsController {
   @ApiResponse({ status: 201 })
   @ApiResponse({ status: 409, description: "SLOT_TAKEN" })
   @ApiResponse({ status: 422, description: "SLOT_TOO_SOON | OUTSIDE_BOOKING_WINDOW" })
-  async create(@Body(new ZodValidationPipe(appointmentCreateSchema)) body: AppointmentCreateInput, @Req() req: Request) {
+  @ApiHeader({ name: "Idempotency-Key", required: false, description: "A-14: UUID por acción; un reintento devuelve la misma cita" })
+  async create(
+    @Body(new ZodValidationPipe(appointmentCreateSchema)) body: AppointmentCreateInput,
+    @Headers("idempotency-key") idempotencyKeyHeader: string | undefined,
+    @Req() req: Request
+  ) {
     const { user } = req as AuthenticatedRequest;
+    const idempotencyKey = parseIdempotencyKey(idempotencyKeyHeader);
     const doctor = await this.actingDoctor(req);
     const createdVia = doctor.userId === user.sub ? "DOCTOR_PANEL" : "ASSISTANT";
-    return this.appointments.create(doctor.id, user.sub, createdVia, body);
+    return this.appointments.create(doctor.id, user.sub, createdVia, body, idempotencyKey);
   }
 
   @Get(":id")
@@ -65,6 +74,24 @@ export class AppointmentsController {
   async findOne(@Param("id") id: string, @Req() req: Request) {
     await this.assertOwnedByCaller(id, req);
     return this.appointments.findByIdWithDetails(id);
+  }
+
+  // A-11: sin pasarela de pago, el consultorio registra que recibió el
+  // pago de una reserva pública (pending_payment -> scheduled).
+  @Get(":id/next")
+  @ApiOperation({ summary: "M-27: siguiente cita confirmada del día (mismo médico), o null" })
+  async next(@Param("id") id: string, @Req() req: Request) {
+    const appointment = await this.assertOwnedByCaller(id, req);
+    return { next: await this.appointments.findNextConfirmedSameDay(appointment) };
+  }
+
+  @Post(":id/confirm-payment")
+  @ApiOperation({ summary: "pending_payment -> scheduled: el consultorio confirma que recibió el pago" })
+  @ApiResponse({ status: 409, description: "APPOINTMENT_TRANSITION_INVALID" })
+  async confirmPayment(@Param("id") id: string, @Req() req: Request) {
+    const { user } = req as AuthenticatedRequest;
+    await this.assertOwnedByCaller(id, req);
+    return this.appointments.confirmPayment(id, user.sub);
   }
 
   @Post(":id/confirm")
@@ -82,6 +109,15 @@ export class AppointmentsController {
     const { user } = req as AuthenticatedRequest;
     await this.assertOwnedByCaller(id, req);
     return this.appointments.start(id, user.sub);
+  }
+
+  @Post(":id/video-room")
+  @ApiOperation({ summary: "M7 (MVP): genera/recupera el enlace de videollamada de proveedor externo de una cita en línea ya en curso" })
+  @ApiResponse({ status: 409, description: "APPOINTMENT_TRANSITION_INVALID" })
+  @ApiResponse({ status: 422, description: "APPOINTMENT_NOT_TELECONSULTATION" })
+  async openVideoRoom(@Param("id") id: string, @Req() req: Request) {
+    const appointment = await this.assertOwnedByCaller(id, req);
+    return this.teleconsultation.openRoom(appointment);
   }
 
   @Post(":id/complete")

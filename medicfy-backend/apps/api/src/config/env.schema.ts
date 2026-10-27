@@ -19,6 +19,14 @@ const envSchema = z.object({
   // point at the frontend too, flagged, not changed here to avoid
   // touching an already-shipped M1 env contract for an unrelated fix).
   WEB_ORIGIN: z.string().url().default("http://localhost:3000"),
+  // A-16: cuántos proxies inversos hay delante del API (nginx = 1). Sin
+  // valor: 1 en producción (siempre detrás de nginx), 0 en local.
+  TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).optional(),
+  // A-18: Swagger solo fuera de producción, salvo que se active aquí.
+  ENABLE_API_DOCS: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((v) => v === "true"),
   // Fase 8 · Prompt 51 ("El Segundo Lector"). Opcional a propósito: el
   // resto de la aplicación arranca y sirve todo lo demás sin esta
   // clave — ClaudeModelAdapter la lee de forma perezosa y se degrada
@@ -54,14 +62,21 @@ const envSchema = z.object({
   ATLAS_VIEWER_URL: z.string().url().optional(),
   ATLAS_CLIENT_ID: z.string().min(1).optional(),
   ATLAS_CLIENT_SECRET: z.string().min(1).optional(),
+  // M7 (Teleconsulta, MVP). Mismo patrón que ANTHROPIC_API_KEY/ATLAS_*:
+  // opcionales a propósito — DailyVideoProviderAdapter las lee de forma
+  // perezosa y sin ellas solo "Iniciar teleconsulta" se degrada a "no
+  // disponible", el resto de la cita funciona igual.
+  DAILY_API_KEY: z.string().min(1).optional(),
+  DAILY_API_BASE_URL: z.string().url().optional(),
 });
 
-export type Env = z.infer<typeof envSchema>;
+export type Env = Omit<z.infer<typeof envSchema>, "TRUST_PROXY_HOPS"> & { TRUST_PROXY_HOPS: number };
 
 export function validateEnv(raw: Record<string, unknown>): Env {
   const result = envSchema.safeParse(raw);
   if (!result.success) {
     throw new Error(`Invalid environment configuration: ${result.error.message}`);
   }
-  return result.data;
+  const defaultHops = result.data.NODE_ENV === "production" ? 1 : 0;
+  return { ...result.data, TRUST_PROXY_HOPS: result.data.TRUST_PROXY_HOPS ?? defaultHops };
 }
