@@ -14,12 +14,54 @@
 // español por obligación legal (NOM-004, art. 33 del Reglamento de
 // Insumos para la Salud; CLAUDE.md R6).
 export const MESSAGES_EN: Record<string, string> = {
+  "La contraseña no puede pasar de 128 caracteres.":
+    "The password cannot be longer than 128 characters.",
+  "La fecha final debe ser posterior a la inicial.":
+    "The end date must be after the start date.",
+  "El rango de fechas no puede pasar de 60 días.":
+    "The date range cannot exceed 60 days.",
+  "El contenido del archivo no corresponde a su tipo. Vuelve a exportarlo o escanearlo.":
+    "The file content does not match its type. Export or scan it again.",
+  "El registro ya existe.":
+    "The record already exists.",
+  "Registro no encontrado.":
+    "Record not found.",
+  "Otra operación modificó estos datos al mismo tiempo. Intenta de nuevo.":
+    "Another operation changed this data at the same time. Try again.",
+  "Esta cuenta está suspendida. Contacta a soporte.":
+    "This account is suspended. Contact support.",
+  "Tu cuenta de médico está suspendida. Contacta a soporte.":
+    "Your doctor account is suspended. Contact support.",
+  "Documento clínico no encontrado.":
+    "Clinical document not found.",
+  "Solo el médico que inició este documento clínico puede modificarlo, firmarlo o cancelarlo.":
+    "Only the doctor who started this clinical document can edit, sign or cancel it.",
+  "Idempotency-Key debe ser un UUID.":
+    "Idempotency-Key must be a UUID.",
+  "Falta el domicilio profesional completo (calle, municipio y estado). Regístralo en tu consultorio principal desde Perfil antes de emitir.":
+    "Your full professional address (street, municipality and state) is missing. Add it to your main practice location in Profile before issuing.",
+  "Esta Idempotency-Key ya se usó para otra solicitud.":
+    "This Idempotency-Key was already used for a different request.",
+  "Esta cita ya tiene un encuentro.":
+    "This appointment already has an encounter.",
+  "Este borrador se guardó desde otra pestaña o dispositivo. Recarga para ver la versión más reciente.":
+    "This draft was saved from another tab or device. Reload to see the latest version.",
+  "Esta nota fue cancelada; no se puede corregir.":
+    "This note was cancelled; it cannot be corrected.",
+  "El médico bloqueó este horario en su agenda.":
+    "The doctor blocked this time in their schedule.",
+  "Este horario no está dentro de la disponibilidad del médico.":
+    "This time is not within the doctor's availability.",
+  "La verificación en dos pasos ya está activa. Desactívala primero para registrar otro dispositivo.":
+    "Two-step verification is already on. Turn it off first to register another device.",
+  "Contraseña o código incorrectos.":
+    "Incorrect password or code.",
   "Alergia no encontrada.": "Allergy not found.",
   "Analito no encontrado.": "Analyte not found.",
   "Antecedente no encontrado.": "History item not found.",
   "Archivo no encontrado.": "File not found.",
   "Cada estudio lleva su motivo del catálogo (diagnóstico inicial, control, tamizaje, preoperatorio, urgencia) — sin motivo, la orden no se emite.":
-    "Every study carries its reason from the catalog (initial diagnosis, monitoring, screening, preoperative, urgent) — without a reason, the order is not issued.",
+    "Every study carries its reason from the catalog (initial diagnosis, monitoring, screening, preoperative, urgent): without a reason, the order is not issued.",
   "Canal inválido. Usa EMAIL o WHATSAPP.": "Invalid channel. Use EMAIL or WHATSAPP.",
   "Candidata no encontrada.": "Candidate not found.",
   "Captura la FUM o la FPP por ultrasonido.": "Enter the last menstrual period or the ultrasound-estimated due date.",
@@ -39,19 +81,19 @@ export const MESSAGES_EN: Record<string, string> = {
   "Diagnóstico no encontrado para este paciente.": "Diagnosis not found for this patient.",
   "Documento no encontrado.": "Document not found.",
   "El bloque gineco-obstétrico no está habilitado para este paciente — habilítalo explícitamente primero.":
-    "The obstetric and gynecologic block is not enabled for this patient — enable it explicitly first.",
+    "The obstetric and gynecologic block is not enabled for this patient: enable it explicitly first.",
   "El encuentro a ligar no existe o no pertenece a este paciente.":
     "The encounter to link does not exist or does not belong to this patient.",
   "El encuentro clínico no existe.": "The clinical encounter does not exist.",
   "El enlace del documento venció o no es válido — pide uno nuevo.":
-    "The document link has expired or is not valid — request a new one.",
+    "The document link has expired or is not valid: request a new one.",
   "El medicamento anclado no existe en el catálogo.": "The anchored medication does not exist in the catalog.",
   "El paciente de la ruta no coincide con el del cuerpo.": "The patient in the route does not match the one in the body.",
   "El paciente tiene una alergia registrada a uno de estos medicamentos. El bloqueo solo se libera capturando una justificación clínica, que queda registrada y firmada en el expediente.":
     "The patient has a recorded allergy to one of these medications. The block is only lifted by entering a clinical justification, which is recorded and signed into the patient's record.",
   "El registro de embarazo requiere sexo al nacer F.": "Recording a pregnancy requires sex at birth F.",
   "El término destino debe estar activo — no se puede fusionar hacia un término obsoleto o ya fusionado.":
-    "The target term must be active — you cannot merge into an obsolete or already merged term.",
+    "The target term must be active: you cannot merge into an obsolete or already merged term.",
   "El término destino debe existir, estar activo y ser del mismo dominio que la solicitud.":
     "The target term must exist, be active, and belong to the same domain as the request.",
   "Embarazo no encontrado para esta paciente.": "Pregnancy not found for this patient.",
@@ -60,6 +102,7 @@ export const MESSAGES_EN: Record<string, string> = {
   "Especialidad no encontrada en el catálogo.": "Specialty not found in the catalog.",
   "Esta cita cambió de estado antes de poder reagendarla.":
     "This appointment changed status before it could be rescheduled.",
+  "Esta cita no es de modalidad en línea.": "This appointment is not online-modality.",
   "Esta cita no se puede reagendar en su estado actual.": "This appointment cannot be rescheduled in its current status.",
   "Esta cita ya alcanzó el máximo de reagendas (2).": "This appointment has reached the maximum number of reschedules (2).",
   "Esta cédula profesional ya está registrada en otra cuenta.":
@@ -79,7 +122,7 @@ export const MESSAGES_EN: Record<string, string> = {
   "Este bloqueo afecta citas ya agendadas. Cancélalas o reagéndalas antes de crear el bloqueo.":
     "This block affects appointments that are already booked. Cancel or reschedule them before creating the block.",
   "Este borrador lleva más de 72 horas sin firmarse y se marcó como abandonado — no se pueden emitir documentos.":
-    "This draft has gone more than 72 hours without being signed and was marked abandoned — no documents can be issued.",
+    "This draft has gone more than 72 hours without being signed and was marked abandoned: no documents can be issued.",
   "Este borrador lleva más de 72 horas sin firmarse y se marcó como abandonado.":
     "This draft has gone more than 72 hours without being signed and was marked abandoned.",
   "Este correo ya está registrado. Si ya tienes cuenta, inicia sesión; si quieres añadir un rol, contacta a soporte.":
@@ -101,21 +144,23 @@ export const MESSAGES_EN: Record<string, string> = {
   "Excepción no encontrada.": "Exception not found.",
   "Extracción no encontrada.": "Extraction not found.",
   "Hay interacciones GRAVES entre lo prescrito y/o la medicación vigente — confirma explícitamente para continuar.":
-    "There are SEVERE interactions between what is prescribed and/or the current medication — confirm explicitly to continue.",
+    "There are SEVERE interactions between what is prescribed and/or the current medication: confirm explicitly to continue.",
   "Indica el término existente al que se fusiona.": "Specify the existing term to merge into.",
   "Instancia de protocolo no encontrada.": "Protocol instance not found.",
   "Invitación inválida o expirada.": "Invalid or expired invitation.",
   "La cita cambió de estado antes de completar esta transición.":
     "The appointment changed status before this transition could complete.",
   "La nota firmada no capturó indicaciones al paciente — no hay documento que emitir.":
-    "The signed note recorded no patient instructions — there is no document to issue.",
+    "The signed note recorded no patient instructions: there is no document to issue.",
   "La nota no existe o no pertenece a este encuentro.": "The note does not exist or does not belong to this encounter.",
   "La nota que se intenta corregir no existe o no pertenece a este encuentro.":
     "The note you are trying to correct does not exist or does not belong to this encounter.",
   "La paciente ya tiene un embarazo activo registrado — ciérralo antes de registrar otro.":
-    "This patient already has an active pregnancy recorded — close it before recording another.",
+    "This patient already has an active pregnancy recorded: close it before recording another.",
   "La receta de origen de una línea heredada no existe o no pertenece a este paciente y médico.":
     "The source prescription of a carried-over line does not exist or does not belong to this patient and physician.",
+  "La teleconsulta solo está disponible mientras la consulta está en curso.":
+    "Teleconsultation is only available while the consultation is in progress.",
   "Las indicaciones se emiten desde una nota firmada de este paciente.":
     "Instructions are issued from a signed note for this patient.",
   "Medicamento no encontrado.": "Medication not found.",
@@ -211,7 +256,7 @@ export const MESSAGES_EN: Record<string, string> = {
 export const MESSAGE_PATTERNS_EN: { pattern: RegExp; en: (m: RegExpMatchArray) => string }[] = [
   {
     pattern: /^Formato no permitido — solo se aceptan PDF, JPG o PNG\.$/,
-    en: () => "Format not allowed — only PDF, JPG or PNG are accepted.",
+    en: () => "Format not allowed: only PDF, JPG or PNG are accepted.",
   },
   {
     pattern: /^"(.+)" es equivalente, tras normalizar, al término existente "(.+)" \(id (.+)\) en el dominio "(.+)"\.$/,
@@ -227,7 +272,7 @@ export const MESSAGE_PATTERNS_EN: { pattern: RegExp; en: (m: RegExpMatchArray) =
   },
   {
     pattern: /^"(.+)" ya existe en el catálogo como "(.+)" — úsalo directamente\.$/,
-    en: (m) => `"${m[1]}" already exists in the catalog as "${m[2]}" — use it directly.`,
+    en: (m) => `"${m[1]}" already exists in the catalog as "${m[2]}": use it directly.`,
   },
   {
     pattern: /^Aprobar exige la clave del término nuevo y su sistema de codificación \(o "PROPIETARIO"\)\.$/,
@@ -239,7 +284,7 @@ export const MESSAGE_PATTERNS_EN: { pattern: RegExp; en: (m: RegExpMatchArray) =
   },
   {
     pattern: /^"(.+)" ya existe en el catálogo — búscalo y selecciónalo en vez de agregarlo de nuevo\.$/,
-    en: (m) => `"${m[1]}" already exists in the catalog — search for it and select it instead of adding it again.`,
+    en: (m) => `"${m[1]}" already exists in the catalog: search for it and select it instead of adding it again.`,
   },
   {
     pattern: /^El atajo Alt\+(.+) ya está asignado a "(.+)"\.$/,
@@ -251,11 +296,11 @@ export const MESSAGE_PATTERNS_EN: { pattern: RegExp; en: (m: RegExpMatchArray) =
   },
   {
     pattern: /^Hay (.+) antecedente\(s\) heredados de plantilla sin revisar — revísalos antes de firmar\.$/,
-    en: (m) => `There are ${m[1]} history item(s) inherited from a template that are unreviewed — review them before signing.`,
+    en: (m) => `There are ${m[1]} history item(s) inherited from a template that are unreviewed: review them before signing.`,
   },
   {
     pattern: /^Hay signos vitales en rango CRÍTICO \((.+)\) — confirma explícitamente que son correctos antes de firmar\.$/,
-    en: (m) => `There are vital signs in the CRITICAL range (${m[1]}) — confirm explicitly that they are correct before signing.`,
+    en: (m) => `There are vital signs in the CRITICAL range (${m[1]}): confirm explicitly that they are correct before signing.`,
   },
   {
     pattern: /^Código\(s\) CIE-10 inexistentes en el catálogo: (.+)\.$/,
@@ -275,7 +320,7 @@ export const MESSAGE_PATTERNS_EN: { pattern: RegExp; en: (m: RegExpMatchArray) =
   },
   {
     pattern: /^El agente "(.+)" no existe en el catálogo de alergias — solicítalo al curador\.$/,
-    en: (m) => `Agent "${m[1]}" does not exist in the allergy catalog — request it from the curator.`,
+    en: (m) => `Agent "${m[1]}" does not exist in the allergy catalog: request it from the curator.`,
   },
   {
     pattern: /^(.+): el valor mínimo permitido es (.+)\.$/,
