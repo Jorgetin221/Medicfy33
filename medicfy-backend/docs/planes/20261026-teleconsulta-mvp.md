@@ -33,20 +33,20 @@
 
 ## Pasos de implementación
 
-1. [ ] Contrato `teleconsultation.schema.ts` (backend y frontend, `packages/contracts`).
-2. [ ] Backend: puerto + adaptador Daily.co + `TeleconsultationService` + endpoint + wiring en `scheduling.module.ts` + env + pruebas unitarias (adaptador con `fetch` falso, servicio con puerto falso).
-3. [ ] Backend: prueba de integración del endpoint (`POST /appointments/:id/video-room`) — caso ONLINE+IN_PROGRESS, caso IN_PERSON (422), caso no iniciada (409).
-4. [ ] Mock (`dev-server.mjs`): endpoint equivalente + `modality` en las citas semilla.
-5. [ ] Frontend: botón en `consulta-screen.tsx`, pantalla nueva `/teleconsulta/[appointmentId]`, i18n es/en, pruebas.
-6. [ ] Documentación: `.env.example` con `DAILY_API_KEY`/`DAILY_API_BASE_URL` comentadas.
+1. [x] Contrato `teleconsultation.schema.ts` (backend y frontend, `packages/contracts`).
+2. [x] Backend: puerto + adaptador Daily.co + `TeleconsultationService` + endpoint + wiring en `scheduling.module.ts` + env + pruebas unitarias (adaptador con `fetch` falso, servicio con puerto falso).
+3. [x] Backend: prueba de integración del endpoint (`POST /appointments/:id/video-room`) — caso ONLINE+IN_PROGRESS, caso IN_PERSON (422), caso no iniciada (409).
+4. [x] Mock (`dev-server.mjs`): endpoint equivalente + `modality` en las citas semilla.
+5. [x] Frontend: botón en `consulta-screen.tsx` (extraído a `teleconsulta-button.tsx`), pantalla nueva `/teleconsulta/[appointmentId]`, i18n es/en, pruebas.
+6. [x] Documentación: `.env.example` con `DAILY_API_KEY`/`DAILY_API_BASE_URL` comentadas.
 
 ## Criterios de aceptación
 
-- [ ] CA-1: una cita `ONLINE` en curso (`IN_PROGRESS`) muestra el botón "Iniciar teleconsulta" en DOC-06; una cita `IN_PERSON` no lo muestra.
-- [ ] CA-2: `POST /appointments/:id/video-room` sin `DAILY_API_KEY` configurada responde `{ kind: "unavailable", reason: "NOT_CONFIGURED" }`, nunca un error 500.
-- [ ] CA-3: `POST /appointments/:id/video-room` sobre una cita `IN_PERSON` responde 422; sobre una cita que no está `IN_PROGRESS` responde 409.
-- [ ] CA-4: dos llamadas sucesivas al mismo `appointmentId` devuelven el mismo enlace (idempotente).
-- [ ] CA-5: la pantalla `/teleconsulta/[id]` muestra sus 4 estados (cargando, error, sin conexión, listo) más "no disponible".
+- [x] CA-1: una cita `ONLINE` en curso (`IN_PROGRESS`) muestra el botón "Iniciar teleconsulta" en DOC-06; una cita `IN_PERSON` no lo muestra.
+- [x] CA-2: `POST /appointments/:id/video-room` sin `DAILY_API_KEY` configurada responde `{ kind: "unavailable", reason: "NOT_CONFIGURED" }`, nunca un error 500.
+- [x] CA-3: `POST /appointments/:id/video-room` sobre una cita `IN_PERSON` responde 422; sobre una cita que no está `IN_PROGRESS` responde 409.
+- [x] CA-4: dos llamadas sucesivas al mismo `appointmentId` devuelven el mismo enlace (idempotente).
+- [x] CA-5: la pantalla `/teleconsulta/[id]` muestra sus 4 estados (cargando, error, sin conexión, listo) más "no disponible".
 
 ## Plan de pruebas
 
@@ -59,3 +59,26 @@
 
 - `PENDIENTE(jorge)`: elegir Daily.co vs. LiveKit Cloud en definitivo y dar de alta las credenciales reales (§12.5 del documento de especificación ya lo deja como insumo abierto de costos). Este plan implementa contra Daily.co (API REST más simple para "solo enlace generado"), detrás de un puerto — cambiar de proveedor es una sola clase nueva.
 - `PENDIENTE(jorge)`: consentimiento explícito de grabación (M7) no se modela todavía — la grabación queda bloqueada por completo en vez de "apagada por defecto", hasta que exista ese flujo de consentimiento.
+
+## Resultado final
+
+**Estado:** Completado.
+**Commits incluidos:**
+- `docs(planes): plan de implementación para teleconsulta-mvp`
+- `feat(contracts): agregar esquema de resultado de sala de teleconsulta` (backend y frontend)
+- `feat(scheduling): generar enlace de teleconsulta de proveedor externo`
+- `test(scheduling): integración de POST /appointments/:id/video-room`
+- `feat(mock): agregar POST /appointments/:id/video-room al mock server`
+- `fix(i18n): traducir los mensajes de error nuevos de teleconsultación`
+- `feat(frontend): botón "Iniciar teleconsulta" y pantalla de videollamada`
+
+**Pruebas:**
+- Backend unitarias: 10 nuevas (`daily-video-provider.adapter.spec.ts`, `teleconsultation.service.spec.ts`) — en verde. Suite completa de unitarias del backend (excluyendo integración, que requiere Postgres): 185/185 en verde, sin regresiones.
+- Backend integración: `m7-teleconsultation.integration.spec.ts` escrita (4 casos) — **no ejecutable en este entorno de trabajo** (sin Docker/Postgres disponible aquí, igual que el resto de `*.integration.spec.ts` de este repo); typecheck y lint en verde.
+- Frontend: 8 nuevas (`teleconsulta-button.spec.tsx`, `teleconsulta-screen.spec.tsx`) — en verde. Suite completa de Vitest del frontend: 65/65 en verde, sin regresiones. Typecheck y lint en verde en ambos monorepos.
+- Verificación manual: mock server + `next dev` levantados en este entorno; `POST /appointments/apt-3/video-room` devuelve 409 antes de `/start`, `unavailable/NOT_CONFIGURED` después de `/start` (sin `DAILY_API_KEY` local), y `apt-1` (IN_PERSON) devuelve 422. Ambas rutas (`/consulta/apt-3`, `/teleconsulta/apt-3`) compilan y responden 200 en Next dev. **No se hizo clic-a-clic en un navegador real** (no hay herramienta de navegador habilitada en esta sesión) — la verificación visual fina (posicionamiento del botón, aspecto del iframe) queda pendiente de una pasada manual del equipo.
+- E2E (Playwright): no se escribió — requeriría credenciales reales de Daily.co (R7), fuera de este alcance.
+
+**Notas para el equipo:**
+- Las dos `PENDIENTE(jorge)` de la sección anterior siguen abiertas: proveedor definitivo (Daily.co vs. LiveKit) y flujo de consentimiento de grabación.
+- La prueba de integración nueva no corrió en este entorno por falta de Postgres — correrla en CI/local antes de confiar en que pasa.
