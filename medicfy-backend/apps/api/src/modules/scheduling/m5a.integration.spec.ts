@@ -546,16 +546,55 @@ describe("M5a — Pacientes y citas (núcleo)", () => {
       expect(history[0]?.fromStatus).toBeNull();
     });
 
-    it("422 NO_SERVICE_CONFIGURED si el médico no tiene ningún servicio activo", async () => {
+    // Pedido explícito del usuario (2026-10-27): sin pantalla de gestión
+    // de servicios en frontend, bloquear walk-in por falta de servicio
+    // dejaba a todo médico nuevo sin forma de usar esta función en
+    // producción. En vez de rechazar, se crea un servicio por defecto.
+    it("crea un servicio 'Consulta general' por defecto si el médico no tiene ninguno, y la cita se crea igual", async () => {
       const doctor = await registerDoctor();
       const patient = await createAdultPatient(doctor.accessToken);
+      const doctorRecord = await prisma.doctor.findUniqueOrThrow({ where: { userId: doctor.userId } });
 
       const res = await request(app.getHttpServer())
         .post("/appointments/walk-in")
         .set("Authorization", `Bearer ${doctor.accessToken}`)
         .send({ patientId: patient.id });
-      expect(res.status).toBe(422);
-      expect(res.body.error.code).toBe("NO_SERVICE_CONFIGURED");
+      expect(res.status).toBe(201);
+      expect(res.body.status).toBe("IN_PROGRESS");
+
+      const services = await prisma.doctorService.findMany({ where: { doctorId: doctorRecord.id } });
+      expect(services).toHaveLength(1);
+      expect(services[0]).toMatchObject({
+        name: "Consulta general",
+        serviceType: "FOLLOW_UP",
+        durationMinutes: 30,
+        priceMxnCents: 0,
+        isActive: true,
+      });
+      expect(res.body.serviceId).toBe(services[0]?.id);
+    });
+
+    it("reutiliza el servicio por defecto ya creado en vez de duplicarlo en un segundo walk-in", async () => {
+      const doctor = await registerDoctor();
+      const patientA = await createAdultPatient(doctor.accessToken);
+      const patientB = await createAdultPatient(doctor.accessToken);
+      const doctorRecord = await prisma.doctor.findUniqueOrThrow({ where: { userId: doctor.userId } });
+
+      const first = await request(app.getHttpServer())
+        .post("/appointments/walk-in")
+        .set("Authorization", `Bearer ${doctor.accessToken}`)
+        .send({ patientId: patientA.id });
+      expect(first.status).toBe(201);
+
+      const second = await request(app.getHttpServer())
+        .post("/appointments/walk-in")
+        .set("Authorization", `Bearer ${doctor.accessToken}`)
+        .send({ patientId: patientB.id });
+      expect(second.status).toBe(201);
+      expect(second.body.serviceId).toBe(first.body.serviceId);
+
+      const services = await prisma.doctorService.findMany({ where: { doctorId: doctorRecord.id } });
+      expect(services).toHaveLength(1);
     });
 
     it("R4: 403 CARE_RELATIONSHIP_REQUIRED para un paciente sin vínculo con este médico", async () => {

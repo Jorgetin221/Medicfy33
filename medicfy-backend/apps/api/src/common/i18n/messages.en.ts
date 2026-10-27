@@ -66,8 +66,6 @@ export const MESSAGES_EN: Record<string, string> = {
   "Candidata no encontrada.": "Candidate not found.",
   "Captura la FUM o la FPP por ultrasonido.": "Enter the last menstrual period or the ultrasound-estimated due date.",
   "Cita no encontrada.": "Appointment not found.",
-  "Configura al menos un servicio en tu perfil antes de iniciar una consulta sin cita.":
-    "Set up at least one service in your profile before starting a walk-in consultation.",
   "Consultorio no encontrado.": "Practice location not found.",
   "Contraseña incorrecta.": "Incorrect password.",
   "Código de verificación inválido.": "Invalid verification code.",

@@ -254,22 +254,31 @@ export class AppointmentStateMachineService {
       );
     }
 
-    const service = await this.prisma.doctorService.findFirst({ where: { doctorId, isActive: true }, orderBy: { createdAt: "asc" } });
-    if (!service) {
-      throw new ApiException(
-        "NO_SERVICE_CONFIGURED",
-        "Configura al menos un servicio en tu perfil antes de iniciar una consulta sin cita.",
-        HttpStatus.UNPROCESSABLE_ENTITY
-      );
-    }
+    let service = await this.prisma.doctorService.findFirst({ where: { doctorId, isActive: true }, orderBy: { createdAt: "asc" } });
 
     const doctor = await this.prisma.doctor.findUniqueOrThrow({ where: { id: doctorId } });
     const policy = resolveCancellationPolicy(doctor.cancellationPolicy);
     const startsAt = new Date();
-    const endsAt = new Date(startsAt.getTime() + service.durationMinutes * 60_000);
 
     try {
       return await this.prisma.$transaction(async (tx) => {
+        // Sin pantalla de gestión de servicios en frontend, exigir uno
+        // configurado bloqueaba walk-in para todo médico nuevo. Se crea
+        // dentro de esta misma transacción (nunca huérfano si el resto
+        // falla) y se reutiliza en los siguientes walk-in del médico.
+        if (!service) {
+          service = await tx.doctorService.create({
+            data: {
+              doctorId,
+              serviceType: "FOLLOW_UP",
+              name: "Consulta general",
+              durationMinutes: 30,
+              priceMxnCents: 0,
+              isActive: true,
+            },
+          });
+        }
+        const endsAt = new Date(startsAt.getTime() + service.durationMinutes * 60_000);
         const appointment = await tx.appointment.create({
           data: {
             patientId,

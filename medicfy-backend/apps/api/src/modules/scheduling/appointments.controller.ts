@@ -74,7 +74,6 @@ export class AppointmentsController {
   @Post("walk-in")
   @ApiOperation({ summary: "Crea una cita para AHORA MISMO y la deja en IN_PROGRESS — 'iniciar consulta sin cita' usa este camino para llegar a la misma pantalla que la agenda" })
   @ApiResponse({ status: 201 })
-  @ApiResponse({ status: 422, description: "NO_SERVICE_CONFIGURED" })
   async createWalkIn(@Body(new ZodValidationPipe(walkInAppointmentCreateSchema)) body: WalkInAppointmentCreateInput, @Req() req: Request) {
     const { user } = req as AuthenticatedRequest;
     const doctor = await this.actingDoctor(req);
