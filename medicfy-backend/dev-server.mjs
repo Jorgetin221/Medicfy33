@@ -241,6 +241,7 @@ let appointments = [
     startsAt: `${todayYMD}T15:00:00.000Z`,
     endsAt: `${todayYMD}T15:30:00.000Z`,
     status: "CONFIRMED",
+    modality: "IN_PERSON",
     completedWithoutNoteReason: null,
     patient: {
       id: "pat-1",
@@ -261,6 +262,7 @@ let appointments = [
     startsAt: `${todayYMD}T16:30:00.000Z`,
     endsAt: `${todayYMD}T17:15:00.000Z`,
     status: "SCHEDULED",
+    modality: "IN_PERSON",
     completedWithoutNoteReason: null,
     patient: {
       id: "pat-2",
@@ -281,6 +283,10 @@ let appointments = [
     startsAt: `${todayYMD}T18:00:00.000Z`,
     endsAt: `${todayYMD}T18:20:00.000Z`,
     status: "CONFIRMED",
+    // Modalidad en línea: ésta es la cita de prueba para "Iniciar
+    // teleconsulta" en el entorno de desarrollo.
+    modality: "ONLINE",
+    videoRoomUrl: null,
     completedWithoutNoteReason: null,
     patient: {
       id: "pat-3",
@@ -783,13 +789,60 @@ async function openAtlasSession(patientId, user) {
   }
 }
 
+// ── M7 Teleconsulta (port mínimo de DailyVideoProviderAdapter) ──
+// DAILY_API_KEY/DAILY_API_BASE_URL, si existen en .env (ver .env.example).
+function dailyConfigured() {
+  return Boolean(process.env.DAILY_API_KEY);
+}
+
+async function dailyCall(method, path, body) {
+  const base = (process.env.DAILY_API_BASE_URL || 'https://api.daily.co/v1').replace(/\/+$/, '');
+  const r = await fetch(`${base}${path}`, {
+    method,
+    headers: { Authorization: `Bearer ${process.env.DAILY_API_KEY}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+  if (!r.ok) throw Object.assign(new Error(`daily ${path} ${r.status}`), { status: r.status });
+  return r.json();
+}
+
+// Enlace generado (§7 M7, MVP): nombre de sala determinista por cita,
+// grabación bloqueada por completo (sin flujo de consentimiento).
+async function openDailyRoom(apt) {
+  if (apt.videoRoomUrl) return { kind: 'ok', room: { url: apt.videoRoomUrl } };
+  if (!dailyConfigured()) return { kind: 'unavailable', reason: 'NOT_CONFIGURED' };
+  const name = `medicfy-${apt.id}`;
+  try {
+    let room;
+    try {
+      room = await dailyCall('POST', '/rooms', {
+        name,
+        privacy: 'public',
+        properties: { enable_recording: false, exp: Math.floor(new Date(apt.endsAt).getTime() / 1000) },
+      });
+    } catch (e) {
+      if (e.status !== 400) throw e;
+      room = await dailyCall('GET', `/rooms/${encodeURIComponent(name)}`);
+    }
+    apt.videoRoomUrl = room.url;
+    apt.videoProviderRef = room.name;
+    return { kind: 'ok', room: { url: room.url } };
+  } catch (e) {
+    console.warn(`daily.createRoom falló: ${e.message}`);
+    return { kind: 'unavailable', reason: 'PROVIDER_ERROR' };
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   const parsedUrl = url.parse(req.url, true);
   const pathname = parsedUrl.pathname;
   const method = req.method;
 
   // CORS Headers
-  const origin = req.headers.origin || 'http://localhost:3000';
+  // B-07 (auditoría 2026-10-21): solo orígenes locales, no cualquier
+  // Origin con credenciales.
+  const requestOrigin = req.headers.origin || '';
+  const origin = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(requestOrigin) ? requestOrigin : 'http://localhost:3000';
   res.setHeader('Access-Control-Allow-Origin', origin);
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
@@ -841,7 +894,27 @@ const server = http.createServer(async (req, res) => {
 
   // Routes
   if (pathname === '/health') {
-    return sendJson({ status: "ok" });
+    return sendJson({ status: "ok", reminders: "degraded" });
+  }
+
+  // Auditoría 2026-10-21 (M-33): pantallas nuevas de recuperación de
+  // contraseña e invitación de asistente. El mock no envía correos.
+  if (pathname === '/auth/password/forgot' && method === 'POST') {
+    return sendJson({ sent: true });
+  }
+  if (pathname === '/auth/password/reset' && method === 'POST') {
+    if (!body.token) return sendJson({ error: { code: "PASSWORD_RESET_TOKEN_INVALID", message: "Enlace inválido o expirado.", details: {}, request_id: null } }, 400);
+    return sendJson({ reset: true });
+  }
+  if (pathname === '/doctors/me/assistants/accept' && method === 'POST') {
+    return sendJson({ accepted: true });
+  }
+  // A-27: desactivar MFA exige contraseña y código.
+  if (pathname === '/auth/mfa/disable' && method === 'POST') {
+    if (!body.password || !body.code) {
+      return sendJson({ error: { code: "VALIDATION_ERROR", message: "Contraseña y código son obligatorios.", details: {}, request_id: null } }, 400);
+    }
+    return sendJson({ disabled: true });
   }
 
   if (pathname === '/auth/login' && method === 'POST') {
@@ -999,7 +1072,11 @@ const server = http.createServer(async (req, res) => {
       doctorId: "doc-1",
       startsAt: body.startsAt,
       endsAt: body.endsAt || new Date(new Date(body.startsAt).getTime() + 30 * 60000).toISOString(),
-      status: "CONFIRMED",
+      // A-11: la cita que agenda el consultorio nace en SCHEDULED.
+      status: "SCHEDULED",
+      serviceId: body.serviceId || "srv-1",
+      modality: body.modality || "IN_PERSON",
+      videoRoomUrl: null,
       completedWithoutNoteReason: null,
       patient: patients.find(p => p.id === body.patientId) || patients[0],
       service: { id: body.serviceId || "srv-1", name: "Consulta General", durationMinutes: 30 },
@@ -1009,6 +1086,18 @@ const server = http.createServer(async (req, res) => {
     return sendJson(newApt, 201);
   }
 
+  // M-27: siguiente cita confirmada del día (la decide el servidor).
+  if (pathname.match(/^\/appointments\/[^\/]+\/next$/) && method === 'GET') {
+    const id = pathname.split('/')[2];
+    const current = appointments.find(a => a.id === id);
+    const next = current
+      ? appointments
+          .filter(a => a.id !== id && a.status === 'CONFIRMED' && a.startsAt >= current.startsAt && a.startsAt.slice(0, 10) === current.startsAt.slice(0, 10))
+          .sort((a, b) => a.startsAt.localeCompare(b.startsAt))[0]
+      : undefined;
+    return sendJson({ next: next ? { id: next.id } : null });
+  }
+
   if (pathname.startsWith('/appointments/') && method === 'GET') {
     const id = pathname.split('/')[2];
     const apt = appointments.find(a => a.id === id);
@@ -1016,7 +1105,27 @@ const server = http.createServer(async (req, res) => {
     return sendJson(appointments[0]);
   }
 
-  if (pathname.match(/^\/appointments\/[^\/]+\/(start|confirm|complete|cancel)$/) && method === 'POST') {
+  // M-33: reprogramar = cancelar la original + nueva cita ligada.
+  if (pathname.match(/^\/appointments\/[^\/]+\/reschedule$/) && method === 'POST') {
+    const id = pathname.split('/')[2];
+    const apt = appointments.find(a => a.id === id);
+    if (!apt) return sendJson({ error: { code: "APPOINTMENT_NOT_FOUND", message: "Cita no encontrada.", details: {}, request_id: null } }, 404);
+    apt.status = body.rescheduledAsRole === 'DOCTOR' ? 'CANCELLED_BY_DOCTOR' : 'CANCELLED_BY_PATIENT';
+    const startsAt = body.newStartsAt;
+    const created = {
+      ...apt,
+      id: `apt-${Date.now()}`,
+      startsAt,
+      endsAt: new Date(new Date(startsAt).getTime() + 30 * 60000).toISOString(),
+      status: "SCHEDULED",
+      rescheduledFromId: apt.id,
+      encounter: null
+    };
+    appointments.push(created);
+    return sendJson(created, 201);
+  }
+
+  if (pathname.match(/^\/appointments\/[^\/]+\/(start|confirm|confirm-payment|complete|cancel|no-show)$/) && method === 'POST') {
     const parts = pathname.split('/');
     const id = parts[2];
     const action = parts[3];
@@ -1029,11 +1138,26 @@ const server = http.createServer(async (req, res) => {
           apt.encounter = { id: created.id, status: "DRAFT", encounterType: "FOLLOW_UP" };
         }
       } else if (action === 'confirm') apt.status = 'CONFIRMED';
+      else if (action === 'confirm-payment') apt.status = 'SCHEDULED';
+      else if (action === 'no-show') apt.status = 'NO_SHOW';
       else if (action === 'complete') apt.status = 'COMPLETED';
       else if (action === 'cancel') apt.status = 'CANCELLED';
       return sendJson(apt);
     }
     return sendJson({ ok: true });
+  }
+
+  // M7 (MVP) — mismo contrato que AppointmentsController.openVideoRoom
+  // (teleconsultationRoomOutcomeSchema). Habla con la API real de
+  // Daily.co si DAILY_API_KEY está en .env; si no, responde "no
+  // disponible" igual que el backend real sin credenciales.
+  if (pathname.match(/^\/appointments\/[^\/]+\/video-room$/) && method === 'POST') {
+    const id = pathname.split('/')[2];
+    const apt = appointments.find(a => a.id === id);
+    if (!apt) return sendError('APPOINTMENT_NOT_FOUND', 'Cita no encontrada.', 404);
+    if (apt.modality !== 'ONLINE') return sendError('APPOINTMENT_NOT_TELECONSULTATION', 'Esta cita no es de modalidad en línea.', 422);
+    if (apt.status !== 'IN_PROGRESS') return sendError('APPOINTMENT_TRANSITION_INVALID', 'La teleconsulta solo está disponible mientras la consulta está en curso.', 409);
+    return sendJson(await openDailyRoom(apt));
   }
 
   if (pathname === '/patients' && method === 'GET') {
@@ -1498,6 +1622,11 @@ const server = http.createServer(async (req, res) => {
   const notesTimelineRoute = pathname.match(/^\/records\/patients\/([^\/]+)\/notes-timeline$/);
   if (notesTimelineRoute && method === 'GET') {
     return sendJson(mockNotesTimeline(notesTimelineRoute[1], parsedUrl.query));
+  }
+  // M-23: la búsqueda con filtros en el cuerpo.
+  const notesTimelineSearchRoute = pathname.match(/^\/records\/patients\/([^\/]+)\/notes-timeline\/search$/);
+  if (notesTimelineSearchRoute && method === 'POST') {
+    return sendJson(mockNotesTimeline(notesTimelineSearchRoute[1], body || {}));
   }
 
   if (method === 'GET' && (
@@ -2001,6 +2130,7 @@ const server = http.createServer(async (req, res) => {
   return sendJson({ ok: true });
 });
 
-server.listen(PORT, '0.0.0.0', () => {
+// B-07: solo en esta máquina, no en la red local.
+server.listen(PORT, '127.0.0.1', () => {
   console.log(`🚀 Medicfy Mock API Server running on http://localhost:${PORT}`);
 });
