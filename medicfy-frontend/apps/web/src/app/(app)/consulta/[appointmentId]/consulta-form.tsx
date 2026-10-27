@@ -91,6 +91,7 @@ export function ConsultaForm({
   onSigned,
   onAbandoned,
   onClosedWithoutNote,
+  insideModal = false,
 }: {
   accessToken: string;
   // M5-RN-006 ("cerrar sin nota"): necesita la cita, no solo el
@@ -106,6 +107,15 @@ export function ConsultaForm({
   onSigned: () => void;
   onAbandoned: () => void;
   onClosedWithoutNote: () => void;
+  // Pedido explícito del usuario (2026-10-27): este mismo formulario se
+  // monta también dentro del modal de teleconsulta (consulta-screen.tsx).
+  // La barra de firma de abajo es `fixed` al viewport real en la
+  // pantalla normal (a propósito: debe verse siempre, empezando donde
+  // termina el rail de navegación — ver --app-rail-width). Dentro del
+  // modal no hay rail que esquivar y `fixed` se saldría de la caja del
+  // modal, así que ahí se vuelve `sticky` al contenedor con scroll que
+  // ya la envuelve (consulta-screen.tsx).
+  insideModal?: boolean;
 }) {
   const t = useT();
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
@@ -472,7 +482,14 @@ export function ConsultaForm({
   return (
     <>
       {confirmDialog}
-      <div className="flex flex-1 flex-col gap-6 pb-24">
+      <div className={insideModal ? "flex h-full flex-col" : "flex flex-1 flex-col gap-6 pb-24"}>
+        {/* Pantalla normal: estos campos son hijos directos de arriba
+            (gap-6 ya los separa) y la página entera hace scroll —
+            `contents` los deja así, sin crear una caja nueva. Dentro del
+            modal: este div pasa a ser el único que hace scroll, así el
+            footer de abajo queda fuera, siempre visible, sin dejar
+            espacio muerto cuando la nota es corta. */}
+        <div className={insideModal ? "flex flex-1 flex-col gap-6 overflow-y-auto p-6" : "contents"}>
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-gray-300 bg-white p-3">
           <div>
             <p className="text-base font-medium text-brand-900">{t(ENCOUNTER_TYPE_LABEL_KEY[encounter.encounterType])}</p>
@@ -675,10 +692,22 @@ export function ConsultaForm({
           </FieldWrapper>
 
         </form>
+        </div>
 
-        {/* Empieza donde termina el rail (app-nav.tsx, --app-rail-width):
-            con inset-x-0 tapaba Perfil, idioma y Cerrar sesión. */}
-        <div ref={footerRef} className="fixed bottom-0 left-0 right-0 z-20 border-t border-gray-300 bg-white p-4 md:left-[var(--app-rail-width,0px)]">
+        {/* Pantalla normal: fixed al viewport, empezando donde termina el
+            rail (app-nav.tsx, --app-rail-width) — con inset-x-0 tapaba
+            Perfil, idioma y Cerrar sesión. Dentro del modal de
+            teleconsulta: fuera del contenedor con scroll de arriba, así
+            que queda fijo al fondo del panel sin necesitar `fixed` ni el
+            hueco del rail (ahí no hay rail que esquivar). */}
+        <div
+          ref={footerRef}
+          className={
+            insideModal
+              ? "shrink-0 border-t border-gray-300 bg-white p-4"
+              : "fixed bottom-0 left-0 right-0 z-20 border-t border-gray-300 bg-white p-4 md:left-[var(--app-rail-width,0px)]"
+          }
+        >
           <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-2">
             <div className="flex items-center gap-3">
               <IndicadorGuardado state={saveState} lastSavedAt={lastSavedAt} />

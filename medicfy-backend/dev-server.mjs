@@ -806,11 +806,32 @@ async function dailyCall(method, path, body) {
   return r.json();
 }
 
+// Pedido explícito del usuario (2026-10-27): Daily.co pide tarjeta de
+// crédito para seguir aunque el uso quepa en su tier gratuito — sin
+// DAILY_API_KEY, en vez de "no disponible" se cae a Jitsi Meet público
+// (meet.jit.si, operado por 8x8): gratis, sin API key, sin tarjeta, sin
+// llamada HTTP que hacer — el cuarto nace solo cuando el primer
+// participante entra a la URL. Mismo nombre determinista que Daily.
+//
+// PENDIENTE(jorge): meet.jit.si es el servidor PÚBLICO de la
+// comunidad — no es HIPAA-ready, no hay BAA con 8x8 (la especificación
+// §4 pide Daily.co o LiveKit Cloud, HIPAA-ready). Sirve como fallback
+// gratuito de desarrollo/pruebas; para producción con pacientes reales
+// hace falta Daily.co con tarjeta o un Jitsi autoalojado con el
+// acuerdo correspondiente.
+function openJitsiRoom(apt) {
+  const name = `medicfy-${apt.id}`;
+  const roomUrl = `https://meet.jit.si/${name}`;
+  apt.videoRoomUrl = roomUrl;
+  apt.videoProviderRef = name;
+  return { kind: 'ok', room: { url: roomUrl } };
+}
+
 // Enlace generado (§7 M7, MVP): nombre de sala determinista por cita,
 // grabación bloqueada por completo (sin flujo de consentimiento).
 async function openDailyRoom(apt) {
   if (apt.videoRoomUrl) return { kind: 'ok', room: { url: apt.videoRoomUrl } };
-  if (!dailyConfigured()) return { kind: 'unavailable', reason: 'NOT_CONFIGURED' };
+  if (!dailyConfigured()) return openJitsiRoom(apt);
   const name = `medicfy-${apt.id}`;
   try {
     let room;
@@ -1798,6 +1819,12 @@ const server = http.createServer(async (req, res) => {
         plan: body.plan || encounters[encId].draftContent.plan || "",
         prognosis: body.prognosis || null,
         patientInstructions: body.patientInstructions || null,
+        // El backend real siempre incluye esta relación vía Prisma
+        // (`include: { labResults: true }`, clinical-encounter.service.ts)
+        // — vacía si no hay ninguno vinculado, nunca `undefined`. Sin
+        // esto, ConsultaReadonly truena en `note.labResults.length`
+        // justo al firmar y pasar a la vista de solo lectura.
+        labResults: [],
         createdAt: new Date().toISOString()
       });
       if (Array.isArray(body.diagnoses)) {

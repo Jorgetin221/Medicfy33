@@ -5,15 +5,18 @@ import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api-client";
 import { tokenSubject } from "@/lib/jwt-claims";
 import { usePatientClinical } from "@/lib/use-patient-clinical";
+import { flushEncounterDraft } from "@/lib/use-encounter-autosave";
 import { LoadingState, ErrorState, Card } from "@/components/ui/states";
 import { Button } from "@/components/ui/button";
+import { Modal } from "@/components/ui/modal";
 import { ConsultaSidebar } from "./consulta-sidebar";
 import { ConsultaZona3 } from "./consulta-zona3";
 import { ConsultaForm } from "./consulta-form";
 import { useT } from "@/lib/i18n/context";
 import type { MessageKey } from "@/lib/i18n/dictionaries";
 import { ConsultaReadonly } from "./consulta-readonly";
-import { TeleconsultaPanel } from "./teleconsulta-panel";
+import { TeleconsultaButton } from "./teleconsulta-button";
+import { TeleconsultaVideoPane } from "./teleconsulta-video-pane";
 import { EmisionDocumentos } from "@/components/clinical/emision-documentos";
 import { patientFullName, type AppointmentDetail, type EncounterDetail } from "./types";
 
@@ -43,6 +46,13 @@ export function ConsultaScreen({ appointmentId, accessToken }: { appointmentId: 
   // bloque de emisión (receta, órdenes, indicaciones) y el botón de
   // "Siguiente paciente" (prompt 16 — encadenar).
   const [justSigned, setJustSigned] = useState(false);
+  // Pedido explícito del usuario (2026-10-27): la videollamada abre en
+  // un modal con la nota clínica real al lado, no en un panel inline
+  // que empuja la página. El modal remonta la nota en otro lugar del
+  // árbol, así que antes de alternar se fuerza el guardado pendiente
+  // (flushEncounterDraft) — si no, el rebote de 2s del autoguardado
+  // podría perder lo último que escribió el médico.
+  const [callOpen, setCallOpen] = useState(false);
   // React StrictMode (desarrollo) monta/desmonta/remonta este efecto
   // una vez para detectar impurezas — sin este guard, bootstrap()
   // corre dos veces en paralelo y ambas llamadas pueden intentar
@@ -220,78 +230,121 @@ export function ConsultaScreen({ appointmentId, accessToken }: { appointmentId: 
     }
   }
 
-  return (
-    // M7 (Teleconsulta, MVP): el panel vive fuera de <main> (fragmento
-    // propio) porque <main> es el landmark de la nota clínica — esta
-    // sección no es contenido de la nota. Carga el video EN ESTA
-    // MISMA pantalla (pedido explícito del usuario) — nunca navega a
-    // otra página ni pestaña, así el médico nunca pierde la nota.
-    // Disponible en CUALQUIER cita (pedido explícito del usuario,
-    // 2026-10-27): no se restringe a modalidad ONLINE — el médico
-    // puede abrir una videollamada ad hoc aunque la cita se haya
-    // agendado como presencial.
-    <>
-      <TeleconsultaPanel
-        visible={phase === "ready" || phase === "readonly"}
-        appointmentId={appointmentId}
+  // El toggle remonta `centerContent` en otro punto del árbol (ver
+  // abajo): sin este flush, el rebote de 2s del autoguardado podría
+  // perder la última pulsación de tecla antes del cambio de layout.
+  // `encounterId` (no `encounter.id` directo) porque TypeScript no
+  // conserva el `!= null` de arriba dentro de estas funciones anidadas.
+  const encounterId = encounter.id;
+  async function openCall() {
+    await flushEncounterDraft(encounterId);
+    setCallOpen(true);
+  }
+  async function closeCall() {
+    await flushEncounterDraft(encounterId);
+    setCallOpen(false);
+  }
+
+  // Disponible en CUALQUIER cita (pedido explícito del usuario,
+  // 2026-10-27): no se restringe a modalidad ONLINE — el médico puede
+  // abrir una videollamada ad hoc aunque la cita se haya agendado
+  // como presencial.
+  const teleconsultaVisible = phase === "ready" || phase === "readonly";
+
+  // Mismo contenido central en los dos layouts de abajo (normal y en
+  // llamada) — una sola definición para no duplicar el JSX. Nunca se
+  // usan los dos al mismo tiempo: el `callOpen ? ... : ...` de más
+  // abajo decide cuál de los dos layouts está montado.
+  const centerContent =
+    phase === "readonly" ? (
+      <div className="flex flex-1 flex-col gap-4">
+        <EmisionDocumentos
+          accessToken={accessToken}
+          encounterId={encounter.id}
+          patientId={appointment.patientId}
+          defaultDiagnosis={encounter.diagnoses.find((d) => d.diagnosisType === "PRINCIPAL")?.description ?? ""}
+          hasPatientInstructions={Boolean(encounter.notes[0]?.patientInstructions)}
+          {...(justSigned ? { onNextPatient: () => void goToNextPatient() } : {})}
+        />
+        <ConsultaReadonly encounter={encounter} patientId={appointment.patientId} historyItems={historyItems} />
+      </div>
+    ) : (
+      <ConsultaForm
         accessToken={accessToken}
+        appointmentId={appointmentId}
+        encounter={encounter}
+        historyItems={historyItems}
+        patientBirthDate={appointment.patient.birthDate}
+        onHistoryChanged={reloadClinical}
+        onSigned={() => void handleSigned()}
+        onAbandoned={() => setPhase("abandoned")}
+        onClosedWithoutNote={() => router.push("/agenda")}
+        insideModal={callOpen}
       />
-      {/* El ancho sobrante pertenece a la nota. Zona 1 (w-72) y Zona 3 (w-96)
-          muestran contenido de tamaño conocido y no ganan nada con más espacio;
-          la nota es el único contenido productivo de la pantalla. Antes el tope
-          era `max-w-6xl` (1152 px) —un ancho de columna de lectura, pensado para
-          artículos— y con las dos laterales fijas la aritmética dejaba la nota en
-          384 px: más angosta que el panel de consulta de al lado, e idéntica en
-          un monitor de 1440 y en uno de 1920. El tope holgado evita el extremo
-          opuesto: a 2200 px de main la nota queda en ~1400, todavía legible. */}
-      <main className="mx-auto flex max-w-[2200px] flex-col gap-6 p-6 lg:flex-row">
-        <ConsultaSidebar
-          patientId={appointment.patientId}
-          patient={appointment.patient}
-          allergies={allergies}
-          medications={medications}
-          historyItems={historyItems}
-          timeline={timeline}
-          pregnancy={pregnancy}
-          activeDiagnoses={activeDiagnoses}
-          clinicalLoadState={clinicalLoadState}
-          onRetryClinical={reloadClinical}
-          encounterId={encounter.id}
-          accessToken={accessToken}
-        />
-        {phase === "readonly" ? (
-          <div className="flex flex-1 flex-col gap-4">
-            <EmisionDocumentos
-              accessToken={accessToken}
-              encounterId={encounter.id}
-              patientId={appointment.patientId}
-              defaultDiagnosis={encounter.diagnoses.find((d) => d.diagnosisType === "PRINCIPAL")?.description ?? ""}
-              hasPatientInstructions={Boolean(encounter.notes[0]?.patientInstructions)}
-              {...(justSigned ? { onNextPatient: () => void goToNextPatient() } : {})}
-            />
-            <ConsultaReadonly encounter={encounter} patientId={appointment.patientId} historyItems={historyItems} />
+    );
+
+  return (
+    <>
+      {teleconsultaVisible && !callOpen && <TeleconsultaButton onClick={() => void openCall()} />}
+
+      {/* M7 (Teleconsulta, MVP) + pedido explícito del usuario
+          (2026-10-27): la llamada abre en el mismo Modal que ya usa el
+          Atlas 3D (foco/Escape/scroll ya resueltos), con la nota
+          clínica real al lado del video — no un bloc aparte — para
+          que el médico documente sin perder la videollamada de vista. */}
+      <Modal open={callOpen} onClose={() => void closeCall()} title={t("teleconsulta.titulo")} size="full">
+        <div className="flex h-full flex-col lg:flex-row">
+          <TeleconsultaVideoPane appointmentId={appointmentId} accessToken={accessToken} />
+          {/* Fase "readonly" (EmisionDocumentos/ConsultaReadonly): no
+              manejan su propio scroll, así que este div lo hace por
+              ellos. ConsultaForm sí lo maneja internamente cuando
+              `insideModal` (ver consulta-form.tsx) — darle scroll aquí
+              también crearía un doble scroll y el espacio muerto que se
+              estaba viendo detrás del footer. */}
+          <div
+            className={`flex min-h-0 flex-[2] flex-col border-t border-gray-300 lg:border-l lg:border-t-0 ${
+              phase === "readonly" ? "gap-6 overflow-y-auto p-6" : ""
+            }`}
+          >
+            {centerContent}
           </div>
-        ) : (
-          <ConsultaForm
-            accessToken={accessToken}
-            appointmentId={appointmentId}
-            encounter={encounter}
+        </div>
+      </Modal>
+
+      {!callOpen && (
+        // El ancho sobrante pertenece a la nota. Zona 1 (w-72) y Zona 3 (w-96)
+        // muestran contenido de tamaño conocido y no ganan nada con más espacio;
+        // la nota es el único contenido productivo de la pantalla. Antes el tope
+        // era `max-w-6xl` (1152 px) —un ancho de columna de lectura, pensado para
+        // artículos— y con las dos laterales fijas la aritmética dejaba la nota en
+        // 384 px: más angosta que el panel de consulta de al lado, e idéntica en
+        // un monitor de 1440 y en uno de 1920. El tope holgado evita el extremo
+        // opuesto: a 2200 px de main la nota queda en ~1400, todavía legible.
+        <main className="mx-auto flex max-w-[2200px] flex-col gap-6 p-6 lg:flex-row">
+          <ConsultaSidebar
+            patientId={appointment.patientId}
+            patient={appointment.patient}
+            allergies={allergies}
+            medications={medications}
             historyItems={historyItems}
-            patientBirthDate={appointment.patient.birthDate}
-            onHistoryChanged={reloadClinical}
-            onSigned={() => void handleSigned()}
-            onAbandoned={() => setPhase("abandoned")}
-            onClosedWithoutNote={() => router.push("/agenda")}
+            timeline={timeline}
+            pregnancy={pregnancy}
+            activeDiagnoses={activeDiagnoses}
+            clinicalLoadState={clinicalLoadState}
+            onRetryClinical={reloadClinical}
+            encounterId={encounter.id}
+            accessToken={accessToken}
           />
-        )}
-        <ConsultaZona3
-          doctorKey={tokenSubject(accessToken)}
-          patientId={appointment.patientId}
-          accessToken={accessToken}
-          birthDate={appointment.patient.birthDate}
-          encounterId={encounter.id}
-        />
-      </main>
+          {centerContent}
+          <ConsultaZona3
+            doctorKey={tokenSubject(accessToken)}
+            patientId={appointment.patientId}
+            accessToken={accessToken}
+            birthDate={appointment.patient.birthDate}
+            encounterId={encounter.id}
+          />
+        </main>
+      )}
     </>
   );
 }

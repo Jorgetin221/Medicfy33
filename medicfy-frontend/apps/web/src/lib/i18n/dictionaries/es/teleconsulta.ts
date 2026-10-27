@@ -1,10 +1,9 @@
-// M7 (Teleconsulta, MVP): pantalla /teleconsulta/[appointmentId] —
-// incrusta el enlace del proveedor externo (Daily.co); Medicfy no
-// construye WebRTC propio.
+// M7 (Teleconsulta, MVP): modal dentro de DOC-06 (ver
+// teleconsulta-video-pane.tsx) que incrusta el enlace del proveedor
+// externo (Daily.co); Medicfy no construye WebRTC propio.
 export const teleconsulta = {
   titulo: "Teleconsulta",
   cargando: "Conectando con la videollamada…",
-  ocultar: "Ocultar video",
   avisoGrabacion: "Esta llamada no se grabará y no se comparte con nadie fuera de la consulta.",
   proveedorExterno: "La videollamada corre sobre un proveedor externo; Medicfy no almacena su contenido.",
   sinConexion: "Sin conexión a internet",

@@ -14,6 +14,7 @@ import { AppointmentSweepService } from "./services/appointment-sweep.service";
 import { TeleconsultationService } from "./services/teleconsultation.service";
 import { VIDEO_PROVIDER_PORT } from "./services/video-provider.port";
 import { DailyVideoProviderAdapter } from "./services/daily-video-provider.adapter";
+import { JitsiVideoProviderAdapter } from "./services/jitsi-video-provider.adapter";
 import { AvailabilityController } from "./availability.controller";
 import { AvailabilityRulesController } from "./availability-rules.controller";
 import { AvailabilityExceptionsController } from "./availability-exceptions.controller";
@@ -57,7 +58,16 @@ import { PublicBookingController } from "./public-booking.controller";
     AppointmentStateMachineService,
     AppointmentSweepService,
     TeleconsultationService,
-    { provide: VIDEO_PROVIDER_PORT, useFactory: () => new DailyVideoProviderAdapter() },
+    // Pedido explícito del usuario (2026-10-27): Daily.co pide tarjeta
+    // de crédito para seguir aunque entre en su tier gratuito — sin
+    // DAILY_API_KEY se cae a Jitsi (gratis, sin tarjeta) en vez de
+    // degradar la teleconsulta a "no disponible". Ver
+    // jitsi-video-provider.adapter.ts para el porqué no sirve para
+    // producción con pacientes reales.
+    {
+      provide: VIDEO_PROVIDER_PORT,
+      useFactory: () => (process.env.DAILY_API_KEY ? new DailyVideoProviderAdapter() : new JitsiVideoProviderAdapter()),
+    },
   ],
   // CareRelationshipService: M8/M9/M10 (records/prescriptions/labs)
   // necesitan esto para CareRelationshipGuard (AUTH-RN-001) — mismo
