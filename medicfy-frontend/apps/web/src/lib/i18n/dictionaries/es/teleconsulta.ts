@@ -16,4 +16,8 @@ export const teleconsulta = {
     reintentar: "Reintentar",
   },
   errorTitulo: "No se pudo abrir la teleconsulta",
+  asistente: {
+    mostrar: "Mostrar asistente IA",
+    ocultar: "Ocultar asistente IA",
+  },
 };

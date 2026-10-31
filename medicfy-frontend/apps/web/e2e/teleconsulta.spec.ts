@@ -51,3 +51,25 @@ test("abrir la teleconsulta en modal deja la nota clínica real visible y editab
   // De vuelta al layout normal, sin perder lo escrito durante la llamada.
   await expect(page.locator("#chiefComplaint")).toHaveValue(nuevoTexto);
 });
+
+// Pedido explícito del usuario (2026-10-30): el módulo de IA (Asistente)
+// faltaba dentro de la teleconsulta — quedó diferido a propósito en el
+// plan del 2026-10-27. Se agrega como panel colapsable; este spec cubre
+// que el botón lo muestra y monta el mismo componente que ya existe
+// fuera del modal (identificado por su botón "Iniciar IA").
+test("el modal de teleconsulta incluye el asistente de IA como panel colapsable", async ({ page }) => {
+  await login(page);
+  await page.goto(`/consulta/${state.appointmentId}`);
+  await expect(page.locator("#chiefComplaint")).toBeVisible({ timeout: 20_000 });
+
+  await page.getByRole("button", { name: "Iniciar teleconsulta" }).click();
+  const dialog = page.getByRole("dialog", { name: "Teleconsulta" });
+  await expect(dialog).toBeVisible();
+
+  await expect(dialog.getByRole("button", { name: "Iniciar IA" })).not.toBeVisible();
+  await dialog.getByRole("button", { name: "Mostrar asistente IA" }).click();
+  await expect(dialog.getByRole("button", { name: "Iniciar IA" })).toBeVisible();
+
+  await dialog.getByRole("button", { name: "Ocultar asistente IA" }).click();
+  await expect(dialog.getByRole("button", { name: "Iniciar IA" })).not.toBeVisible();
+});

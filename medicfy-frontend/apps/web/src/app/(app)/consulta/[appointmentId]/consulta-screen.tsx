@@ -18,6 +18,7 @@ import { ConsultaReadonly } from "./consulta-readonly";
 import { TeleconsultaButton } from "./teleconsulta-button";
 import { TeleconsultaVideoPane } from "./teleconsulta-video-pane";
 import { EmisionDocumentos } from "@/components/clinical/emision-documentos";
+import { AsistenteTab } from "@/components/clinical/asistente-tab";
 import { patientFullName, type AppointmentDetail, type EncounterDetail } from "./types";
 
 type Phase = "loading" | "ready" | "readonly" | "blocked" | "abandoned" | "error";
@@ -53,6 +54,13 @@ export function ConsultaScreen({ appointmentId, accessToken }: { appointmentId: 
   // (flushEncounterDraft) — si no, el rebote de 2s del autoguardado
   // podría perder lo último que escribió el médico.
   const [callOpen, setCallOpen] = useState(false);
+  // Pedido explícito del usuario (2026-10-30): el módulo de IA
+  // ("Asistente" / El Segundo Lector, ya existente fuera del modal en
+  // ConsultaZona3) faltaba dentro de la teleconsulta — quedó diferido
+  // a propósito en el plan del 2026-10-27 ("sin columna de IA"). Panel
+  // propio, cerrado por omisión: el video y la nota siguen siendo la
+  // prioridad, y el Asistente ya es de disparo manual.
+  const [asistenteOpen, setAsistenteOpen] = useState(false);
   // React StrictMode (desarrollo) monta/desmonta/remonta este efecto
   // una vez para detectar impurezas — sin este guard, bootstrap()
   // corre dos veces en paralelo y ambas llamadas pueden intentar
@@ -295,19 +303,38 @@ export function ConsultaScreen({ appointmentId, accessToken }: { appointmentId: 
       <Modal open={callOpen} onClose={() => void closeCall()} title={t("teleconsulta.titulo")} size="full">
         <div className="flex h-full flex-col lg:flex-row">
           <TeleconsultaVideoPane appointmentId={appointmentId} accessToken={accessToken} />
-          {/* Fase "readonly" (EmisionDocumentos/ConsultaReadonly): no
-              manejan su propio scroll, así que este div lo hace por
-              ellos. ConsultaForm sí lo maneja internamente cuando
-              `insideModal` (ver consulta-form.tsx) — darle scroll aquí
-              también crearía un doble scroll y el espacio muerto que se
-              estaba viendo detrás del footer. */}
-          <div
-            className={`flex min-h-0 flex-[2] flex-col border-t border-gray-300 lg:border-l lg:border-t-0 ${
-              phase === "readonly" ? "gap-6 overflow-y-auto p-6" : ""
-            }`}
-          >
-            {centerContent}
+          <div className="flex min-h-0 flex-[2] flex-col border-t border-gray-300 lg:border-l lg:border-t-0">
+            <div className="flex shrink-0 items-center justify-end border-b border-gray-300 px-4 py-2 sm:px-6">
+              <Button type="button" variant="secondary" onClick={() => setAsistenteOpen((open) => !open)} className="min-h-11">
+                {asistenteOpen ? t("teleconsulta.asistente.ocultar") : t("teleconsulta.asistente.mostrar")}
+              </Button>
+            </div>
+            {/* Fase "readonly" (EmisionDocumentos/ConsultaReadonly): no
+                manejan su propio scroll, así que este div lo hace por
+                ellos. ConsultaForm sí lo maneja internamente cuando
+                `insideModal` (ver consulta-form.tsx) — darle scroll aquí
+                también crearía un doble scroll y el espacio muerto que se
+                estaba viendo detrás del footer. */}
+            <div
+              className={`min-h-0 flex-1 ${
+                phase === "readonly" ? "flex flex-col gap-6 overflow-y-auto p-6" : "flex flex-col"
+              }`}
+            >
+              {centerContent}
+            </div>
           </div>
+          {/* Carga diferida, igual que ConsultaZona3: el Asistente no
+              se monta hasta que el médico lo abre — no compite por
+              espacio con el video mientras no se usa. */}
+          {asistenteOpen && (
+            <div
+              className="flex min-h-[30vh] flex-[2] flex-col gap-3 overflow-y-auto border-t border-gray-300 p-4 lg:min-h-0 lg:border-l lg:border-t-0 lg:p-6"
+              aria-label={t("consulta.zona3.tabs.Asistente")}
+            >
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">{t("consulta.zona3.tabs.Asistente")}</h3>
+              <AsistenteTab encounterId={encounter.id} accessToken={accessToken} />
+            </div>
+          )}
         </div>
       </Modal>
 

@@ -15,4 +15,8 @@ export const teleconsulta: typeof es = {
     reintentar: "Retry",
   },
   errorTitulo: "Couldn't open the teleconsultation",
+  asistente: {
+    mostrar: "Show AI assistant",
+    ocultar: "Hide AI assistant",
+  },
 };
