@@ -17,6 +17,7 @@ import {
   IconShieldNav,
   IconClipboardCheckNav,
   IconMegaphone,
+  IconShareNav,
   IconChevronNav,
   IconLogout,
   IconMenu,
@@ -36,6 +37,10 @@ const NAV_LINKS: { href: string; labelKey: MessageKey; Icon: IconComponent }[] =
   { href: "/auditoria", labelKey: "nav.rail.auditoria", Icon: IconClipboardCheckNav },
   // M2B (spec §7, v2.2): publicaciones del médico y control de audiencia.
   { href: "/publicaciones", labelKey: "nav.rail.publicaciones", Icon: IconMegaphone },
+  // PR-EXP-02 (expediente compartido autorizado por el paciente):
+  // entra a la bandeja ("Mis solicitudes"), igual que Pacientes entra
+  // a la lista — "Solicitar expediente" vive como acción adentro.
+  { href: "/expediente-compartido", labelKey: "nav.rail.expedienteCompartido", Icon: IconShareNav },
 ];
 
 export const ALL_NAV_HREFS = [

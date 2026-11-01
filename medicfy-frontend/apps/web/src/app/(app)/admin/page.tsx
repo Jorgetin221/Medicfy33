@@ -64,6 +64,13 @@ export default function AdminIndexPage() {
         </Card>
       </Link>
 
+      <Link href="/admin/expediente-compartido" className="block">
+        <Card className="transition-colors hover:bg-gray-50">
+          <h2 className="text-lg font-medium text-gray-900">{t("admin.expedienteCompartidoTitulo")}</h2>
+          <p className="mt-1 text-sm text-gray-500">{t("admin.expedienteCompartidoDescripcion")}</p>
+        </Card>
+      </Link>
+
       <Card className="opacity-60">
         <h2 className="text-lg font-medium text-gray-900">{t("admin.breakGlassTitulo")}</h2>
         <p className="mt-1 text-sm text-gray-500">{t("admin.breakGlassDescripcion")}</p>

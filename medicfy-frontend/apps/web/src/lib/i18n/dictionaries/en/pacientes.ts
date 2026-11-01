@@ -47,6 +47,7 @@ export const pacientes: typeof es = {
       recetas: "Prescriptions",
       ordenes: "Orders and results",
       protocolos: "Protocols",
+      compartido: "Shared",
     },
   },
   atlas: {

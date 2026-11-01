@@ -6,6 +6,7 @@ export const nav = {
     disponibilidad: "Disponibilidad",
     auditoria: "Auditoría",
     publicaciones: "Publicaciones",
+    expedienteCompartido: "Expediente compartido",
     administracion: "Administración",
     perfil: "Perfil",
     cerrarSesion: "Cerrar sesión",

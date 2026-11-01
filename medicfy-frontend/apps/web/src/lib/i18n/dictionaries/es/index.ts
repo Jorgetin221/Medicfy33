@@ -18,6 +18,7 @@ import { perfil } from "./perfil";
 import { disponibilidad } from "./disponibilidad";
 import { publicaciones } from "./publicaciones";
 import { admin, auditoria } from "./admin";
+import { expedienteCompartido } from "./expedienteCompartido";
 
 // El diccionario español es el canónico: de su forma se deriva el
 // tipo que obliga al inglés a tener exactamente las mismas claves.
@@ -50,6 +51,7 @@ export const es = {
   publicaciones,
   admin,
   auditoria,
+  expedienteCompartido,
 };
 
 export type Dictionary = typeof es;

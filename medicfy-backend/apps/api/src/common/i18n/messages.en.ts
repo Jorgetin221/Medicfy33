@@ -246,6 +246,27 @@ export const MESSAGES_EN: Record<string, string> = {
   "Verifica tu correo electrónico antes de iniciar sesión.": "Verify your email address before signing in.",
   // Respaldo del filtro cuando algo revienta sin ser ApiException.
   "Ocurrió un error inesperado.": "Something unexpected went wrong.",
+  // PR-EXP-02/03/05 (Bloque 1 — expediente compartido autorizado por el paciente).
+  "No se pudo cancelar la solicitud.": "Couldn't cancel the request.",
+  "Alcanzaste el límite de solicitudes de expediente compartido por hoy.":
+    "You've reached today's limit for shared-record requests.",
+  "Demasiados intentos. Espera antes de pedir un código nuevo.": "Too many attempts. Wait before requesting a new code.",
+  "Ya alcanzaste el máximo de reenvíos. Espera a que el código actual expire.":
+    "You've reached the maximum number of resends. Wait for the current code to expire.",
+  "Código inválido o vencido.": "Invalid or expired code.",
+  "Demasiados intentos. Espera antes de intentar de nuevo.": "Too many attempts. Wait before trying again.",
+  "El alcance autorizado no puede ampliar lo solicitado.": "The authorized scope cannot exceed what was requested.",
+  "La duración autorizada no puede ampliar lo solicitado.": "The authorized duration cannot exceed what was requested.",
+  "Este enlace ya no es válido. Puede que haya vencido o que la solicitud ya se haya respondido.":
+    "This link is no longer valid. It may have expired, or the request may have already been answered.",
+  "Verifica el código antes de continuar.": "Verify the code before continuing.",
+  // PR-EXP-06 — revocación, custodio y admin.
+  "Este enlace ya no es válido o ya no hay accesos vigentes que revocar.":
+    "This link is no longer valid, or there is no active access left to revoke.",
+  "No se encontró ese acceso compartido.": "That shared access was not found.",
+  "Ese acceso ya no está vigente.": "That access is no longer active.",
+  "No tienes acceso a este expediente compartido.": "You don't have access to this shared record.",
+  "Ese alcance no fue autorizado.": "That scope wasn't authorized.",
 };
 
 // Los mensajes que interpolan un valor (nombre de un término, conteo,

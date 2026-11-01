@@ -12,6 +12,11 @@ import {
   renderLabResultAvailable,
   renderPasswordReset,
   renderPrescriptionAvailable,
+  renderRecordShareApproved,
+  renderRecordShareCustodianNotice,
+  renderRecordShareExpiring,
+  renderRecordShareNotAuthorized,
+  renderRecordShareRevoked,
   type RenderedNotification,
 } from "./notification-templates";
 
@@ -105,6 +110,39 @@ describe("notification templates — M12-RN-001 / M12-CA-001 (sin contenido clí
 
   it("restablecimiento de contraseña no lleva contenido clínico", () => {
     assertNoClinicalContent(renderPasswordReset({ recipientFirstName, actionLink: link }));
+  });
+
+  // PR-EXP-06 (expediente compartido): además de "sin palabras
+  // clínicas", RE9 — ninguna lleva el nombre del paciente.
+  it("expediente compartido: avisos a médicos sin contenido clínico ni nombre del paciente (RE9)", () => {
+    const patientName = "María José Peña";
+    const expiresAtLabel = "30 de noviembre de 2026";
+    const rendered = [
+      renderRecordShareApproved({ recipientFirstName, expiresAtLabel, actionLink: link }),
+      renderRecordShareNotAuthorized({ recipientFirstName, actionLink: link }),
+      renderRecordShareRevoked({ recipientFirstName, actionLink: link }),
+      renderRecordShareExpiring({ recipientFirstName, expiresAtLabel, actionLink: link }),
+      renderRecordShareCustodianNotice({
+        recipientFirstName,
+        requesterDisplayName: doctorDisplayName,
+        scope: ["SUMMARY", "SIGNED_NOTES", "RESULTS", "PRESCRIPTIONS", "STUDY_ORDERS"],
+        expiresAtLabel,
+        actionLink: link,
+      }),
+    ];
+    for (const r of rendered) {
+      assertNoClinicalContent(r);
+      expect(`${r.subject} ${r.body}`.includes(patientName)).toBe(false);
+      expect(r.body.includes(link)).toBe(true);
+    }
+  });
+
+  it("expediente compartido: rechazada y vencida sin respuesta son el MISMO mensaje (RE5)", () => {
+    // Una sola plantilla para los dos casos — no hay forma de pasarle
+    // "por qué" no se autorizó, así que el texto no puede distinguirlo.
+    const a = renderRecordShareNotAuthorized({ recipientFirstName, actionLink: link });
+    const b = renderRecordShareNotAuthorized({ recipientFirstName, actionLink: link });
+    expect(a).toEqual(b);
   });
 
   it("toda plantilla incluye el enlace de acción (es la única forma de ver el contenido real)", () => {

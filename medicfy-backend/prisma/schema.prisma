@@ -112,6 +112,14 @@ enum NotificationTemplateCode {
   DOCTOR_VERIFICATION_APPROVED
   DOCTOR_VERIFICATION_REJECTED
   PASSWORD_RESET
+  // PR-EXP-06 (expediente compartido) — avisos a MÉDICOS con cuenta.
+  // El paciente (sin cuenta) se avisa por RecordShareNotificationPort.
+  // NOT_AUTHORIZED cubre rechazada Y vencida sin respuesta (RE5).
+  RECORD_SHARE_APPROVED
+  RECORD_SHARE_NOT_AUTHORIZED
+  RECORD_SHARE_REVOKED
+  RECORD_SHARE_EXPIRING
+  RECORD_SHARE_CUSTODIAN_NOTICE
 
   @@map("notification_template_code")
 }
@@ -162,17 +170,17 @@ model User {
   createdAt              DateTime   @default(now()) @db.Timestamptz(3)
   updatedAt              DateTime   @updatedAt @db.Timestamptz(3)
 
-  roles             UserRole[]
-  consents          Consent[]
-  sessions          Session[]
-  doctor            Doctor?
-  patient           Patient?
-  invitations       AssistantInvitation[] @relation("InvitingDoctor")
-  verificationCodes VerificationCode[]
-  passwordResets    PasswordResetToken[]
-  curatedTerms      ClinicalCatalogTerm[] @relation("CatalogTermCurator")
-  termRequests      CatalogTermRequest[]  @relation("TermRequestRequester")
-  curatedLabReferenceRanges LabReferenceRange[] @relation("LabReferenceRangeCurator")
+  roles                     UserRole[]
+  consents                  Consent[]
+  sessions                  Session[]
+  doctor                    Doctor?
+  patient                   Patient?
+  invitations               AssistantInvitation[]     @relation("InvitingDoctor")
+  verificationCodes         VerificationCode[]
+  passwordResets            PasswordResetToken[]
+  curatedTerms              ClinicalCatalogTerm[]     @relation("CatalogTermCurator")
+  termRequests              CatalogTermRequest[]      @relation("TermRequestRequester")
+  curatedLabReferenceRanges LabReferenceRange[]       @relation("LabReferenceRangeCurator")
   notifications             Notification[]
   notificationAccessTokens  NotificationAccessToken[]
 
@@ -231,19 +239,19 @@ model Consent {
 // inactivity window enforced in application code (30 min for clinical
 // roles, 7 days for patients) using lastUsedAt.
 model Session {
-  id                String    @id @default(uuid())
-  userId            String
-  refreshTokenHash  String    @unique
+  id                       String    @id @default(uuid())
+  userId                   String
+  refreshTokenHash         String    @unique
   // M-04: hash previo a la última rotación, para detectar reúso.
   previousRefreshTokenHash String?
   rotatedAt                DateTime? @db.Timestamptz(3)
-  deviceFingerprint String?
-  ip                String?
-  userAgent         String?
-  createdAt         DateTime  @default(now()) @db.Timestamptz(3)
-  lastUsedAt        DateTime  @default(now()) @db.Timestamptz(3)
-  expiresAt         DateTime  @db.Timestamptz(3)
-  revokedAt         DateTime? @db.Timestamptz(3)
+  deviceFingerprint        String?
+  ip                       String?
+  userAgent                String?
+  createdAt                DateTime  @default(now()) @db.Timestamptz(3)
+  lastUsedAt               DateTime  @default(now()) @db.Timestamptz(3)
+  expiresAt                DateTime  @db.Timestamptz(3)
+  revokedAt                DateTime? @db.Timestamptz(3)
 
   user User @relation(fields: [userId], references: [id])
 
@@ -258,66 +266,66 @@ model Session {
 // immutable once verificationStatus=VERIFIED (AUTH-RN-004, M2-RN-001,
 // M2-CA-002) — enforced in DoctorProfileService, not here.
 model Doctor {
-  id                      String                   @id @default(uuid())
-  userId                  String                   @unique
-  legalFirstName          String
-  legalLastName           String
-  professionalLicense     String                   @unique
-  specialtyLicense        String?
+  id                        String                   @id @default(uuid())
+  userId                    String                   @unique
+  legalFirstName            String
+  legalLastName             String
+  professionalLicense       String                   @unique
+  specialtyLicense          String?
   // M2-RN-006: la cédula de especialidad (recertificación de consejo)
   // puede vencer — el sello "Médico verificado" se degrada cuando
   // pasa esta fecha (calculado al leer, en toPublicDoctorView, no vía
   // job). El recordatorio proactivo a 60 días queda PENDIENTE: exige
   // una cola real (Redis+BullMQ) que hoy no existe en el backend.
-  specialtyLicenseExpiresAt DateTime?              @db.Timestamptz(3)
-  primarySpecialtyId      String?
+  specialtyLicenseExpiresAt DateTime?                @db.Timestamptz(3)
+  primarySpecialtyId        String?
   // M5-RN-007: "el enlace público del médico (/dr/{slug})". Se genera
   // una sola vez al registrarse (auth.service.ts), no editable por el
   // médico en este pase.
-  slug                    String                   @unique
-  displayName             String?
-  photoUrl                String?
-  biography               String?
+  slug                      String                   @unique
+  displayName               String?
+  photoUrl                  String?
+  biography                 String?
   // Parte B §5.1: datos de contacto que aparecen en el encabezado de
   // receta/orden — distintos del correo/teléfono de la cuenta (login),
   // que vive en User. Siempre editables (no son campos legales).
-  professionalPhone       String?
-  professionalEmail       String?
+  professionalPhone         String?
+  professionalEmail         String?
   // Parte B §1.2: "logo o frase de encabezado" — una u otra, nunca las
   // dos a la fuerza. logoUrl/signatureImageUrl guardan el fileKey
   // interno de FileStoragePort (mismo patrón que DoctorDocument.fileKey),
   // no una URL pública real todavía.
-  letterheadPhrase        String?
-  logoUrl                 String?
-  signatureImageUrl       String?
-  secondarySpecialtyIds   String[]                 @default([])
-  yearsExperience         Int?
-  languages               String[]                 @default([])
-  university              String?
-  verificationStatus      DoctorVerificationStatus @default(SUBMITTED)
-  verificationNotes       String?
-  verifiedByUserId        String?
-  verifiedAt              DateTime?                @db.Timestamptz(3)
+  letterheadPhrase          String?
+  logoUrl                   String?
+  signatureImageUrl         String?
+  secondarySpecialtyIds     String[]                 @default([])
+  yearsExperience           Int?
+  languages                 String[]                 @default([])
+  university                String?
+  verificationStatus        DoctorVerificationStatus @default(SUBMITTED)
+  verificationNotes         String?
+  verifiedByUserId          String?
+  verifiedAt                DateTime?                @db.Timestamptz(3)
   // M2-RN-004: needs >=1 active location OR teleconsultation to
   // receive appointments — enforced in AppointmentStateMachineService.create().
-  acceptsTeleconsultation Boolean                  @default(false)
-  acceptsNewPatients      Boolean                  @default(true)
+  acceptsTeleconsultation   Boolean                  @default(false)
+  acceptsNewPatients        Boolean                  @default(true)
   // M4-RN-005: antelación mínima y ventana máxima de agenda,
   // configurables por médico. Editable via PATCH /doctors/me like any
   // other non-legal field (AUTH-RN-004: el médico sí edita "horarios").
-  minBookingNoticeMinutes Int                      @default(120)
-  maxBookingWindowDays    Int                      @default(90)
+  minBookingNoticeMinutes   Int                      @default(120)
+  maxBookingWindowDays      Int                      @default(90)
   // M5-RN-002: "configurable por médico". NULL means the spec's own
   // default applies (>24h 100%, 2-24h 50%, <2h/no-show 0%) — see
   // apps/api/.../cancellation-policy.ts for the shared shape/default,
   // used both here and to build each appointment's immutable
   // snapshot at creation (M5-CA-003).
-  cancellationPolicy      Json?
+  cancellationPolicy        Json?
   // Populated by M6 (billing) — placeholder columns only, per §6.3.
-  subscriptionPlan        String?
-  subscriptionStatus      String?
-  createdAt               DateTime                 @default(now()) @db.Timestamptz(3)
-  updatedAt               DateTime                 @updatedAt @db.Timestamptz(3)
+  subscriptionPlan          String?
+  subscriptionStatus        String?
+  createdAt                 DateTime                 @default(now()) @db.Timestamptz(3)
+  updatedAt                 DateTime                 @updatedAt @db.Timestamptz(3)
 
   user                   User                    @relation(fields: [userId], references: [id])
   primarySpecialty       Specialty?              @relation(fields: [primarySpecialtyId], references: [id])
@@ -337,6 +345,14 @@ model Doctor {
   antecedentesTemplates AntecedentesTemplate[]
   selfAddedMedications  MedicationCatalog[]
 
+  // PR-EXP-01 (expediente compartido): dos relaciones con el mismo
+  // modelo (solicitante y custodio) — nombradas para que Prisma no
+  // las confunda entre sí.
+  recordShareRequestsAsRequester RecordShareRequest[] @relation("RecordShareRequestRequester")
+  recordShareRequestsAsCustodian RecordShareRequest[] @relation("RecordShareRequestCustodian")
+  recordShareGrantsAsRequester   RecordShareGrant[]   @relation("RecordShareGrantRequester")
+  recordShareGrantsAsCustodian   RecordShareGrant[]   @relation("RecordShareGrantCustodian")
+
   @@map("doctors")
 }
 
@@ -352,8 +368,8 @@ model Specialty {
   requiresSpecialtyLicense Boolean  @default(true)
   createdAt                DateTime @default(now()) @db.Timestamptz(3)
 
-  doctors      Doctor[]
-  fieldSchemas SpecialtyFieldSchema[]
+  doctors            Doctor[]
+  fieldSchemas       SpecialtyFieldSchema[]
   treatmentProtocols TreatmentProtocol[]
 
   antecedentesTemplates AntecedentesTemplate[]
@@ -665,25 +681,30 @@ model Patient {
   createdAt                DateTime      @default(now()) @db.Timestamptz(3)
   updatedAt                DateTime      @updatedAt @db.Timestamptz(3)
 
-  user              User?                @relation(fields: [userId], references: [id])
-  guardians         PatientGuardian[]
-  careRelationships CareRelationship[]
-  appointments      Appointment[]
-  allergies         PatientAllergy[]
-  medications       PatientMedication[]
-  historyItems      PatientHistoryItem[]
-  pregnancies       PatientPregnancy[]
-  substanceUses     PatientSubstanceUse[]
-  gynecoHistory     PatientGynecoHistory?
-  vitalSignSets     VitalSignSet[]
-  encounters        ClinicalEncounter[]
-  attachments       ClinicalAttachment[]
-  prescriptions     Prescription[]
-  labOrders         LabOrder[]
-  labResults        LabResult[]
-  labResultAnalytes LabResultAnalyte[]
+  user                User?                     @relation(fields: [userId], references: [id])
+  guardians           PatientGuardian[]
+  careRelationships   CareRelationship[]
+  appointments        Appointment[]
+  allergies           PatientAllergy[]
+  medications         PatientMedication[]
+  historyItems        PatientHistoryItem[]
+  pregnancies         PatientPregnancy[]
+  substanceUses       PatientSubstanceUse[]
+  gynecoHistory       PatientGynecoHistory?
+  vitalSignSets       VitalSignSet[]
+  encounters          ClinicalEncounter[]
+  attachments         ClinicalAttachment[]
+  prescriptions       Prescription[]
+  labOrders           LabOrder[]
+  labResults          LabResult[]
+  labResultAnalytes   LabResultAnalyte[]
   labSheetExtractions LabSheetExtraction[]
-  protocolInstances PatientProtocolInstance[]
+  protocolInstances   PatientProtocolInstance[]
+  // PR-EXP-01 (expediente compartido): sin campo inverso propio en la
+  // tabla (la FK vive en record_share_requests/record_share_grants) —
+  // solo metadata de Prisma para poder consultar en ambos sentidos.
+  recordShareRequests RecordShareRequest[]
+  recordShareGrants   RecordShareGrant[]
 
   @@map("patients")
 }
@@ -767,6 +788,248 @@ model CareRelationship {
   // M-17: llave foránea de lectura frecuente, sin índice propio.
   @@index([patientId, doctorId])
   @@map("care_relationships")
+}
+
+// ---------------------------------------------------------------------------
+// Expediente compartido autorizado por el paciente (Bloque 1 — PR-EXP-01)
+// ---------------------------------------------------------------------------
+// RE1: solo el paciente autoriza — ningún médico, administrador ni proceso
+// automático crea un RecordShareGrant directamente.
+// RE3/RE4: por eso este modelo es NUEVO y no una extensión de
+// CareRelationship/CareRelationshipGuard: ese guard da paridad de
+// lectura+escritura con el médico tratante, sin concepto de alcance
+// parcial — reutilizarlo violaría "mínimo necesario" y "solo lectura"
+// (ver docs/expediente-compartido/00-DESCUBRIMIENTO.md, Q2). El patrón
+// de expiración SÍ se copia de CareRelationship: revisión perezosa de
+// expiresAt al momento del acceso (PR-EXP-05), sin scheduler.
+// RE2 (solo notas FIRMADAS) y el filtro de categorías sensibles se
+// aplican al LEER (PR-EXP-04), no son parte de este modelo de acceso.
+//
+// Adaptación de Q1 (00-DESCUBRIMIENTO.md): Patient es un registro GLOBAL
+// (un solo medicfyId, un solo phoneE164/email) — no existe "el contacto
+// que registró este custodio en particular". Por eso
+// RecordShareChallenge.destinationRef no referencia a un custodio: solo
+// registra qué canal del paciente (único) se usó.
+enum ShareScope {
+  SUMMARY
+  SIGNED_NOTES
+  RESULTS
+  PRESCRIPTIONS
+  STUDY_ORDERS
+
+  @@map("share_scope")
+}
+
+// Primera vez que el esquema usa un arreglo de un enum propio (en vez
+// de String[], como hacen secondarySpecialtyIds/languages) — aquí sí
+// vale la pena: R2 exige catálogo CERRADO para lo que un paciente
+// puede autorizar, y un arreglo de enum lo cierra a nivel de Postgres,
+// no solo en el contrato Zod.
+enum SensitiveCategory {
+  MENTAL_HEALTH
+  HIV_STI
+  REPRODUCTIVE_HEALTH
+  SUBSTANCE_USE
+  GENETIC
+
+  @@map("sensitive_category")
+}
+
+enum RecordShareRequestStatus {
+  PENDING_PATIENT
+  APPROVED
+  DENIED
+  EXPIRED_UNANSWERED
+  CANCELLED_BY_REQUESTER
+
+  @@map("record_share_request_status")
+}
+
+enum RecordShareConsentDecision {
+  APPROVED
+  DENIED
+
+  @@map("record_share_consent_decision")
+}
+
+// Un solo valor hoy (OTP) — enum cerrado y no String para que agregar
+// un segundo método de autenticación del paciente en el futuro sea un
+// cambio de código, no una migración de datos existentes.
+enum RecordShareConsentMethod {
+  OTP
+
+  @@map("record_share_consent_method")
+}
+
+enum RecordShareChallengePurpose {
+  AUTHORIZE
+  REVOKE
+
+  @@map("record_share_challenge_purpose")
+}
+
+enum RecordShareGrantStatus {
+  ACTIVE
+  EXPIRED
+  REVOKED_BY_PATIENT
+  SUSPENDED_BY_ADMIN
+
+  @@map("record_share_grant_status")
+}
+
+// Fase 0 (solicitud): vive PENDING_PATIENT hasta que el paciente
+// decide o pasan 72h. requestedScope/requestedDurationDays son lo que
+// PIDE el médico — el paciente puede reducirlos, nunca ampliarlos
+// (verificado en servidor en PR-EXP-03, no aquí).
+// R7 (FHIR): sin equivalente directo — es la fase previa al Consent;
+// FHIR no modela "solicitud de consentimiento", solo el consentimiento
+// en sí (ver RecordShareConsent).
+model RecordShareRequest {
+  id                    String                   @id @default(uuid())
+  requesterDoctorId     String
+  custodianDoctorId     String
+  patientId             String
+  // 15–500 caracteres, validado en el contrato Zod (no aquí) — mismo
+  // patrón que closeJustification en el flujo de "cerrar sin nota".
+  reason                String
+  requestedScope        ShareScope[]
+  requestedDurationDays Int
+  status                RecordShareRequestStatus @default(PENDING_PATIENT)
+  // Fix post-PR-EXP-01 (2026-10-31, al construir PR-EXP-02): el
+  // prompt maestro (PR-EXP-03) pide un "token opaco de un solo
+  // propósito" para el enlace de autorización — no existía ningún
+  // lugar para guardarlo. Mismo patrón que PasswordResetToken/
+  // AssistantInvitation.token: solo el HASH vive aquí, el token en
+  // claro viaja únicamente en el enlace enviado al paciente. Su
+  // vigencia es la misma que expiresAt (72h) — no hace falta un
+  // campo de expiración propio.
+  linkTokenHash         String                   @unique
+  createdAt             DateTime                 @default(now()) @db.Timestamptz(3)
+  expiresAt             DateTime                 @db.Timestamptz(3)
+
+  requesterDoctor Doctor                 @relation("RecordShareRequestRequester", fields: [requesterDoctorId], references: [id])
+  custodianDoctor Doctor                 @relation("RecordShareRequestCustodian", fields: [custodianDoctorId], references: [id])
+  patient         Patient                @relation(fields: [patientId], references: [id])
+  challenges      RecordShareChallenge[]
+  consent         RecordShareConsent?
+
+  @@index([patientId])
+  @@index([requesterDoctorId, createdAt])
+  @@index([custodianDoctorId, status])
+  @@map("record_share_requests")
+}
+
+// OTP enviado al contacto ÚNICO del Patient (ver nota de adaptación
+// arriba) — nunca al contacto que el solicitante acaba de escribir
+// (RE6). No reutiliza VerificationCode: esa tabla exige un userId de
+// cuenta existente (00-DESCUBRIMIENTO.md Q5) y aquí quien responde el
+// OTP es el paciente desde un enlace público, sin cuenta.
+model RecordShareChallenge {
+  id             String              @id @default(uuid())
+  requestId      String
+  // Fix post-PR-EXP-01 (al construir PR-EXP-06): un OTP de revocación
+  // vive sobre la MISMA solicitud que el de autorización — sin este
+  // campo, un código ya consumido para autorizar contaría como
+  // "verificado" para revocar.
+  purpose        RecordShareChallengePurpose @default(AUTHORIZE)
+  channel        VerificationChannel
+  // Q1: no hay "contacto del custodio" — solo registra qué canal
+  // (EMAIL|PHONE) del Patient único se usó. Nunca una copia del
+  // teléfono/correo (R2/RE9).
+  destinationRef String
+  codeHash       String
+  attempts       Int                 @default(0)
+  resends        Int                 @default(0)
+  expiresAt      DateTime            @db.Timestamptz(3)
+  consumedAt     DateTime?           @db.Timestamptz(3)
+  lockedUntil    DateTime?           @db.Timestamptz(3)
+  createdAt      DateTime            @default(now()) @db.Timestamptz(3)
+
+  request RecordShareRequest @relation(fields: [requestId], references: [id])
+
+  @@index([requestId])
+  @@map("record_share_challenges")
+}
+
+// Evidencia del consentimiento — append-only Y nunca editable (ver
+// GRANT en la migración): un consentimiento no se corrige, se emite
+// uno nuevo si hiciera falta (misma filosofía de R1 que clinical_notes).
+// R7 (FHIR): Consent — requestId→Consent.basedOn (implícito);
+// decision→Consent.status (APPROVED→active, DENIED→rejected);
+// approvedScope→Consent.provision.data (categoría de dato permitida);
+// includedSensitiveCategories→Consent.provision.data adicional (opt-in
+// explícito); durationDays→Consent.provision.period; decidedAt→
+// Consent.dateTime; method/channel→Consent.verification;
+// consentTextVersion+consentTextSha256→Consent.sourceAttachment
+// (versión citada, no el documento completo).
+model RecordShareConsent {
+  id                          String                     @id @default(uuid())
+  requestId                   String                     @unique
+  decision                    RecordShareConsentDecision
+  approvedScope               ShareScope[]
+  includedSensitiveCategories SensitiveCategory[]        @default([])
+  // Fix post-PR-EXP-01 (al construir PR-EXP-03): D-EXP-09 es un
+  // OPT-OUT (incluido por defecto) sobre un dato que PR-EXP-04 deja
+  // explícitamente FUERA de SensitiveCategory.REPRODUCTIVE_HEALTH —
+  // mezclarlo en excludedCategories (un opt-in sobre lo excluido por
+  // defecto) confundiría dos semánticas opuestas en el mismo arreglo.
+  pregnancyExcluded           Boolean                    @default(false)
+  durationDays                Int
+  consentTextVersion          String
+  consentTextSha256           String
+  method                      RecordShareConsentMethod   @default(OTP)
+  channel                     VerificationChannel
+  decidedAt                   DateTime                   @db.Timestamptz(3)
+  // 🔒 LEGAL (D-EXP-12, pendiente de abogado de datos): se guardan
+  // como evidencia del consentimiento, igual que en Consent (M1) —
+  // declarado aquí tal como pide PR-EXP-01 §3, sin inventar el
+  // fundamento legal.
+  ipAddress                   String
+  userAgent                   String
+
+  request RecordShareRequest @relation(fields: [requestId], references: [id])
+  grant   RecordShareGrant?
+
+  @@map("record_share_consents")
+}
+
+// El acceso vigente — lo único que lee PR-EXP-05 en cada request.
+// R7 (FHIR): modela la ventana de vigencia de un Consent ya aprobado;
+// sin recurso FHIR propio (es el "efecto" del Consent, no el Consent
+// mismo) — se declara junto al AuditEvent de SHARE_VIEWED en
+// PR-EXP-05, no aquí.
+model RecordShareGrant {
+  id                 String                 @id @default(uuid())
+  consentId          String                 @unique
+  requesterDoctorId  String
+  custodianDoctorId  String
+  patientId          String
+  scope              ShareScope[]
+  excludedCategories SensitiveCategory[]    @default([])
+  // Ver el mismo fix en RecordShareConsent — se copia al grant porque
+  // PR-EXP-04 (el resumen compartible) lee el GRANT, no el consent.
+  pregnancyExcluded  Boolean                @default(false)
+  // Fix post-PR-EXP-01 (PR-EXP-06): enlace de revocación que recibe el
+  // paciente al aprobar. Mismo patrón que linkTokenHash: solo el hash.
+  revokeTokenHash    String                 @unique
+  startsAt           DateTime               @db.Timestamptz(3)
+  expiresAt          DateTime               @db.Timestamptz(3)
+  status             RecordShareGrantStatus @default(ACTIVE)
+  revokedAt          DateTime?              @db.Timestamptz(3)
+  revokedReason      String?
+
+  consent         RecordShareConsent @relation(fields: [consentId], references: [id])
+  requesterDoctor Doctor             @relation("RecordShareGrantRequester", fields: [requesterDoctorId], references: [id])
+  custodianDoctor Doctor             @relation("RecordShareGrantCustodian", fields: [custodianDoctorId], references: [id])
+  patient         Patient            @relation(fields: [patientId], references: [id])
+
+  // Un grant ACTIVE por tripleta solicitante-custodio-paciente: índice
+  // único PARCIAL (igual que patient_pregnancies_one_active_per_patient),
+  // agregado a mano en la migración — Prisma no expresa WHERE en
+  // @@unique, así que no aparece aquí.
+  @@index([requesterDoctorId, status])
+  @@index([patientId, status])
+  @@map("record_share_grants")
 }
 
 enum AppointmentStatus {
@@ -906,7 +1169,7 @@ model VerificationCode {
   expiresAt  DateTime            @db.Timestamptz(3)
   consumedAt DateTime?           @db.Timestamptz(3)
   // M-02: intentos fallidos contra este código.
-  attempts   Int       @default(0)
+  attempts   Int                 @default(0)
   createdAt  DateTime            @default(now()) @db.Timestamptz(3)
 
   user User @relation(fields: [userId], references: [id])
@@ -1077,56 +1340,56 @@ enum SignatureMethod {
 // evaluado en el momento del acceso — sin scheduler todavía, mismo
 // patrón que CareRelationship/PatientGuardian.
 model ClinicalEncounter {
-  id                 String           @id @default(uuid())
-  patientId          String
-  doctorId           String
-  appointmentId      String?          @unique
-  encounterType      EncounterType
+  id                        String           @id @default(uuid())
+  patientId                 String
+  doctorId                  String
+  appointmentId             String?          @unique
+  encounterType             EncounterType
   // M8-RN-002: aquí vive el autoguardado mientras status=DRAFT — no
   // en clinical_notes, que el GRANT de Postgres ya vuelve
   // verdaderamente append-only (ni siquiera medicfy_app puede
   // UPDATE-earla). ClinicalNote se inserta una sola vez, completa, al
   // firmar (ver ClinicalEncounterService.sign).
-  draftContent       Json             @default("{}")
-  status             EncounterStatus  @default(DRAFT)
-  startedAt          DateTime         @default(now()) @db.Timestamptz(3)
-  endedAt            DateTime?        @db.Timestamptz(3)
-  signedAt           DateTime?        @db.Timestamptz(3)
+  draftContent              Json             @default("{}")
+  status                    EncounterStatus  @default(DRAFT)
+  startedAt                 DateTime         @default(now()) @db.Timestamptz(3)
+  endedAt                   DateTime?        @db.Timestamptz(3)
+  signedAt                  DateTime?        @db.Timestamptz(3)
   // M8-RN-013: "el sistema mide el tiempo entre abrir y firmar cada
   // nota — es la métrica del negocio, no telemetría opcional". Se fija
   // al firmar como signedAt - startedAt, en servidor. Es tiempo de
   // reloj de pared: un borrador retomado días después la infla, y ese
   // caso queda visible en vez de esconderse en un promedio.
-  timeToSignSeconds  Int?
-  signedByUserId     String?
-  signatureMethod    SignatureMethod?
+  timeToSignSeconds         Int?
+  signedByUserId            String?
+  signatureMethod           SignatureMethod?
   // Fase 6 · Prompt 43: "estampa nombre completo, cédula profesional"
   // — snapshot al momento de firmar (R6), nunca resuelto por join
   // después. Mismo patrón que LabOrder.doctorNameSnapshot/
   // doctorLicenseSnapshot.
   signedByLegalNameSnapshot String?
-  signedByLicenseSnapshot  String?
-  contentHashSha256  String?
-  previousHashSha256 String?
-  abandonedAt        DateTime?        @db.Timestamptz(3)
+  signedByLicenseSnapshot   String?
+  contentHashSha256         String?
+  previousHashSha256        String?
+  abandonedAt               DateTime?        @db.Timestamptz(3)
   // M-13: control optimista del autoguardado (se incrementa en cada
   // PATCH del borrador).
-  draftVersion       Int              @default(0)
-  createdAt          DateTime         @default(now()) @db.Timestamptz(3)
-  updatedAt          DateTime         @updatedAt @db.Timestamptz(3)
+  draftVersion              Int              @default(0)
+  createdAt                 DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt                 DateTime         @updatedAt @db.Timestamptz(3)
 
-  patient       Patient                 @relation(fields: [patientId], references: [id])
-  doctor        Doctor                  @relation(fields: [doctorId], references: [id])
-  appointment   Appointment?            @relation(fields: [appointmentId], references: [id])
-  notes         ClinicalNote[]
-  diagnoses     EncounterDiagnosis[]
-  attachments   ClinicalAttachment[]
-  prescriptions Prescription[]
-  labOrders     LabOrder[]
-  specialtyData EncounterSpecialtyData?
-  protocolSessions ProtocolSession[]
+  patient           Patient                 @relation(fields: [patientId], references: [id])
+  doctor            Doctor                  @relation(fields: [doctorId], references: [id])
+  appointment       Appointment?            @relation(fields: [appointmentId], references: [id])
+  notes             ClinicalNote[]
+  diagnoses         EncounterDiagnosis[]
+  attachments       ClinicalAttachment[]
+  prescriptions     Prescription[]
+  labOrders         LabOrder[]
+  specialtyData     EncounterSpecialtyData?
+  protocolSessions  ProtocolSession[]
   assistantReadings AssistantReading[]
-  redFlagEvents RedFlagEvent[]
+  redFlagEvents     RedFlagEvent[]
 
   // M-17: llave foránea de lectura frecuente, sin índice propio.
   @@index([patientId, startedAt])
@@ -1151,38 +1414,38 @@ model ClinicalEncounter {
 // esta fila; con adenda = corrections[]; "cancelada" no existe para
 // una nota firmada (R1) — se corrige, nunca se cancela.
 model ClinicalNote {
-  id                   String   @id @default(uuid())
-  encounterId          String
+  id                    String   @id @default(uuid())
+  encounterId           String
   // Prompt 25: tipo de nota TOMADO DEL CATÁLOGO (dominio TIPO_NOTA) y
   // especialidad del autor como snapshot — fijados por el servidor al
   // firmar, nunca por el cliente.
-  noteTypeTermId       String?
-  specialtyCode        String?
-  chiefComplaint       String
-  currentIllness       String
+  noteTypeTermId        String?
+  specialtyCode         String?
+  chiefComplaint        String
+  currentIllness        String
   // Prompt 37B: lo que el PACIENTE se lleva — lenguaje llano,
   // separado de la nota técnica; se imprime como PDF propio.
-  patientInstructions  String?
+  patientInstructions   String?
   // Prompt 37C: próxima cita sugerida desde el plan (días).
   suggestedFollowUpDays Int?
-  vitals               Json
-  physicalExam         String?
-  assessment           String
-  plan                 String
-  prognosis            String?
-  isCorrectionOfNoteId String?
+  vitals                Json
+  physicalExam          String?
+  assessment            String
+  plan                  String
+  prognosis             String?
+  isCorrectionOfNoteId  String?
   // A-10: quién escribió la nota (original o adenda) y, solo en una
   // adenda, su propio sello SHA-256 encadenado al sello de la nota
   // original (el de la original vive en ClinicalEncounter). NULL en
   // filas previas a 2026-10-22.
-  authorUserId         String?
-  contentHashSha256    String?
-  createdAt            DateTime @default(now()) @db.Timestamptz(3)
+  authorUserId          String?
+  contentHashSha256     String?
+  createdAt             DateTime @default(now()) @db.Timestamptz(3)
 
-  encounter          ClinicalEncounter    @relation(fields: [encounterId], references: [id])
-  isCorrectionOfNote ClinicalNote?        @relation("NoteCorrection", fields: [isCorrectionOfNoteId], references: [id])
-  corrections        ClinicalNote[]       @relation("NoteCorrection")
-  noteTypeTerm       ClinicalCatalogTerm? @relation("NoteTypeTerm", fields: [noteTypeTermId], references: [id])
+  encounter          ClinicalEncounter         @relation(fields: [encounterId], references: [id])
+  isCorrectionOfNote ClinicalNote?             @relation("NoteCorrection", fields: [isCorrectionOfNoteId], references: [id])
+  corrections        ClinicalNote[]            @relation("NoteCorrection")
+  noteTypeTerm       ClinicalCatalogTerm?      @relation("NoteTypeTerm", fields: [noteTypeTermId], references: [id])
   vitalSignSet       VitalSignSet?
   cancellation       ClinicalNoteCancellation?
   labResults         NoteLabResult[]
@@ -1274,26 +1537,26 @@ model VitalSignSet {
 // de la firma — la nota firmada nunca vuelve a recalcularlos aunque
 // lab_reference_ranges cambie después.
 model NoteLabResult {
-  id               String              @id @default(uuid())
-  noteId           String
-  sourceAnalyteId  String
-  analyteName      String
-  value            Decimal             @db.Decimal(10, 3)
-  unit             String
-  referenceMin     Decimal?            @db.Decimal(10, 3)
-  referenceMax     Decimal?            @db.Decimal(10, 3)
-  rangeSource      LabRangeSource
-  status           LabValueStatus
+  id              String                 @id @default(uuid())
+  noteId          String
+  sourceAnalyteId String
+  analyteName     String
+  value           Decimal                @db.Decimal(10, 3)
+  unit            String
+  referenceMin    Decimal?               @db.Decimal(10, 3)
+  referenceMax    Decimal?               @db.Decimal(10, 3)
+  rangeSource     LabRangeSource
+  status          LabValueStatus
   // measuredAt ES la fecha del estudio (mismo campo que ya trae
   // LabResultAnalyte) — sin una columna resultDate separada y
   // redundante.
-  measuredAt       DateTime            @db.Timestamptz(3)
-  labName          String?
-  source           LabResultAnalyteSource
-  createdAt        DateTime            @default(now()) @db.Timestamptz(3)
+  measuredAt      DateTime               @db.Timestamptz(3)
+  labName         String?
+  source          LabResultAnalyteSource
+  createdAt       DateTime               @default(now()) @db.Timestamptz(3)
 
-  note           ClinicalNote     @relation(fields: [noteId], references: [id])
-  sourceAnalyte  LabResultAnalyte @relation(fields: [sourceAnalyteId], references: [id])
+  note          ClinicalNote     @relation(fields: [noteId], references: [id])
+  sourceAnalyte LabResultAnalyte @relation(fields: [sourceAnalyteId], references: [id])
 
   @@index([noteId])
   @@map("note_lab_results")
@@ -1374,23 +1637,23 @@ enum DiagnosisCertainty {
 // nueva, solo la convención (documentada aquí) de agrupar por
 // encounterId.
 model EncounterDiagnosis {
-  id                 String             @id @default(uuid())
-  encounterId        String
-  icd10Code          String?
+  id                String             @id @default(uuid())
+  encounterId       String
+  icd10Code         String?
   // Prompt 28 / P4 §2.4: FK real — un código que no existe en el
   // catálogo ya no puede quedar firmado y hasheado en el expediente.
-  icd10CodeId        String?
-  codeAbsentReason   String?
-  description        String
-  diagnosisType      DiagnosisType
-  certainty          DiagnosisCertainty
-  discardedAt        DateTime?          @db.Timestamptz(3)
-  discardedByUserId  String?
+  icd10CodeId       String?
+  codeAbsentReason  String?
+  description       String
+  diagnosisType     DiagnosisType
+  certainty         DiagnosisCertainty
+  discardedAt       DateTime?          @db.Timestamptz(3)
+  discardedByUserId String?
   // A-09: posición con la que el médico capturó el diagnóstico — el
   // orden que entra al hash de la nota. NULL en filas previas a
   // 2026-10-22.
-  ordinal            Int?
-  createdAt          DateTime           @default(now()) @db.Timestamptz(3)
+  ordinal           Int?
+  createdAt         DateTime           @default(now()) @db.Timestamptz(3)
 
   encounter ClinicalEncounter @relation(fields: [encounterId], references: [id])
   icd10Ref  Icd10Code?        @relation(fields: [icd10CodeId], references: [code])
@@ -1483,23 +1746,23 @@ enum AllergyCertainty {
 // fármaco al catálogo de medicamentos para el cruce de la Fase 4;
 // severity → reaction.severity; certainty → verificationStatus.
 model PatientAllergy {
-  id             String           @id @default(uuid())
-  patientId      String
+  id                  String           @id @default(uuid())
+  patientId           String
   // FK al catálogo ALERGIA_AGENTE (nullable por filas previas).
-  catalogTermId        String?
+  catalogTermId       String?
   // Para alergias a fármaco: ancla al catálogo de medicamentos.
-  medicationCatalogId  String?
-  substance      String
-  allergyType    String
-  reaction       String?
-  severity       String
-  ageOfOnset     String?
-  status         AllergyStatus    @default(ACTIVE)
-  certainty      AllergyCertainty
-  source         String
-  lastReviewedAt DateTime         @default(now()) @db.Timestamptz(3)
-  createdAt      DateTime         @default(now()) @db.Timestamptz(3)
-  updatedAt      DateTime         @updatedAt @db.Timestamptz(3)
+  medicationCatalogId String?
+  substance           String
+  allergyType         String
+  reaction            String?
+  severity            String
+  ageOfOnset          String?
+  status              AllergyStatus    @default(ACTIVE)
+  certainty           AllergyCertainty
+  source              String
+  lastReviewedAt      DateTime         @default(now()) @db.Timestamptz(3)
+  createdAt           DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime         @updatedAt @db.Timestamptz(3)
 
   patient           Patient              @relation(fields: [patientId], references: [id])
   catalogTerm       ClinicalCatalogTerm? @relation("AllergyTerm", fields: [catalogTermId], references: [id])
@@ -1697,26 +1960,26 @@ enum SubstanceUseUnit {
 }
 
 model PatientSubstanceUse {
-  id                 String              @id @default(uuid())
-  patientId          String
+  id               String             @id @default(uuid())
+  patientId        String
   // FK real al catálogo SUSTANCIA_PSICOACTIVA (R2/R3).
-  substanceTermId    String
-  status             SubstanceUseStatus
-  quantity           Decimal?            @db.Decimal(8, 2)
-  unit               SubstanceUseUnit?
-  ageOfOnset         Int?
-  suspendedAt        DateTime?           @db.Date
-  comment            String?
+  substanceTermId  String
+  status           SubstanceUseStatus
+  quantity         Decimal?           @db.Decimal(8, 2)
+  unit             SubstanceUseUnit?
+  ageOfOnset       Int?
+  suspendedAt      DateTime?          @db.Date
+  comment          String?
   // Calculados y almacenados con su fórmula y versión (prompt 21):
   // índice tabáquico (cigarros/día × años / 20) y unidades estándar
   // de alcohol por semana.
-  packYears          Decimal?            @db.Decimal(8, 2)
-  stdDrinksPerWeek   Decimal?            @db.Decimal(8, 2)
-  computeFormula     String?
-  computeVersion     String?
-  updatedByUserId    String
-  createdAt          DateTime            @default(now()) @db.Timestamptz(3)
-  updatedAt          DateTime            @updatedAt @db.Timestamptz(3)
+  packYears        Decimal?           @db.Decimal(8, 2)
+  stdDrinksPerWeek Decimal?           @db.Decimal(8, 2)
+  computeFormula   String?
+  computeVersion   String?
+  updatedByUserId  String
+  createdAt        DateTime           @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime           @updatedAt @db.Timestamptz(3)
 
   patient       Patient                     @relation(fields: [patientId], references: [id])
   substanceTerm ClinicalCatalogTerm         @relation("SubstanceTerm", fields: [substanceTermId], references: [id])
@@ -1728,11 +1991,11 @@ model PatientSubstanceUse {
 
 // R1: cada actualización conserva el valor anterior con fecha y autor.
 model PatientSubstanceUseChange {
-  id               String   @id @default(uuid())
-  substanceUseId   String
-  previousValue    Json
-  changedByUserId  String
-  changedAt        DateTime @default(now()) @db.Timestamptz(3)
+  id              String   @id @default(uuid())
+  substanceUseId  String
+  previousValue   Json
+  changedByUserId String
+  changedAt       DateTime @default(now()) @db.Timestamptz(3)
 
   substanceUse PatientSubstanceUse @relation(fields: [substanceUseId], references: [id])
 
@@ -1747,28 +2010,28 @@ model PatientSubstanceUseChange {
 // 11612-9 (LOINC); antecedentes perinatales → .note (texto corto,
 // razón documentada: narrativa perinatal sin catálogo estándar aún).
 model PatientGynecoHistory {
-  id                     String    @id @default(uuid())
-  patientId              String    @unique
-  manuallyEnabled        Boolean   @default(false)
-  menarcheAge            Int?
-  cycleDurationDays      Int?
-  cycleFrequencyDays     Int?
-  cycleAmount            String?
-  dysmenorrhea           Boolean?
-  otherDischarge         String?
-  sexualOnsetAge         Int?
-  sexualPartners         Int?
-  contraceptiveMethod    String?
-  sexualFrequency        String?
-  stiHistory             String?
-  gestas                 Int?
-  partos                 Int?
-  cesareas               Int?
-  abortos                Int?
-  perinatalHistory       String?
-  updatedByUserId        String
-  createdAt              DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt              DateTime  @updatedAt @db.Timestamptz(3)
+  id                  String   @id @default(uuid())
+  patientId           String   @unique
+  manuallyEnabled     Boolean  @default(false)
+  menarcheAge         Int?
+  cycleDurationDays   Int?
+  cycleFrequencyDays  Int?
+  cycleAmount         String?
+  dysmenorrhea        Boolean?
+  otherDischarge      String?
+  sexualOnsetAge      Int?
+  sexualPartners      Int?
+  contraceptiveMethod String?
+  sexualFrequency     String?
+  stiHistory          String?
+  gestas              Int?
+  partos              Int?
+  cesareas            Int?
+  abortos             Int?
+  perinatalHistory    String?
+  updatedByUserId     String
+  createdAt           DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime @updatedAt @db.Timestamptz(3)
 
   patient   Patient                      @relation(fields: [patientId], references: [id])
   changeLog PatientGynecoHistoryChange[]
@@ -1873,7 +2136,7 @@ model MedicationCatalog {
   isElectronicallyPrescribable Boolean      @default(true)
   commonDoses                  Json?
   contraindications            String[]     @default([])
-  sourceVersion String?
+  sourceVersion                String?
   isActive                     Boolean      @default(true)
   createdAt                    DateTime     @default(now()) @db.Timestamptz(3)
   // Autoservicio: un médico agrega un medicamento que no encontró en
@@ -1885,7 +2148,7 @@ model MedicationCatalog {
   // sembrado/curado.
   addedByDoctorId              String?
 
-  addedByDoctor     Doctor?             @relation(fields: [addedByDoctorId], references: [id])
+  addedByDoctor     Doctor?            @relation(fields: [addedByDoctorId], references: [id])
   prescriptionItems PrescriptionItem[]
 
   patientAllergies PatientAllergy[]
@@ -1984,10 +2247,10 @@ model TreatmentProtocol {
   sourceCitation String?
   createdAt      DateTime @default(now()) @db.Timestamptz(3)
 
-  specialty     Specialty?                        @relation(fields: [specialtyId], references: [id])
+  specialty        Specialty?                         @relation(fields: [specialtyId], references: [id])
   sessionTemplates TreatmentProtocolSessionTemplate[]
-  fieldSchemas  ProtocolFieldSchema[]
-  instances     PatientProtocolInstance[]
+  fieldSchemas     ProtocolFieldSchema[]
+  instances        PatientProtocolInstance[]
 
   @@map("treatment_protocols")
 }
@@ -2062,7 +2325,7 @@ model PatientProtocolInstance {
   patientId            String
   protocolId           String
   protocolVersion      Int
-  status               PatientProtocolInstanceStatus @default(ACTIVE)
+  status               PatientProtocolInstanceStatus  @default(ACTIVE)
   startedAt            DateTime                       @default(now()) @db.Timestamptz(3)
   startedByUserId      String
   currentSessionNumber Int                            @default(1)
@@ -2095,9 +2358,9 @@ model ProtocolSession {
   data           Json?
   createdAt      DateTime  @default(now()) @db.Timestamptz(3)
 
-  instance  PatientProtocolInstance           @relation(fields: [instanceId], references: [id])
-  template  TreatmentProtocolSessionTemplate  @relation(fields: [templateId], references: [id])
-  encounter ClinicalEncounter?                @relation(fields: [encounterId], references: [id])
+  instance  PatientProtocolInstance          @relation(fields: [instanceId], references: [id])
+  template  TreatmentProtocolSessionTemplate @relation(fields: [templateId], references: [id])
+  encounter ClinicalEncounter?               @relation(fields: [encounterId], references: [id])
 
   @@unique([instanceId, sequenceNumber])
   @@map("protocol_sessions")
@@ -2179,18 +2442,18 @@ model Prescription {
   deliveredAt               DateTime?                   @db.Timestamptz(3)
   createdAt                 DateTime                    @default(now()) @db.Timestamptz(3)
 
-  encounter              ClinicalEncounter                @relation(fields: [encounterId], references: [id])
-  patient                Patient                          @relation(fields: [patientId], references: [id])
-  doctor                 Doctor                           @relation(fields: [doctorId], references: [id])
-  replacesPrescription   Prescription?                    @relation("PrescriptionReplacement", fields: [replacesPrescriptionId], references: [id])
-  replacedByPrescription Prescription?                    @relation("PrescriptionReplacement")
+  encounter                    ClinicalEncounter                @relation(fields: [encounterId], references: [id])
+  patient                      Patient                          @relation(fields: [patientId], references: [id])
+  doctor                       Doctor                           @relation(fields: [doctorId], references: [id])
+  replacesPrescription         Prescription?                    @relation("PrescriptionReplacement", fields: [replacesPrescriptionId], references: [id])
+  replacedByPrescription       Prescription?                    @relation("PrescriptionReplacement")
   // Prompt 34: el bloqueo por alergia SOLO se libera con una
   // justificación clínica que queda registrada en el expediente y
   // firmada por el médico (viaja dentro del snapshot legal firmado).
   allergyOverrideJustification String?
-  items                  PrescriptionItem[]
-  cancellation           PrescriptionCancellation?
-  handwrittenDelivery    PrescriptionHandwrittenDelivery?
+  items                        PrescriptionItem[]
+  cancellation                 PrescriptionCancellation?
+  handwrittenDelivery          PrescriptionHandwrittenDelivery?
 
   // A-14: Idempotency-Key del cliente; un reintento devuelve esta fila.
   idempotencyKey String?
@@ -2239,27 +2502,27 @@ model PrescriptionHandwrittenDelivery {
 // opcional. controlGroup se copia del catálogo al prescribir (mismo
 // principio de snapshot que los datos legales del médico).
 model PrescriptionItem {
-  id                  String       @id @default(uuid())
-  prescriptionId      String
-  genericName         String
-  brandName           String?
-  presentation        String
-  dose                String
-  route               String
-  frequency           String
+  id                   String       @id @default(uuid())
+  prescriptionId       String
+  genericName          String
+  brandName            String?
+  presentation         String
+  dose                 String
+  route                String
+  frequency            String
   // Prompt 32: unidad de dosis explícita e indicación por línea.
   doseUnit             String?
   indication           String?
   // Prompt 36 — procedencia: NUEVA | HEREDADA | HEREDADA_MODIFICADA,
   // con la receta y fecha de origen cuando viene de "traer última".
-  origin               String    @default("NUEVA")
+  origin               String       @default("NUEVA")
   sourcePrescriptionId String?
-  sourceIssuedAt       DateTime? @db.Timestamptz(3)
-  duration            String
-  quantity            String?
-  specialInstructions String?
-  medicationCatalogId String?
-  controlGroup        ControlGroup
+  sourceIssuedAt       DateTime?    @db.Timestamptz(3)
+  duration             String
+  quantity             String?
+  specialInstructions  String?
+  medicationCatalogId  String?
+  controlGroup         ControlGroup
 
   prescription      Prescription       @relation(fields: [prescriptionId], references: [id])
   medicationCatalog MedicationCatalog? @relation(fields: [medicationCatalogId], references: [id])
@@ -2321,9 +2584,9 @@ model LabOrder {
   signedAt                  DateTime?               @db.Timestamptz(3)
   createdAt                 DateTime                @default(now()) @db.Timestamptz(3)
 
-  encounter    ClinicalEncounter     @relation(fields: [encounterId], references: [id])
-  patient      Patient               @relation(fields: [patientId], references: [id])
-  doctor       Doctor                @relation(fields: [doctorId], references: [id])
+  encounter      ClinicalEncounter     @relation(fields: [encounterId], references: [id])
+  patient        Patient               @relation(fields: [patientId], references: [id])
+  doctor         Doctor                @relation(fields: [doctorId], references: [id])
   items          LabOrderItem[]
   results        LabResult[]
   resultAnalytes LabResultAnalyte[]
@@ -2464,8 +2727,8 @@ model LabResultAnalyte {
   reviewedAt         DateTime? @db.Timestamptz(3)
   createdAt          DateTime  @default(now()) @db.Timestamptz(3)
 
-  labOrder LabOrder? @relation(fields: [labOrderId], references: [id])
-  patient  Patient   @relation(fields: [patientId], references: [id])
+  labOrder       LabOrder?       @relation(fields: [labOrderId], references: [id])
+  patient        Patient         @relation(fields: [patientId], references: [id])
   noteReferences NoteLabResult[]
 
   // v2.5: si el analito llegó por lectura automática ya revisada por
@@ -2503,19 +2766,19 @@ enum LabSheetExtractionStatus {
 }
 
 model LabSheetExtraction {
-  id                  String                   @id @default(uuid())
-  patientId           String
-  uploadedByUserId    String
-  fileKey             String
-  fileHashSha256      String
-  status              LabSheetExtractionStatus @default(EXTRACTING)
-  labNameDetected     String?
-  resultDateDetected  DateTime?                @db.Date
-  createdAt           DateTime                 @default(now()) @db.Timestamptz(3)
-  reviewedAt          DateTime?                @db.Timestamptz(3)
-  reviewedByUserId    String?
+  id                 String                   @id @default(uuid())
+  patientId          String
+  uploadedByUserId   String
+  fileKey            String
+  fileHashSha256     String
+  status             LabSheetExtractionStatus @default(EXTRACTING)
+  labNameDetected    String?
+  resultDateDetected DateTime?                @db.Date
+  createdAt          DateTime                 @default(now()) @db.Timestamptz(3)
+  reviewedAt         DateTime?                @db.Timestamptz(3)
+  reviewedByUserId   String?
 
-  patient    Patient                     @relation(fields: [patientId], references: [id])
+  patient    Patient                       @relation(fields: [patientId], references: [id])
   candidates LabSheetExtractionCandidate[]
 
   @@index([patientId, createdAt])
@@ -2539,19 +2802,19 @@ enum LabSheetExtractionConfidence {
 // aparte (ver LabSheetExtractionService.submitReview) antes de poder
 // promoverse — included por sí solo no basta.
 model LabSheetExtractionCandidate {
-  id                         String                        @id @default(uuid())
+  id                         String                       @id @default(uuid())
   extractionId               String
   analyteNameRaw             String
   valueRaw                   String
   unitRaw                    String?
-  referenceMinPrinted        Decimal?                      @db.Decimal(10, 3)
-  referenceMaxPrinted        Decimal?                      @db.Decimal(10, 3)
+  referenceMinPrinted        Decimal?                     @db.Decimal(10, 3)
+  referenceMaxPrinted        Decimal?                     @db.Decimal(10, 3)
   confidence                 LabSheetExtractionConfidence
   doctorConfirmedAnalyteName String?
-  doctorConfirmedValue       Decimal?                      @db.Decimal(10, 3)
+  doctorConfirmedValue       Decimal?                     @db.Decimal(10, 3)
   doctorConfirmedUnit        String?
-  wasEdited                  Boolean                       @default(false)
-  included                   Boolean                       @default(true)
+  wasEdited                  Boolean                      @default(false)
+  included                   Boolean                      @default(true)
 
   extraction LabSheetExtraction @relation(fields: [extractionId], references: [id])
 
@@ -2567,23 +2830,23 @@ model LabSheetExtractionCandidate {
 // filas sembradas son un punto de partida citado, NO la base clínica
 // final de la plataforma, hasta que un CURATOR/SUPERADMIN las aprueba.
 model LabReferenceRange {
-  id                   String    @id @default(uuid())
+  id                   String               @id @default(uuid())
   // normalizeTerm(analyteLabel) — mismo normalizador que catálogos,
   // así "Glucosa"/"GLUCOSA"/"glucosa." casan con la misma fila.
   analyteKey           String
   analyteLabel         String
   unit                 String
   sex                  LabReferenceRangeSex
-  ageMinYears          Decimal   @db.Decimal(5, 2)
-  ageMaxYears          Decimal   @db.Decimal(5, 2)
-  valueMin             Decimal   @db.Decimal(10, 3)
-  valueMax             Decimal   @db.Decimal(10, 3)
-  criticalMin          Decimal?  @db.Decimal(10, 3)
-  criticalMax          Decimal?  @db.Decimal(10, 3)
-  pendingMedicalReview Boolean   @default(true)
+  ageMinYears          Decimal              @db.Decimal(5, 2)
+  ageMaxYears          Decimal              @db.Decimal(5, 2)
+  valueMin             Decimal              @db.Decimal(10, 3)
+  valueMax             Decimal              @db.Decimal(10, 3)
+  criticalMin          Decimal?             @db.Decimal(10, 3)
+  criticalMax          Decimal?             @db.Decimal(10, 3)
+  pendingMedicalReview Boolean              @default(true)
   curatedBy            String?
   source               String
-  createdAt            DateTime  @default(now()) @db.Timestamptz(3)
+  createdAt            DateTime             @default(now()) @db.Timestamptz(3)
 
   curator User? @relation("LabReferenceRangeCurator", fields: [curatedBy], references: [id])
 
@@ -2652,49 +2915,49 @@ enum ClinicalCatalogTermStatus {
 }
 
 model ClinicalCatalogTerm {
-  id            String                    @id @default(uuid())
+  id                   String                    @id @default(uuid())
   // Discriminador del catálogo (ej. "ALERGIA_AGENTE") — String en la
   // base para no exigir una migración por dominio nuevo, pero CERRADO
   // en el contrato: CATALOG_DOMAINS (catalog.schema.ts) es un z.enum
   // y la API rechaza cualquier dominio fuera de esa lista (Prompt 9).
-  domain        String
-  key           String
-  preferredTerm String
+  domain               String
+  key                  String
+  preferredTerm        String
   // Prompt 8: minúsculas/sin acentos/sin puntuación final/espacios
   // colapsados (term-normalizer.util.ts) — calculado en servidor al
   // crear, nunca recibido del cliente. Único junto con domain,
   // SIN filtrar por status: un término ya obsoleto o fusionado sigue
   // bloqueando que alguien recree el mismo duplicado.
-  normalizedTerm String
-  synonyms      String[]                  @default([])
-  externalCode  String?
+  normalizedTerm       String
+  synonyms             String[]                  @default([])
+  externalCode         String?
   // Nunca null — R2: "todo catálogo declara su sistema de
   // codificación externo o queda documentado explícitamente como
   // propietario" (valor "PROPIETARIO", no un campo vacío).
-  codingSystem  String
-  version       Int                       @default(1)
-  status        ClinicalCatalogTermStatus @default(ACTIVE)
-  mergedIntoId  String?
+  codingSystem         String
+  version              Int                       @default(1)
+  status               ClinicalCatalogTermStatus @default(ACTIVE)
+  mergedIntoId         String?
   // Prompt 9: "marca los términos que necesitan validación de un
   // médico antes de darse por buenos" — los sembrados de listas
   // estándar no revisadas por Jorge nacen con true.
-  pendingMedicalReview Boolean @default(false)
+  pendingMedicalReview Boolean                   @default(false)
   // Prompt 10: FK real al usuario curador que dio de alta el término.
   // El servidor la fija con el actor autenticado — nunca viaja del
   // cliente. Nullable sólo por los términos sembrados por seed.
-  curatedBy     String?
-  createdAt     DateTime                  @default(now()) @db.Timestamptz(3)
+  curatedBy            String?
+  createdAt            DateTime                  @default(now()) @db.Timestamptz(3)
 
-  mergedInto ClinicalCatalogTerm?  @relation("CatalogTermMerge", fields: [mergedIntoId], references: [id])
-  mergedFrom ClinicalCatalogTerm[] @relation("CatalogTermMerge")
-  curator    User?                 @relation("CatalogTermCurator", fields: [curatedBy], references: [id])
-  requests   CatalogTermRequest[]
-  historyItems PatientHistoryItem[] @relation("HistoryItemTerm")
-  allergyTerms  PatientAllergy[]      @relation("AllergyTerm")
-  substanceUses PatientSubstanceUse[] @relation("SubstanceTerm")
-  notesTyped    ClinicalNote[]        @relation("NoteTypeTerm")
-  labStudyItems  LabOrderItem[]       @relation("LabStudyTerm")
-  labMotiveItems LabOrderItem[]       @relation("LabMotiveTerm")
+  mergedInto              ClinicalCatalogTerm?       @relation("CatalogTermMerge", fields: [mergedIntoId], references: [id])
+  mergedFrom              ClinicalCatalogTerm[]      @relation("CatalogTermMerge")
+  curator                 User?                      @relation("CatalogTermCurator", fields: [curatedBy], references: [id])
+  requests                CatalogTermRequest[]
+  historyItems            PatientHistoryItem[]       @relation("HistoryItemTerm")
+  allergyTerms            PatientAllergy[]           @relation("AllergyTerm")
+  substanceUses           PatientSubstanceUse[]      @relation("SubstanceTerm")
+  notesTyped              ClinicalNote[]             @relation("NoteTypeTerm")
+  labStudyItems           LabOrderItem[]             @relation("LabStudyTerm")
+  labMotiveItems          LabOrderItem[]             @relation("LabMotiveTerm")
   noteCancellationReasons ClinicalNoteCancellation[] @relation("NoteCancellationReasonTerm")
 
   @@unique([domain, key])

@@ -3,6 +3,27 @@
 > Documento de traspaso. Si eres una sesión nueva retomando este trabajo,
 > **lee esto primero** y luego `docs/auditoria/P6-remediacion.md`.
 
+## Actualización 1 de noviembre de 2026 — track "Expediente compartido" (Bloque 1, PR-EXP-00…07)
+
+> **⛔ Producción bloqueada hasta cerrar Fase 6 (D-EXP-14).**
+
+- **Estado:** el track está construido de punta a punta (solicitud → autorización con OTP → resumen filtrado → visor de solo lectura → notificaciones, revocación, caducidad, custodio y admin → batería de seguridad y E2E). Detalle, decisiones y pendientes en [`docs/expediente-compartido/README.md`](../expediente-compartido/README.md).
+- **Sin commits:** por instrucción explícita, todo el track está en el árbol de trabajo de `main`, sin commit ni push.
+- **Conteo de la suite, antes del track (PR-EXP-00) → después (PR-EXP-07), en este entorno:**
+
+  | Suite | Antes | Después |
+  |---|---|---|
+  | API (`pnpm test`) | 67 archivos · 558 pruebas (187 ✓ / 12 ✗ / 359 omitidas) | 79 archivos · 662 pruebas (231 ✓ / 12 ✗ / 419 omitidas) |
+  | API sin integración | — | **30/30 archivos · 231/231 ✓** |
+  | Contratos backend | 56/56 ✓ | 56/56 ✓ |
+  | Contratos frontend | 42/42 ✓ | 42/42 ✓ |
+  | Web (`vitest`) | 14 archivos · 62/62 ✓ | 23 archivos · **94/94 ✓** |
+  | E2E Playwright | — | 1 prueba nueva (`expediente-compartido.spec.ts`), **no ejecutada aquí** |
+
+  Las 49 fallas de archivo de la API son exactamente las 49 `*.integration.spec.ts`, todas por `Can't reach database server at 127.0.0.1:5432`: en este entorno no hay Postgres ni Docker. **Falta correr las de integración y el E2E en un entorno con Postgres real**; eso incluye las 17 pruebas de la batería (`record-share-security.integration.spec.ts`) y las 2 migraciones nuevas sin aplicar (`20261031010000_exp01_record_share`, `20261101010000_exp06_notification_templates`).
+- Typecheck y lint limpios en backend y frontend; `next build` compila.
+- **Nota:** el resto de este documento (abajo) es del 27 de agosto y está desactualizado en varios puntos (ver `docs/expediente-compartido/00-DESCUBRIMIENTO.md`, primera nota). No se reescribió.
+
 ## Dónde estamos en el plan de 58 prompts
 
 | Bloque | Estado |

@@ -19,6 +19,7 @@ import { CatalogModule } from "./modules/catalog/catalog.module";
 import { ProtocolsModule } from "./modules/protocols/protocols.module";
 import { AssistantModule } from "./modules/assistant/assistant.module";
 import { AtlasModule } from "./modules/atlas/atlas.module";
+import { RecordShareModule } from "./modules/record-share/record-share.module";
 
 @Module({
   imports: [
@@ -55,6 +56,7 @@ import { AtlasModule } from "./modules/atlas/atlas.module";
     ProtocolsModule,
     AssistantModule,
     AtlasModule,
+    RecordShareModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

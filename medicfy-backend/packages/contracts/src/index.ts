@@ -21,6 +21,7 @@ export * from "./schemas/doctor-post.schema";
 export * from "./schemas/assistant.schema";
 export * from "./schemas/atlas.schema";
 export * from "./schemas/teleconsultation.schema";
+export * from "./schemas/record-share.schema";
 export * from "./errors/identity.errors";
 export * from "./validators/time-of-day";
 export * from "./validators/age";

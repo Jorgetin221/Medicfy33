@@ -179,6 +179,19 @@ function getCurrentUser(req) {
   return allUsers().find(u => u.id === userId) || doctorUser;
 }
 
+// PR-EXP-02 (expediente compartido): el mock no reproduce el
+// emparejamiento real contra Patient/CareRelationship (eso vive en
+// RecordShareRequestService, contra Postgres real) — solo guarda lo
+// necesario para que "Solicitar expediente"/"Mis solicitudes" se vean
+// y funcionen en /dev sin backend real.
+let recordShareRequests = [];
+const AUTH_DEMO_OTP = '123456';
+const recordShareAuthDemo = { verified: false };
+// PR-EXP-06: estado mutable del grant demo — revocar (paciente) o
+// suspender (admin) lo saca de ACTIVE y el visor responde 403, igual
+// que el SharedRecordGuard real. Reportes de abuso en memoria.
+const recordShareDemoState = { grantStatus: 'ACTIVE', revokeVerified: false, revokedAt: null, abuseReports: [] };
+
 let patients = [
   {
     id: "pat-1",
@@ -2186,6 +2199,196 @@ const server = http.createServer(async (req, res) => {
     atlasSessionOwners.delete(atlasRevoke[2]);
     await atlasCall(`/api/v1/viewer-sessions/${encodeURIComponent(atlasRevoke[2])}/revoke`).catch(() => {});
     return sendJson({ revoked: true });
+  }
+
+  // PR-EXP-02 (expediente compartido) — respuesta SIEMPRE genérica
+  // (RE5), igual que el backend real: el mock no intenta emparejar
+  // contra ningún paciente, solo crea una fila de demostración para
+  // que "Mis solicitudes" tenga algo que mostrar.
+  if (pathname === '/record-share/requests' && method === 'POST') {
+    const user = getCurrentUser(req);
+    if (user.primaryRole !== 'DOCTOR') return sendError('DOCTOR_NOT_VERIFIED', 'Tu cuenta de médico aún no está verificada.', 403);
+    recordShareRequests.push({
+      id: `rsr-${recordShareRequests.length + 1}`,
+      requesterDoctorId: user.id,
+      status: 'PENDING_PATIENT',
+      requestedScope: Array.isArray(body.scope) ? body.scope : ['SUMMARY'],
+      requestedDurationDays: body.durationDays || 30,
+      reason: body.reason || '',
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString()
+    });
+    return sendJson({ message: 'Si los datos coinciden con un expediente en Medicfy, el paciente recibirá un mensaje para autorizar tu solicitud.' });
+  }
+
+  if (pathname === '/record-share/requests/mine' && method === 'GET') {
+    const user = getCurrentUser(req);
+    return sendJson(recordShareRequests.filter(r => r.requesterDoctorId === user.id));
+  }
+
+  const cancelShareRequest = pathname.match(/^\/record-share\/requests\/([^/]+)\/cancel$/);
+  if (cancelShareRequest && method === 'POST') {
+    const user = getCurrentUser(req);
+    const request = recordShareRequests.find(r => r.id === cancelShareRequest[1] && r.requesterDoctorId === user.id && r.status === 'PENDING_PATIENT');
+    if (!request) return sendError('RECORD_SHARE_REQUEST_NOT_CANCELLABLE', 'No se pudo cancelar la solicitud.', 400);
+    request.status = 'CANCELLED_BY_REQUESTER';
+    return sendJson({ cancelled: true });
+  }
+
+  // PR-EXP-03 (expediente compartido) — página pública de
+  // autorización. El mock no genera un token real al "solicitar"
+  // (PR-EXP-02 arriba), así que CUALQUIER token resuelve a esta misma
+  // solicitud de demostración — solo para probar la pantalla en /dev,
+  // nunca el emparejamiento real (eso vive contra Postgres real).
+  const authInfo = pathname.match(/^\/record-share\/authorize\/([^/]+)$/);
+  if (authInfo && method === 'GET') {
+    return sendJson({
+      requesterDisplayName: 'Dra. Elena Cruz',
+      requesterLicense: '1234567',
+      requesterSpecialtyName: 'Cardiología',
+      reason: 'Valoración por dolor torácico y antecedentes cardiovasculares',
+      requestedScope: ['SUMMARY'],
+      requestedDurationDays: 30,
+      consentTextVersion: 'draft-2026-10-31',
+      consentText: 'Texto de consentimiento de demostración (mock) — ver record-share-consent-text.ts para el real.'
+    });
+  }
+
+  const authOtp = pathname.match(/^\/record-share\/authorize\/([^/]+)\/otp$/);
+  if (authOtp && method === 'POST') {
+    recordShareAuthDemo.otpSent = true;
+    console.log(`[dev-only] código de autorización (demo): ${AUTH_DEMO_OTP}`);
+    return sendJson({ sent: true });
+  }
+
+  const authOtpVerify = pathname.match(/^\/record-share\/authorize\/([^/]+)\/otp\/verify$/);
+  if (authOtpVerify && method === 'POST') {
+    if (body.code !== AUTH_DEMO_OTP) return sendError('RECORD_SHARE_OTP_INVALID', 'Código inválido o vencido.', 400);
+    recordShareAuthDemo.verified = true;
+    return sendJson({ verified: true });
+  }
+
+  const authDecide = pathname.match(/^\/record-share\/authorize\/([^/]+)\/decide$/);
+  if (authDecide && method === 'POST') {
+    if (!recordShareAuthDemo.verified) return sendError('RECORD_SHARE_OTP_NOT_VERIFIED', 'Verifica el código antes de continuar.', 403);
+    return sendJson({ status: body.decision === 'DENIED' ? 'DENIED' : 'APPROVED' });
+  }
+
+  // PR-EXP-05 (expediente compartido) — visor de sólo lectura. Un
+  // solo grant de demostración, visible para cualquier médico
+  // autenticado (el mock no modela IDOR/vigencia real — eso vive
+  // contra Postgres real, record-share-viewer.integration.spec.ts).
+  const DEMO_GRANT = {
+    id: 'demo-grant-1',
+    patientName: 'María José Peña',
+    patientBirthDate: '1990-03-15',
+    custodianDisplayName: 'Dr. Roberto Díaz',
+    scope: ['SUMMARY', 'SIGNED_NOTES', 'RESULTS'],
+    status: recordShareDemoState.grantStatus,
+    startsAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+    expiresAt: new Date(Date.now() + 29 * 24 * 60 * 60 * 1000).toISOString()
+  };
+  const DEMO_SUMMARY = {
+    allergies: [{ id: 'a1', substance: 'Penicilina', allergyType: 'MEDICATION', severity: 'GRAVE', reaction: 'Urticaria', certainty: 'CONFIRMED', status: 'ACTIVE' }],
+    medications: [{ id: 'm1', genericName: 'Metformina', brandName: null, dose: '850mg', route: 'oral', frequency: 'cada 12h', status: 'ACTIVE' }],
+    activeDiagnoses: [{ icd10Code: 'E11.9', description: 'Diabetes mellitus tipo 2', diagnosisType: 'PRINCIPAL', certainty: 'CONFIRMED', firstRecordedAt: new Date().toISOString(), lastRecordedAt: new Date().toISOString() }],
+    historyItems: [],
+    pregnancy: null,
+    latestVitals: { recordedAt: new Date().toISOString(), bpSystolicMmHg: 120, bpDiastolicMmHg: 80, heartRateBpm: 72, respiratoryRateBpm: 16, temperatureC: 36.5, spo2Percent: 98, weightKg: 70, heightCm: 165, bmi: 25.7 },
+    results: [{ analyteName: 'Glucosa', value: 95, unit: 'mg/dL', referenceMin: 70, referenceMax: 100, measuredAt: new Date().toISOString() }],
+    signedNotes: [{ encounterId: 'enc-1', encounterType: 'FOLLOW_UP', signedAt: new Date().toISOString(), doctorName: 'Dr. Roberto Díaz', doctorSpecialtyName: 'Medicina Interna', chiefComplaint: 'Control de diabetes', currentIllness: 'Seguimiento habitual', physicalExam: null, assessment: 'Estable', plan: 'Continuar tratamiento', prognosis: null }],
+    prescriptions: null,
+    studyOrders: null
+  };
+
+  if (pathname === '/record-share/grants/mine' && method === 'GET') {
+    return sendJson([DEMO_GRANT]);
+  }
+
+  const viewerDetail = pathname.match(/^\/record-share\/grants\/([^/]+)$/);
+  if (viewerDetail && method === 'GET') {
+    if (viewerDetail[1] !== DEMO_GRANT.id || recordShareDemoState.grantStatus !== 'ACTIVE') return sendError('RECORD_SHARE_ACCESS_DENIED', 'No tienes acceso a este expediente compartido.', 403);
+    return sendJson({ ...DEMO_GRANT, summary: DEMO_SUMMARY });
+  }
+
+  const viewerSection = pathname.match(/^\/record-share\/grants\/([^/]+)\/(notes|results|prescriptions|study-orders)$/);
+  if (viewerSection && method === 'GET') {
+    if (viewerSection[1] !== DEMO_GRANT.id || recordShareDemoState.grantStatus !== 'ACTIVE') return sendError('RECORD_SHARE_ACCESS_DENIED', 'No tienes acceso a este expediente compartido.', 403);
+    const key = { notes: 'signedNotes', results: 'results', prescriptions: 'prescriptions', 'study-orders': 'studyOrders' }[viewerSection[2]];
+    const value = DEMO_SUMMARY[key];
+    if (value === null) return sendError('RECORD_SHARE_SCOPE_NOT_GRANTED', 'Ese alcance no fue autorizado.', 403);
+    return sendJson(value);
+  }
+
+  // PR-EXP-06 — revocación por el paciente (cualquier token sirve en
+  // el mock; código demo 123456), pestaña "Compartido" del custodio y
+  // cola de abuso del admin. Todo sobre el mismo DEMO_GRANT.
+  const revokeInfo = pathname.match(/^\/record-share\/revoke\/([^/]+)$/);
+  if (revokeInfo && method === 'GET') {
+    const activeGrants = recordShareDemoState.grantStatus === 'ACTIVE'
+      ? [{ grantId: DEMO_GRANT.id, requesterDisplayName: 'Dra. Ana Solicitante', requesterLicense: '12345678', requesterSpecialtyName: 'Cardiología', scope: DEMO_GRANT.scope, expiresAt: DEMO_GRANT.expiresAt, isLinkGrant: true }]
+      : [];
+    return sendJson({ activeGrants });
+  }
+  const revokeOtp = pathname.match(/^\/record-share\/revoke\/([^/]+)\/otp$/);
+  if (revokeOtp && method === 'POST') {
+    console.log(`[mock] código de revocación: ${AUTH_DEMO_OTP}`);
+    return sendJson({ sent: true });
+  }
+  const revokeOtpVerify = pathname.match(/^\/record-share\/revoke\/([^/]+)\/otp\/verify$/);
+  if (revokeOtpVerify && method === 'POST') {
+    if (body.code !== AUTH_DEMO_OTP) return sendError('RECORD_SHARE_OTP_INVALID', 'Código inválido o vencido.', 400);
+    recordShareDemoState.revokeVerified = true;
+    return sendJson({ verified: true });
+  }
+  const revokeGrant = pathname.match(/^\/record-share\/revoke\/([^/]+)\/revoke$/);
+  if (revokeGrant && method === 'POST') {
+    if (!recordShareDemoState.revokeVerified) return sendError('RECORD_SHARE_OTP_NOT_VERIFIED', 'Verifica el código antes de continuar.', 403);
+    if (body.grantId !== DEMO_GRANT.id || recordShareDemoState.grantStatus !== 'ACTIVE') return sendError('RECORD_SHARE_LINK_INVALID', 'Este enlace ya no es válido o ya no hay accesos vigentes que revocar.', 404);
+    recordShareDemoState.grantStatus = 'REVOKED_BY_PATIENT';
+    recordShareDemoState.revokedAt = new Date().toISOString();
+    return sendJson({ revoked: true });
+  }
+
+  const custodianShares = pathname.match(/^\/record-share\/patients\/([^/]+)\/shares$/);
+  if (custodianShares && method === 'GET') {
+    return sendJson([{
+      id: DEMO_GRANT.id,
+      requesterDisplayName: 'Dra. Ana Solicitante',
+      requesterLicense: '12345678',
+      scope: DEMO_GRANT.scope,
+      status: recordShareDemoState.grantStatus,
+      startsAt: DEMO_GRANT.startsAt,
+      expiresAt: DEMO_GRANT.expiresAt,
+      revokedAt: recordShareDemoState.revokedAt,
+      views: [{ viewedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() }],
+      abuseReported: recordShareDemoState.abuseReports.length > 0
+    }]);
+  }
+  const reportAbuse = pathname.match(/^\/record-share\/patients\/([^/]+)\/grants\/([^/]+)\/report-abuse$/);
+  if (reportAbuse && method === 'POST') {
+    if (typeof body.reason !== 'string' || body.reason.trim().length < 15) return sendError('VALIDATION_ERROR', 'Datos de entrada inválidos.', 400);
+    recordShareDemoState.abuseReports.push({ auditId: `audit-${recordShareDemoState.abuseReports.length + 1}`, grantId: reportAbuse[2], reportedAt: new Date().toISOString(), reason: body.reason.trim() });
+    return sendJson({ reported: true });
+  }
+
+  if (pathname === '/admin/record-share/abuse-reports' && method === 'GET') {
+    return sendJson(recordShareDemoState.abuseReports.map(r => ({
+      ...r,
+      requesterDisplayName: 'Dra. Ana Solicitante',
+      requesterLicense: '12345678',
+      custodianDisplayName: DEMO_GRANT.custodianDisplayName,
+      grantStatus: recordShareDemoState.grantStatus,
+      grantExpiresAt: DEMO_GRANT.expiresAt
+    })));
+  }
+  const suspendGrant = pathname.match(/^\/admin\/record-share\/grants\/([^/]+)\/suspend$/);
+  if (suspendGrant && method === 'POST') {
+    if (typeof body.reason !== 'string' || body.reason.trim().length < 15) return sendError('VALIDATION_ERROR', 'Datos de entrada inválidos.', 400);
+    if (recordShareDemoState.grantStatus !== 'ACTIVE') return sendError('RECORD_SHARE_GRANT_NOT_ACTIVE', 'Ese acceso ya no está vigente.', 409);
+    recordShareDemoState.grantStatus = 'SUSPENDED_BY_ADMIN';
+    recordShareDemoState.revokedAt = new Date().toISOString();
+    return sendJson({ suspended: true });
   }
 
   // Fallback 200 OK

@@ -10,6 +10,8 @@ export const admin = {
   usuariosDescripcion: "Búsqueda de médicos y pacientes por identificación: sin contenido clínico.",
   metricasTitulo: "Métricas",
   metricasDescripcion: "Médicos por estado, citas por estado, tasa de no-show, notas firmadas, recetas emitidas.",
+  expedienteCompartidoTitulo: "Expediente compartido",
+  expedienteCompartidoDescripcion: "Reportes de uso indebido de accesos compartidos y suspensión — solo metadatos.",
   breakGlassTitulo: "Break-glass",
   breakGlassDescripcion:
     "Acceso de emergencia a un expediente con doble aprobación y notificación automática al paciente y al médico. Próximamente (M13).",

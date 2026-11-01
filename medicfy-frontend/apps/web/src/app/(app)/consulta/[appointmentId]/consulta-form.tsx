@@ -27,6 +27,7 @@ import { ENCOUNTER_TYPE_LABEL_KEY, patientAgeYears, type EncounterDetail } from 
 import { useT } from "@/lib/i18n/context";
 import { useZodResolver } from "@/lib/i18n/validation";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
+import { cn } from "@/lib/utils";
 
 type FreeTextField = "chiefComplaint" | "currentIllness" | "physicalExam" | "assessment" | "plan" | "prognosis";
 
@@ -92,6 +93,7 @@ export function ConsultaForm({
   onAbandoned,
   onClosedWithoutNote,
   insideModal = false,
+  asistenteOpen = false,
 }: {
   accessToken: string;
   // M5-RN-006 ("cerrar sin nota"): necesita la cita, no solo el
@@ -107,15 +109,14 @@ export function ConsultaForm({
   onSigned: () => void;
   onAbandoned: () => void;
   onClosedWithoutNote: () => void;
-  // Pedido explícito del usuario (2026-10-27): este mismo formulario se
+  // Pedido explícito del usuario (2026-10-27 y 2026-10-31): este mismo formulario se
   // monta también dentro del modal de teleconsulta (consulta-screen.tsx).
   // La barra de firma de abajo es `fixed` al viewport real en la
-  // pantalla normal (a propósito: debe verse siempre, empezando donde
-  // termina el rail de navegación — ver --app-rail-width). Dentro del
-  // modal no hay rail que esquivar y `fixed` se saldría de la caja del
-  // modal, así que ahí se vuelve `sticky` al contenedor con scroll que
-  // ya la envuelve (consulta-screen.tsx).
+  // pantalla normal. Dentro del modal, no está fija para no tapar los campos
+  // de la nota ni en pantallas angostas ni cuando el asistente de IA está abierto;
+  // aparece al hacer scroll hacia abajo al final de la nota.
   insideModal?: boolean;
+  asistenteOpen?: boolean;
 }) {
   const t = useT();
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
@@ -486,10 +487,18 @@ export function ConsultaForm({
         {/* Pantalla normal: estos campos son hijos directos de arriba
             (gap-6 ya los separa) y la página entera hace scroll —
             `contents` los deja así, sin crear una caja nueva. Dentro del
-            modal: este div pasa a ser el único que hace scroll, así el
-            footer de abajo queda fuera, siempre visible, sin dejar
-            espacio muerto cuando la nota es corta. */}
-        <div className={insideModal ? "flex flex-1 flex-col gap-6 overflow-y-auto p-6" : "contents"}>
+            modal: este div es el que hace scroll. El footer dentro del modal
+            ahora vive al final de este contenedor para no estar fijo sobre los
+            campos clínicos, y aparece al hacer scroll hacia abajo. */}
+        <div
+          className={
+            insideModal
+              ? asistenteOpen
+                ? "flex flex-1 flex-col gap-5 overflow-y-auto p-4"
+                : "flex flex-1 flex-col gap-6 overflow-y-auto p-4 sm:p-6"
+              : "contents"
+          }
+        >
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-gray-300 bg-white p-3">
           <div>
             <p className="text-base font-medium text-brand-900">{t(ENCOUNTER_TYPE_LABEL_KEY[encounter.encounterType])}</p>
@@ -692,44 +701,105 @@ export function ConsultaForm({
           </FieldWrapper>
 
         </form>
+
+        {/* Dentro del modal de teleconsulta: la barra NO está fija al fondo
+            para no cubrir los campos de la nota en pantallas angostas o con IA abierta.
+            Aparece al hacer scroll hacia abajo al final de la nota. */}
+        {insideModal && (
+          <div className={cn("mt-auto border-t border-gray-200 bg-white pt-4 pb-2", asistenteOpen ? "px-1" : "px-2")}>
+            <div
+              className={cn(
+                "flex w-full gap-3",
+                asistenteOpen ? "flex-col" : "flex-col sm:flex-row sm:items-center sm:justify-between"
+              )}
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <IndicadorGuardado state={saveState} lastSavedAt={lastSavedAt} className={asistenteOpen ? "text-xs" : ""} />
+                {planPanelOpen ? (
+                  <span className={cn("text-warn-600", asistenteOpen ? "text-xs" : "text-sm")}>
+                    {t("consulta.firma.cierraPanel")}
+                  </span>
+                ) : null}
+                {missingFields && !planPanelOpen ? (
+                  <span role="alert" className={cn("text-warn-600", asistenteOpen ? "text-xs" : "text-sm")}>
+                    {t("consulta.firma.faltanDatos")}
+                  </span>
+                ) : null}
+              </div>
+              <div className={cn("flex items-center gap-2", asistenteOpen ? "justify-end w-full" : "justify-end")}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size={asistenteOpen ? "xs" : "sm"}
+                  disabled={planPanelOpen}
+                  onClick={() => setShowCloseWithoutNote(true)}
+                  className={cn(
+                    asistenteOpen
+                      ? "min-h-[34px] px-2.5 py-1 text-xs whitespace-nowrap"
+                      : "min-h-[38px] px-3 py-1.5 text-sm whitespace-nowrap"
+                  )}
+                >
+                  {t("agenda.acciones.cerrarSinNota")}
+                </Button>
+                <Button
+                  type="button"
+                  isLoading={isSigning}
+                  disabled={planPanelOpen}
+                  onClick={handleSignClick}
+                  size={asistenteOpen ? "xs" : "sm"}
+                  className={cn(
+                    asistenteOpen
+                      ? "min-h-[34px] px-3 py-1 text-xs whitespace-nowrap"
+                      : "min-h-[38px] px-4 py-1.5 text-sm whitespace-nowrap"
+                  )}
+                >
+                  <span>{t("consulta.firma.firmarYCerrar")}</span>
+                  <span
+                    className={cn(
+                      "ml-1 font-mono opacity-70",
+                      asistenteOpen ? "text-[10px]" : "text-xs"
+                    )}
+                  >
+                    {asistenteOpen ? "⌘↵" : "⌘/Ctrl+Enter"}
+                  </span>
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
         </div>
 
         {/* Pantalla normal: fixed al viewport, empezando donde termina el
             rail (app-nav.tsx, --app-rail-width) — con inset-x-0 tapaba
-            Perfil, idioma y Cerrar sesión. Dentro del modal de
-            teleconsulta: fuera del contenedor con scroll de arriba, así
-            que queda fijo al fondo del panel sin necesitar `fixed` ni el
-            hueco del rail (ahí no hay rail que esquivar). */}
-        <div
-          ref={footerRef}
-          className={
-            insideModal
-              ? "shrink-0 border-t border-gray-300 bg-white p-4"
-              : "fixed bottom-0 left-0 right-0 z-20 border-t border-gray-300 bg-white p-4 md:left-[var(--app-rail-width,0px)]"
-          }
-        >
-          <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-2">
-            <div className="flex items-center gap-3">
-              <IndicadorGuardado state={saveState} lastSavedAt={lastSavedAt} />
-              {planPanelOpen ? (
-                <span className="text-sm text-warn-600">{t("consulta.firma.cierraPanel")}</span>
-              ) : null}
-              {missingFields && !planPanelOpen ? (
-                <span role="alert" className="text-sm text-warn-600">
-                  {t("consulta.firma.faltanDatos")}
-                </span>
-              ) : null}
-            </div>
-            <div className="flex items-center gap-3">
-              <Button type="button" variant="secondary" disabled={planPanelOpen} onClick={() => setShowCloseWithoutNote(true)}>
-                {t("agenda.acciones.cerrarSinNota")}
-              </Button>
-              <Button type="button" isLoading={isSigning} disabled={planPanelOpen} onClick={handleSignClick} className="px-6">
-                {t("consulta.firma.firmarYCerrar")} <span className="ml-1 opacity-70">⌘/Ctrl+Enter</span>
-              </Button>
+            Perfil, idioma y Cerrar sesión. */}
+        {!insideModal && (
+          <div
+            ref={footerRef}
+            className="fixed bottom-0 left-0 right-0 z-20 border-t border-gray-300 bg-white p-4 md:left-[var(--app-rail-width,0px)]"
+          >
+            <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-2">
+              <div className="flex items-center gap-3">
+                <IndicadorGuardado state={saveState} lastSavedAt={lastSavedAt} />
+                {planPanelOpen ? (
+                  <span className="text-sm text-warn-600">{t("consulta.firma.cierraPanel")}</span>
+                ) : null}
+                {missingFields && !planPanelOpen ? (
+                  <span role="alert" className="text-sm text-warn-600">
+                    {t("consulta.firma.faltanDatos")}
+                  </span>
+                ) : null}
+              </div>
+              <div className="flex items-center gap-3">
+                <Button type="button" variant="secondary" disabled={planPanelOpen} onClick={() => setShowCloseWithoutNote(true)}>
+                  {t("agenda.acciones.cerrarSinNota")}
+                </Button>
+                <Button type="button" isLoading={isSigning} disabled={planPanelOpen} onClick={handleSignClick} className="px-6">
+                  {t("consulta.firma.firmarYCerrar")} <span className="ml-1 opacity-70">⌘/Ctrl+Enter</span>
+                </Button>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         <Modal open={showConfirm} onClose={closeConfirm} title={t("consulta.firma.confirmarTitulo")} size="dialog">
           <div className="flex flex-col gap-4">

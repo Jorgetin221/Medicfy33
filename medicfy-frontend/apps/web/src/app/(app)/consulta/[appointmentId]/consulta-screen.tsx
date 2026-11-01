@@ -288,6 +288,7 @@ export function ConsultaScreen({ appointmentId, accessToken }: { appointmentId: 
         onAbandoned={() => setPhase("abandoned")}
         onClosedWithoutNote={() => router.push("/agenda")}
         insideModal={callOpen}
+        asistenteOpen={callOpen && asistenteOpen}
       />
     );
 
@@ -303,9 +304,19 @@ export function ConsultaScreen({ appointmentId, accessToken }: { appointmentId: 
       <Modal open={callOpen} onClose={() => void closeCall()} title={t("teleconsulta.titulo")} size="full">
         <div className="flex h-full flex-col lg:flex-row">
           <TeleconsultaVideoPane appointmentId={appointmentId} accessToken={accessToken} />
-          <div className="flex min-h-0 flex-[2] flex-col border-t border-gray-300 lg:border-l lg:border-t-0">
+          <div
+            className={`flex min-h-0 ${
+              asistenteOpen ? "flex-[3]" : "flex-[2]"
+            } flex-col border-t border-gray-300 lg:border-l lg:border-t-0`}
+          >
             <div className="flex shrink-0 items-center justify-end border-b border-gray-300 px-4 py-2 sm:px-6">
-              <Button type="button" variant="secondary" onClick={() => setAsistenteOpen((open) => !open)} className="min-h-11">
+              <Button
+                type="button"
+                variant="secondary"
+                size={asistenteOpen ? "sm" : "default"}
+                onClick={() => setAsistenteOpen((open) => !open)}
+                className={asistenteOpen ? "h-9 min-h-[36px] px-3 text-xs sm:text-sm" : "min-h-11"}
+              >
                 {asistenteOpen ? t("teleconsulta.asistente.ocultar") : t("teleconsulta.asistente.mostrar")}
               </Button>
             </div>
@@ -325,10 +336,12 @@ export function ConsultaScreen({ appointmentId, accessToken }: { appointmentId: 
           </div>
           {/* Carga diferida, igual que ConsultaZona3: el Asistente no
               se monta hasta que el médico lo abre — no compite por
-              espacio con el video mientras no se usa. */}
+              espacio con el video mientras no se usa. En escritorio tiene
+              un ancho fijo (w-80 a xl:w-96, igual que Zona 3) para no
+              quitarle espacio innecesario a la nota clínica. */}
           {asistenteOpen && (
             <div
-              className="flex min-h-[30vh] flex-[2] flex-col gap-3 overflow-y-auto border-t border-gray-300 p-4 lg:min-h-0 lg:border-l lg:border-t-0 lg:p-6"
+              className="flex min-h-[30vh] flex-col gap-3 overflow-y-auto border-t border-gray-300 p-4 lg:min-h-0 lg:w-80 lg:shrink-0 lg:border-l lg:border-t-0 xl:w-96 lg:p-6"
               aria-label={t("consulta.zona3.tabs.Asistente")}
             >
               <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">{t("consulta.zona3.tabs.Asistente")}</h3>

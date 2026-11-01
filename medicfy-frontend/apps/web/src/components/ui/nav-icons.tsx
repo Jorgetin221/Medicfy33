@@ -92,6 +92,19 @@ export function IconMegaphone(props: IconProps) {
   );
 }
 
+// PR-EXP-02 (expediente compartido): glifo clásico de "compartir" —
+// tres nodos conectados.
+export function IconShareNav(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <circle cx="6" cy="12" r="2.25" />
+      <circle cx="17" cy="6" r="2.25" />
+      <circle cx="17" cy="18" r="2.25" />
+      <path d="M8 10.8 15 7M8 13.2 15 17" />
+    </svg>
+  );
+}
+
 // Botón de plegar/desplegar el rail — apunta a la izquierda expandido,
 // gira 180° (vía className del llamador) cuando está plegado.
 export function IconChevronNav(props: IconProps) {

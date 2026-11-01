@@ -7,6 +7,7 @@ export const nav: typeof es = {
     disponibilidad: "Availability",
     auditoria: "Audit log",
     publicaciones: "Posts",
+    expedienteCompartido: "Shared record",
     administracion: "Administration",
     perfil: "Profile",
     cerrarSesion: "Sign out",

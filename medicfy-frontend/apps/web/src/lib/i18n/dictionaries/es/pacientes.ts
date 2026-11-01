@@ -46,6 +46,7 @@ export const pacientes = {
       recetas: "Recetas",
       ordenes: "Órdenes y resultados",
       protocolos: "Protocolos",
+      compartido: "Compartido",
     },
   },
   // Atlas Anatómico 3D en ventana emergente (INTEGRATION_GUIDE del atlas).

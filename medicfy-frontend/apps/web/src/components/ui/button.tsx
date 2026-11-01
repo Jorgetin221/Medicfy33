@@ -26,7 +26,7 @@ import { cn } from "@/lib/utils";
 // El color no es el único portador de significado (§5): la etiqueta de texto
 // nombra siempre la consecuencia ("Cancelar cita", "Quitar").
 const buttonVariants = cva(
-  "inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md px-4 text-base font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-700",
+  "inline-flex items-center justify-center gap-2 rounded-md font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-700",
   {
     variants: {
       variant: {
@@ -35,8 +35,13 @@ const buttonVariants = cva(
         destructive: "border border-danger-600 bg-white text-danger-600 hover:bg-danger-50",
         danger: "bg-danger-600 text-white hover:opacity-90",
       },
+      size: {
+        default: "min-h-[44px] px-4 text-base",
+        sm: "min-h-[36px] px-3 py-1.5 text-xs sm:text-sm",
+        xs: "min-h-[32px] px-2.5 py-1 text-xs",
+      },
     },
-    defaultVariants: { variant: "primary" },
+    defaultVariants: { variant: "primary", size: "default" },
   }
 );
 
@@ -45,8 +50,8 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>, Va
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, isLoading, disabled, children, ...props }, ref) => (
-    <button ref={ref} className={cn(buttonVariants({ variant }), className)} disabled={disabled || isLoading} {...props}>
+  ({ className, variant, size, isLoading, disabled, children, ...props }, ref) => (
+    <button ref={ref} className={cn(buttonVariants({ variant, size }), className)} disabled={disabled || isLoading} {...props}>
       {isLoading ? "Guardando…" : children}
     </button>
   )
@@ -60,16 +65,18 @@ Button.displayName = "Button";
 export function ButtonLink({
   href,
   variant,
+  size,
   className,
   children,
 }: {
   href: string;
   variant?: VariantProps<typeof buttonVariants>["variant"];
+  size?: VariantProps<typeof buttonVariants>["size"];
   className?: string;
   children: ReactNode;
 }) {
   return (
-    <Link href={href} className={cn(buttonVariants({ variant }), className)}>
+    <Link href={href} className={cn(buttonVariants({ variant, size }), className)}>
       {children}
     </Link>
   );

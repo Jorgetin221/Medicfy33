@@ -148,3 +148,76 @@ export function renderPasswordReset(d: PasswordResetData): RenderedNotification 
     body: `Hola ${d.recipientFirstName}, usa este enlace para restablecer tu contraseña (vigente 15 minutos, un solo uso): ${d.actionLink}`,
   };
 }
+
+// PR-EXP-06 (expediente compartido) — avisos a MÉDICOS con cuenta.
+// RE9 ("ningún dato personal ni clínico en mensajes de notificación")
+// gana sobre la redacción literal del prompt maestro ("Tu paciente
+// [nombre]..."): ninguna de estas plantillas lleva el nombre del
+// paciente ni contenido de su expediente — solo el nombre del MÉDICO
+// solicitante, etiquetas cerradas de alcance y una fecha. Ver
+// docs/expediente-compartido/06-notificaciones-revocacion-caducidad.md
+// decisión 3.
+type RecordShareScopeCode = "SUMMARY" | "SIGNED_NOTES" | "RESULTS" | "PRESCRIPTIONS" | "STUDY_ORDERS";
+
+// Etiquetas CERRADAS — el renderer recibe el código, nunca texto
+// libre, así que nada fuera de esta tabla puede llegar al mensaje.
+const RECORD_SHARE_SCOPE_LABELS: Record<RecordShareScopeCode, string> = {
+  SUMMARY: "Resumen clínico",
+  SIGNED_NOTES: "Notas firmadas",
+  RESULTS: "Resultados",
+  PRESCRIPTIONS: "Recetas",
+  STUDY_ORDERS: "Órdenes de estudio",
+};
+
+interface RecordShareRequesterData {
+  recipientFirstName: string;
+  actionLink: string;
+}
+interface RecordShareRequesterDatedData extends RecordShareRequesterData {
+  expiresAtLabel: string; // ya formateada en America/Mexico_City
+}
+
+export function renderRecordShareApproved(d: RecordShareRequesterDatedData): RenderedNotification {
+  return {
+    subject: "Una solicitud de expediente compartido fue autorizada",
+    body: `Hola Dr(a). ${d.recipientFirstName}, una de tus solicitudes de expediente compartido fue autorizada. Puedes consultarla hasta el ${d.expiresAtLabel}: ${d.actionLink}`,
+  };
+}
+
+// RE5: rechazada Y vencida sin respuesta se ven IGUAL — una sola
+// plantilla para las dos, el solicitante no puede distinguirlas.
+export function renderRecordShareNotAuthorized(d: RecordShareRequesterData): RenderedNotification {
+  return {
+    subject: "Una solicitud de expediente compartido no fue autorizada",
+    body: `Hola Dr(a). ${d.recipientFirstName}, una de tus solicitudes de expediente compartido no fue autorizada. Ver detalles: ${d.actionLink}`,
+  };
+}
+
+export function renderRecordShareRevoked(d: RecordShareRequesterData): RenderedNotification {
+  return {
+    subject: "Un acceso a expediente compartido fue revocado",
+    body: `Hola Dr(a). ${d.recipientFirstName}, el paciente revocó uno de tus accesos a expediente compartido; ya no está disponible. Ver detalles: ${d.actionLink}`,
+  };
+}
+
+export function renderRecordShareExpiring(d: RecordShareRequesterDatedData): RenderedNotification {
+  return {
+    subject: "Un acceso a expediente compartido está por vencer",
+    body: `Hola Dr(a). ${d.recipientFirstName}, uno de tus accesos a expediente compartido vence el ${d.expiresAtLabel}. Ver detalles: ${d.actionLink}`,
+  };
+}
+
+interface RecordShareCustodianData {
+  recipientFirstName: string;
+  requesterDisplayName: string;
+  scope: RecordShareScopeCode[];
+  expiresAtLabel: string;
+  actionLink: string;
+}
+export function renderRecordShareCustodianNotice(d: RecordShareCustodianData): RenderedNotification {
+  const scopeLabel = d.scope.map((s) => RECORD_SHARE_SCOPE_LABELS[s]).join(", ");
+  return {
+    subject: "Uno de tus pacientes autorizó un expediente compartido",
+    body: `Hola Dr(a). ${d.recipientFirstName}, uno de tus pacientes autorizó que ${d.requesterDisplayName} vea: ${scopeLabel}, hasta el ${d.expiresAtLabel}. Revisa la pestaña Compartido de su expediente: ${d.actionLink}`,
+  };
+}

@@ -18,6 +18,7 @@ import { TabNotas } from "./tab-notas";
 import { TabRecetas } from "./tab-recetas";
 import { TabOrdenes } from "./tab-ordenes";
 import { TabProtocolos } from "./tab-protocolos";
+import { TabCompartido } from "./tab-compartido";
 import { sexAtBirthLabel } from "@/lib/sex-label";
 
 // Expediente — encabezado clínico persistente con alertas críticas
@@ -109,6 +110,8 @@ export function ExpedienteScreen({ patientId, accessToken }: { patientId: string
       label: t("pacientes.expediente.tabs.protocolos"),
       content: <TabProtocolos patientId={patientId} accessToken={accessToken} encounters={timeline?.encounters ?? []} />,
     },
+    // PR-EXP-06: accesos compartidos autorizados por el paciente.
+    { id: "compartido", label: t("pacientes.expediente.tabs.compartido"), content: <TabCompartido patientId={patientId} accessToken={accessToken} /> },
   ];
 
   return (

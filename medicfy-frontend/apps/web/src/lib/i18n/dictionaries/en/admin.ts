@@ -10,6 +10,8 @@ export const admin: typeof esAdmin = {
   usuariosDescripcion: "Search physicians and patients by identifier: no clinical content.",
   metricasTitulo: "Metrics",
   metricasDescripcion: "Physicians by status, appointments by status, no-show rate, signed notes, prescriptions issued.",
+  expedienteCompartidoTitulo: "Shared record",
+  expedienteCompartidoDescripcion: "Misuse reports for shared access and suspension — metadata only.",
   breakGlassTitulo: "Break-glass",
   breakGlassDescripcion:
     "Emergency access to a record with dual approval and automatic notice to the patient and the physician. Coming soon (M13).",

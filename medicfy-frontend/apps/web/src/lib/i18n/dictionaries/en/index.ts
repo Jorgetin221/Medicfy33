@@ -19,6 +19,7 @@ import { perfil } from "./perfil";
 import { disponibilidad } from "./disponibilidad";
 import { publicaciones } from "./publicaciones";
 import { admin, auditoria } from "./admin";
+import { expedienteCompartido } from "./expedienteCompartido";
 
 export const en: Dictionary = {
   common,
@@ -47,4 +48,5 @@ export const en: Dictionary = {
   publicaciones,
   admin,
   auditoria,
+  expedienteCompartido,
 };
