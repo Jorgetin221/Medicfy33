@@ -1,29 +1,31 @@
-# Consentimiento v0 — Expediente compartido autorizado por el paciente
+# Consentimiento — Expediente compartido autorizado por el paciente
 
-> 🔒 **PENDIENTE REVISIÓN LEGAL (D-EXP-12).** Borrador técnico, no un documento legal final — no se inventa ningún fundamento legal aquí. Revisar con el abogado de datos de Jorge antes de producción.
+> 🔒 **PENDIENTE REVISIÓN LEGAL (D-EXP-12).** No se inventa ningún fundamento legal aquí. Revisar con el abogado de datos de Jorge.
 >
-> **Este archivo es el espejo legible para humanos** del texto que de verdad usa el código: `medicfy-backend/apps/api/src/modules/record-share/record-share-consent-text.ts` (constante `RECORD_SHARE_CONSENT_TEXT`, versión `RECORD_SHARE_CONSENT_VERSION`). El backend hashea esa constante, **nunca lee este archivo** en tiempo de ejecución — si se cambia el texto, hay que cambiarlo en los dos lugares a mano. Versión actual: `draft-2026-10-31`.
+> **Este archivo es el espejo legible para humanos** del texto que de verdad usa el código: `medicfy-backend/apps/api/src/modules/record-share/record-share-consent-text.ts` (función `renderRecordShareConsent`, versión `RECORD_SHARE_CONSENT_VERSION`). El backend **nunca lee este archivo**: si se cambia el texto, hay que cambiarlo en los dos lugares a mano. Versión actual: `v1-2026-11-02` (texto definido por el usuario el 2026-11-02; reemplaza a `draft-2026-10-31`).
+>
+> El texto lleva datos de la solicitud: `[Nombre]` es el nombre legal del médico que solicita y `[fecha]` el vencimiento según la duración que elige el paciente (zona `America/Mexico_City`). El servidor lo completa y guarda como evidencia el SHA-256 del texto completado **más** la casilla, exactamente como lo leyó el paciente.
+>
+> Doble autorización: el acceso solo se crea cuando el paciente **y** su médico tratante aprueban. El vencimiento se cuenta desde que decidió el paciente (la fecha que leyó), aunque el médico apruebe después.
 
 ---
 
-## Autorización para compartir tu expediente médico
+**Autorizar acceso a tu expediente**
 
-Al aprobar esta solicitud, autorizas a Medicfy a mostrarle a el médico o la médica que la hizo, y únicamente a esa persona, la información de tu expediente que tú elijas en esta misma pantalla — nunca más de lo que el médico pidió.
+El/la Dr(a). [Nombre] solicita ver tu expediente clínico.
 
-**Por qué se te pide esto:** para que ese médico pueda dar continuidad a tu atención sin que tengas que repetir tu historial.
+Si autorizas, podrá consultar en modo solo lectura la información registrada por los médicos que te han atendido en Medicfy, incluyendo:
 
-**Qué va a ver:** solo datos de salud (alergias, medicamentos, diagnósticos, y lo demás que tú decidas incluir). Es de **SOLO LECTURA** — no puede escribir notas, emitir recetas ni modificar nada de tu expediente con este acceso.
+- Notas de consulta, diagnósticos y tratamientos
+- Recetas
+- Estudios de laboratorio e imagen
+- Alergias y antecedentes
 
-**Por cuánto tiempo:** el que tú elijas en esta pantalla (7, 30 o 90 días). Al vencer, el acceso se cierra solo.
+El acceso:
 
-**Cómo revocarlo:** puedes cerrar este acceso en cualquier momento desde el enlace que te enviamos al confirmar, sin dar ninguna razón.
+- Será únicamente para tu atención médica.
+- Estará vigente hasta el [fecha].
+- Quedará registrado, y podrás ver cuándo lo consultó.
+- Puedes revocarlo en cualquier momento desde tu cuenta.
 
-Este texto resume el tratamiento de tus datos para este caso específico. Consulta el aviso de privacidad completo de Medicfy para más detalle sobre cómo se protegen tus datos en general.
-
----
-
-## Notas para la revisión legal (no son parte del texto que ve el paciente)
-
-- El "aviso de privacidad completo" referido arriba todavía no existe como documento legal real — ver `CURRENT_PRIVACY_NOTICE_VERSION` en `legal-document-versions.ts`, también marcado como borrador pendiente.
-- El enlace de revocación mencionado en el texto **todavía no existe como ruta funcional** — se construye en PR-EXP-06. El mensaje de confirmación de aprobación (PR-EXP-03) no envía ese enlace hasta que exista (ver `02-solicitud-del-medico.md`/`03-autorizacion-del-paciente.md`, decisión §3) — este texto de consentimiento sí lo menciona porque describe la REGLA (que el acceso es revocable), no el mecanismo técnico específico.
-- No se garantiza aquí ningún plazo de retención de esta evidencia de consentimiento ni se cita ningún artículo de ley — eso es exactamente lo que falta por confirmar.
+☐ Entiendo que el/la Dr(a). [Nombre] podrá ver la información que otros médicos registraron sobre mí y autorizo el acceso.

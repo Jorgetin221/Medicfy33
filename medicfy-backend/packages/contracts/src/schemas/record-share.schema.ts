@@ -27,6 +27,8 @@ export type ShareDurationDays = z.infer<typeof shareDurationDaysSchema>;
 
 export const recordShareRequestStatusSchema = z.enum([
   "PENDING_PATIENT",
+  // El paciente ya autorizó; falta su médico tratante (doble autorización).
+  "PENDING_CUSTODIAN",
   "APPROVED",
   "DENIED",
   "EXPIRED_UNANSWERED",
@@ -113,9 +115,20 @@ export const recordShareAuthorizationInfoSchema = z.object({
   requestedDurationDays: z.number(),
   // El paciente debe leer EXACTAMENTE el texto cuyo hash se va a
   // guardar al decidir — nunca una copia mantenida aparte en el
-  // frontend (ver 03-autorizacion-del-paciente.md §4).
+  // frontend (ver 03-autorizacion-del-paciente.md §4). El texto lleva
+  // el nombre del médico y la fecha de vencimiento, que depende de la
+  // duración elegida: el servidor lo manda ya completado para cada
+  // duración permitida (nunca más larga que la pedida). Ninguna fecha
+  // se calcula en el navegador.
   consentTextVersion: z.string(),
-  consentText: z.string(),
+  consentOptions: z.array(
+    z.object({
+      durationDays: z.number(),
+      text: z.string(),
+      acknowledgement: z.string(),
+      sha256: z.string(),
+    })
+  ),
 });
 export type RecordShareAuthorizationInfo = z.infer<typeof recordShareAuthorizationInfoSchema>;
 
@@ -128,6 +141,9 @@ export interface PatientShareRequestItem extends RecordShareAuthorizationInfo {
   custodianDisplayName: string;
   createdAt: string;
   expiresAt: string;
+  // true: el paciente ya autorizó y falta su médico tratante. No
+  // necesita acción del paciente (no cuenta en la campana).
+  awaitingCustodian: boolean;
 }
 
 // Accesos que el propio paciente autorizó, para revocarlos desde su
@@ -142,7 +158,32 @@ export interface PatientShareGrantItem {
   expiresAt: string;
   status: RecordShareGrantStatus;
   revokedAt: string | null;
+  // "Quedará registrado, y podrás ver cuándo lo consultó."
+  views: { viewedAt: string }[];
 }
+
+// Bandeja del médico TRATANTE (custodio): solicitudes de otros médicos
+// para ver el expediente de SUS pacientes. Doble autorización: el
+// acceso solo se crea cuando el paciente y este médico aprueban.
+export interface CustodianShareRequestItem {
+  id: string;
+  patientId: string;
+  patientName: string;
+  patientMedicfyId: string;
+  requesterDisplayName: string;
+  requesterLicense: string;
+  requesterSpecialtyName: string | null;
+  reason: string;
+  requestedScope: ShareScope[];
+  requestedDurationDays: number;
+  // ¿El paciente ya autorizó? (PENDING_CUSTODIAN)
+  patientApproved: boolean;
+  createdAt: string;
+  expiresAt: string;
+}
+
+export const custodianShareDecisionSchema = z.object({ decision: z.enum(["APPROVED", "DENIED"]) }).strict();
+export type CustodianShareDecisionInput = z.infer<typeof custodianShareDecisionSchema>;
 
 // Sección B: 6 dígitos. El formato se valida aquí; que sea el código
 // correcto, vigente y no usado lo decide el servidor.
@@ -161,6 +202,12 @@ export const recordShareDecisionInputSchema = z.discriminatedUnion("decision", [
     includedSensitiveCategories: z.array(sensitiveCategorySchema).default([]),
     pregnancyExcluded: z.boolean().default(false),
     durationDays: shareDurationDaysSchema,
+    // Huella del texto (con casilla) que el paciente leyó para ESTA
+    // duración; el servidor la recalcula y rechaza si no coincide.
+    consentTextSha256: z.string().regex(/^[a-f0-9]{64}$/),
+    acknowledged: z.literal(true, {
+      errorMap: () => ({ message: "Debes confirmar que entiendes y autorizas el acceso." }),
+    }),
   }),
   z.object({ decision: z.literal("DENIED") }),
 ]);

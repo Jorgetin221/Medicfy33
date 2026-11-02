@@ -22,7 +22,11 @@ import {
   IconLogout,
   IconMenu,
   IconClose,
+  IconBell,
 } from "@/components/ui/nav-icons";
+import type { CustodianShareRequestItem } from "@medicfy/contracts";
+import { apiFetch, expectArray } from "@/lib/api-client";
+import { CUSTODIAN_REQUESTS_CHANGED_EVENT } from "@/lib/custodian-requests-events";
 
 // La etiqueta se guarda como clave, no como texto: el rail se pinta en
 // el idioma que el médico haya elegido.
@@ -43,8 +47,13 @@ const NAV_LINKS: { href: string; labelKey: MessageKey; Icon: IconComponent }[] =
   { href: "/expediente-compartido", labelKey: "nav.rail.expedienteCompartido", Icon: IconShareNav },
 ];
 
+// Bandeja del médico tratante (doble autorización del expediente
+// compartido). Solo para el rol DOCTOR — ver CustodianRequestsNavItem.
+const CUSTODIAN_REQUESTS_HREF = "/expediente-compartido/por-autorizar";
+
 export const ALL_NAV_HREFS = [
   ...NAV_LINKS.map((link) => link.href),
+  CUSTODIAN_REQUESTS_HREF,
   "/admin",
   "/perfil",
 ];
@@ -105,6 +114,10 @@ export function AppNav() {
   // tapa el contenido debe abrirse siempre cerrado, a diferencia de
   // `collapsed`, que es una preferencia de ancho del rail de escritorio.
   const [mobileOpen, setMobileOpen] = useState(false);
+  // Contador de la campana del médico tratante: uno solo para el rail y
+  // para el encabezado móvil (donde el rail va escondido tras ☰).
+  const isDoctorSession = Boolean(accessToken) && tokenPrimaryRole(accessToken) === "DOCTOR";
+  const custodianPendingCount = useCustodianPendingCount(isDoctorSession ? accessToken : null, pathname);
 
   useEffect(() => {
     try {
@@ -215,6 +228,15 @@ export function AppNav() {
           <IconPulse className="h-6 w-6 shrink-0" />
           <span className="font-heading text-base">Medicfy BETA</span>
         </Link>
+        {isDoctorSession ? (
+          <Link
+            href={CUSTODIAN_REQUESTS_HREF}
+            aria-label={custodianBellLabel(t, custodianPendingCount)}
+            className="ml-auto flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-rail-icon hover:bg-white/10"
+          >
+            <BellWithBadge count={custodianPendingCount} />
+          </Link>
+        ) : null}
       </header>
 
       {mobileOpen ? (
@@ -254,6 +276,16 @@ export function AppNav() {
             </li>
           );
         })}
+        {isDoctorSession ? (
+          <li>
+            <CustodianRequestsNavItem
+              count={custodianPendingCount}
+              collapsed={collapsed}
+              active={isActive(CUSTODIAN_REQUESTS_HREF)}
+              className={itemClassName(isActive(CUSTODIAN_REQUESTS_HREF))}
+            />
+          </li>
+        ) : null}
       </ul>
 
       <ul className="flex flex-col gap-1">
@@ -317,5 +349,86 @@ export function AppNav() {
         </span>
       </button>
     </>
+  );
+}
+
+// Campana del médico tratante: solicitudes de otros médicos para ver el
+// expediente de sus pacientes que esperan SU aprobación. El contador es
+// solo un aviso: si la consulta falla, se muestra sin número. Se
+// actualiza al navegar y cuando la bandeja avisa que se decidió algo.
+function useCustodianPendingCount(accessToken: string | null, pathname: string): number {
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    if (!accessToken) {
+      setCount(0);
+      return undefined;
+    }
+    let cancelled = false;
+    function refresh() {
+      apiFetch<unknown>("/record-share/custodian/requests", { accessToken })
+        .then((data) => {
+          if (!cancelled) setCount(expectArray<CustodianShareRequestItem>(data).length);
+        })
+        .catch(() => {
+          if (!cancelled) setCount(0);
+        });
+    }
+    refresh();
+    window.addEventListener(CUSTODIAN_REQUESTS_CHANGED_EVENT, refresh);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(CUSTODIAN_REQUESTS_CHANGED_EVENT, refresh);
+    };
+  }, [accessToken, pathname]);
+
+  return count;
+}
+
+function custodianBellLabel(t: ReturnType<typeof useT>, count: number): string {
+  return count > 0 ? t("expedienteCompartido.porAutorizar.navPendientes", { n: count }) : t("expedienteCompartido.porAutorizar.nav");
+}
+
+function BellWithBadge({ count }: { count: number }) {
+  return (
+    <span className="relative shrink-0">
+      <IconBell className="h-6 w-6" />
+      {count > 0 ? (
+        <span
+          aria-hidden="true"
+          className="absolute -right-1.5 -top-1.5 inline-flex min-h-5 min-w-5 items-center justify-center rounded-full bg-warn-600 px-1 text-xs font-semibold text-white"
+        >
+          {count}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+function CustodianRequestsNavItem({
+  count,
+  collapsed,
+  active,
+  className,
+}: {
+  count: number;
+  collapsed: boolean;
+  active: boolean;
+  className: string;
+}) {
+  const t = useT();
+  const label = custodianBellLabel(t, count);
+
+  return (
+    <Link
+      href={CUSTODIAN_REQUESTS_HREF}
+      aria-label={label}
+      title={collapsed ? label : undefined}
+      aria-current={active ? "page" : undefined}
+      className={className}
+    >
+      <BellWithBadge count={count} />
+      <span className={`truncate text-sm ${collapsed ? "md:hidden" : ""}`}>{t("expedienteCompartido.porAutorizar.nav")}</span>
+    </Link>
   );
 }

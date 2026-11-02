@@ -1,37 +1,62 @@
-// PR-EXP-03. 🔒 PENDIENTE REVISIÓN LEGAL (D-EXP-12) — borrador técnico,
-// no un documento legal final. Mismo patrón que
-// identity/legal-document-versions.ts: versión fija de código, nunca
-// interpolada con datos de la solicitud (lo específico — quién
-// solicita, qué alcance, qué duración — ya se muestra por separado en
-// la pantalla; este texto son las REGLAS del consentimiento, que no
-// cambian de una solicitud a otra, así que su hash sí puede ser
-// significativo entre versiones).
+import { SHARE_DURATION_DAYS_OPTIONS } from "@medicfy/contracts";
+import { sha256Hex } from "./record-share-crypto.util";
+
+// 🔒 PENDIENTE REVISIÓN LEGAL (D-EXP-12). Texto definido por el usuario
+// el 2026-11-02. A diferencia de la versión anterior (reglas fijas, sin
+// datos de la solicitud), este texto SÍ lleva el nombre del médico que
+// solicita y la fecha de vencimiento: el paciente debe leer exactamente
+// eso. Por eso no hay una sola constante que hashear — se hashea el
+// texto YA COMPLETADO que vio el paciente (texto + casilla), y el
+// servidor vuelve a completarlo al decidir para comprobar que coincide.
 //
-// Espejo legible para humanos (igual que pide el prompt maestro, para
-// que un abogado lo revise sin tocar código):
-// docs/expediente-compartido/consentimiento-v0.md — mismo texto,
-// mantenido a mano en los dos lugares. El backend SIEMPRE hashea esta
-// constante, nunca lee el archivo .md en tiempo de ejecución.
-export const RECORD_SHARE_CONSENT_VERSION = "draft-2026-10-31";
+// Espejo legible: docs/expediente-compartido/consentimiento-v0.md.
+export const RECORD_SHARE_CONSENT_VERSION = "v1-2026-11-02";
 
-export const RECORD_SHARE_CONSENT_TEXT = `Autorización para compartir tu expediente médico
+const MEXICO_TIME_ZONE = "America/Mexico_City";
+const DATE_FORMAT = new Intl.DateTimeFormat("es-MX", { timeZone: MEXICO_TIME_ZONE, dateStyle: "long" });
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
-Al aprobar esta solicitud, autorizas a Medicfy a mostrarle a el médico o la médica que la hizo,
-y únicamente a esa persona, la información de tu expediente que tú elijas en esta misma pantalla —
-nunca más de lo que el médico pidió.
+export interface RenderedRecordShareConsent {
+  durationDays: number;
+  text: string;
+  acknowledgement: string;
+  // sha256 de `text` + casilla: lo que se guarda como evidencia.
+  sha256: string;
+}
 
-Por qué se te pide esto: para que ese médico pueda dar continuidad a tu atención sin que tengas que
-repetir tu historial.
+export function renderRecordShareConsent(requesterName: string, durationDays: number, startsAt: Date): RenderedRecordShareConsent {
+  const expiresAt = new Date(startsAt.getTime() + durationDays * ONE_DAY_MS);
+  const text = `Autorizar acceso a tu expediente
 
-Qué va a ver: solo datos de salud (alergias, medicamentos, diagnósticos, y lo demás que tú decidas
-incluir). Es de SOLO LECTURA — no puede escribir notas, emitir recetas ni modificar nada de tu
-expediente con este acceso.
+El/la Dr(a). ${requesterName} solicita ver tu expediente clínico.
 
-Por cuánto tiempo: el que tú elijas en esta pantalla (7, 30 o 90 días). Al vencer, el acceso se
-cierra solo.
+Si autorizas, podrá consultar en modo solo lectura la información registrada por los médicos que te han atendido en Medicfy, incluyendo:
 
-Cómo revocarlo: puedes cerrar este acceso en cualquier momento desde el enlace que te enviamos al
-confirmar, sin dar ninguna razón.
+• Notas de consulta, diagnósticos y tratamientos
+• Recetas
+• Estudios de laboratorio e imagen
+• Alergias y antecedentes
 
-Este texto resume el tratamiento de tus datos para este caso específico. Consulta el aviso de
-privacidad completo de Medicfy para más detalle sobre cómo se protegen tus datos en general.`;
+El acceso:
+
+• Será únicamente para tu atención médica.
+• Estará vigente hasta el ${DATE_FORMAT.format(expiresAt)}.
+• Quedará registrado, y podrás ver cuándo lo consultó.
+• Puedes revocarlo en cualquier momento desde tu cuenta.`;
+  const acknowledgement = `Entiendo que el/la Dr(a). ${requesterName} podrá ver la información que otros médicos registraron sobre mí y autorizo el acceso.`;
+  return { durationDays, text, acknowledgement, sha256: sha256Hex(`${text}\n\n${acknowledgement}`) };
+}
+
+// Nombre legal (sin "Dr." del nombre público, que el texto ya antepone).
+export function requesterLegalName(doctor: { legalFirstName: string; legalLastName: string }): string {
+  return `${doctor.legalFirstName} ${doctor.legalLastName}`.trim();
+}
+
+// El texto completado para cada duración que el paciente puede elegir
+// (nunca más larga que la pedida). Se calcula en el servidor: ninguna
+// fecha se calcula en el navegador.
+export function consentOptionsFor(requestedDurationDays: number, requesterName: string, now: Date): RenderedRecordShareConsent[] {
+  return SHARE_DURATION_DAYS_OPTIONS.filter((days) => days <= requestedDurationDays).map((days) =>
+    renderRecordShareConsent(requesterName, days, now)
+  );
+}

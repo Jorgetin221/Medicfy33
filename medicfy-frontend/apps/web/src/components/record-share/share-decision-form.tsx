@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import {
-  SHARE_DURATION_DAYS_OPTIONS,
   SENSITIVE_CATEGORIES,
   type RecordShareAuthorizationInfo,
   type RecordShareDecisionInput,
@@ -58,8 +57,13 @@ export function DecisionForm({
   const [approvedScope, setApprovedScope] = useState<ShareScope[]>(info.requestedScope);
   const [includedSensitiveCategories, setIncludedSensitiveCategories] = useState<SensitiveCategory[]>([]);
   const [pregnancyIncluded, setPregnancyIncluded] = useState(true);
-  const durationOptions = SHARE_DURATION_DAYS_OPTIONS.filter((d) => d <= info.requestedDurationDays);
-  const [durationDays, setDurationDays] = useState<number>(info.requestedDurationDays);
+  // Duraciones permitidas (nunca más que lo pedido), cada una con su
+  // texto ya completado por el servidor: nombre del médico y fecha de
+  // vencimiento. Ninguna fecha se calcula aquí.
+  const durationOptions = info.consentOptions.map((option) => option.durationDays);
+  const [durationDays, setDurationDays] = useState<number>(durationOptions[durationOptions.length - 1] ?? info.requestedDurationDays);
+  const consent = info.consentOptions.find((option) => option.durationDays === durationDays) ?? info.consentOptions[0];
+  const [acknowledged, setAcknowledged] = useState(false);
 
   function toggleScope(scope: ShareScope, checked: boolean) {
     setApprovedScope((prev) => withSummary(checked ? [...prev, scope] : prev.filter((s) => s !== scope)));
@@ -68,8 +72,19 @@ export function DecisionForm({
     setIncludedSensitiveCategories((prev) => (checked ? [...prev, category] : prev.filter((c) => c !== category)));
   }
 
+  // El texto de autorización va primero y completo: es exactamente lo
+  // que el servidor guarda como evidencia (hash) al aprobar.
+  const [consentTitle, ...consentBody] = (consent?.text ?? "").split("\n");
+
   return (
     <div className="flex flex-col gap-5">
+      {consent ? (
+        <div className="rounded-md border border-gray-300 bg-gray-50 p-4">
+          <h2 className="font-heading text-lg text-brand-900">{consentTitle}</h2>
+          <p className="mt-2 whitespace-pre-line text-base text-gray-900">{consentBody.join("\n").trim()}</p>
+        </div>
+      ) : null}
+
       <div>
         <h2 className="font-heading text-lg text-brand-900">{t("expedienteCompartido.autorizar.decision.titulo")}</h2>
         <p className="text-sm text-gray-500">{t("expedienteCompartido.autorizar.decision.subtitulo")}</p>
@@ -129,10 +144,17 @@ export function DecisionForm({
         {!pregnancyIncluded && <Aviso variant="advertencia" title={t("expedienteCompartido.autorizar.decision.embarazoAyuda")} />}
       </div>
 
-      <div className="rounded-md border border-gray-300 bg-gray-50 p-3">
-        <h3 className="mb-1 text-sm font-semibold text-gray-700">{t("expedienteCompartido.autorizar.decision.consentimientoTitulo")}</h3>
-        <p className="whitespace-pre-line text-sm text-gray-700">{info.consentText}</p>
-      </div>
+      {consent ? (
+        <label className="flex items-start gap-3 rounded-md border border-brand-700 p-3 text-base text-gray-900">
+          <input
+            type="checkbox"
+            className="mt-1 h-5 w-5 shrink-0"
+            checked={acknowledged}
+            onChange={(e) => setAcknowledged(e.target.checked)}
+          />
+          {consent.acknowledgement}
+        </label>
+      ) : null}
 
       <div className="flex flex-wrap justify-end gap-3">
         <Button type="button" variant="secondary" disabled={pending} onClick={() => onDecide({ decision: "DENIED" })}>
@@ -141,16 +163,19 @@ export function DecisionForm({
         <Button
           type="button"
           isLoading={pending}
-          disabled={pending}
-          onClick={() =>
+          disabled={pending || !acknowledged || !consent}
+          onClick={() => {
+            if (!consent) return;
             onDecide({
               decision: "APPROVED",
               approvedScope: withSummary(approvedScope),
               includedSensitiveCategories,
               pregnancyExcluded: !pregnancyIncluded,
               durationDays: durationDays as 7 | 30 | 90,
-            })
-          }
+              consentTextSha256: consent.sha256,
+              acknowledged: true,
+            });
+          }}
         >
           {t("expedienteCompartido.autorizar.decision.aprobar")}
         </Button>

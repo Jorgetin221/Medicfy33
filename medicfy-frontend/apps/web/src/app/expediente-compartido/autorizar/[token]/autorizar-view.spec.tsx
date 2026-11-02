@@ -17,8 +17,13 @@ const INFO: RecordShareAuthorizationInfo = {
   reason: "Valoración por dolor torácico y antecedentes cardiovasculares",
   requestedScope: ["SUMMARY", "SIGNED_NOTES"],
   requestedDurationDays: 30,
-  consentTextVersion: "draft-2026-10-31",
-  consentText: "Texto de consentimiento de prueba.",
+  consentTextVersion: "v1-2026-11-02",
+  consentOptions: [7, 30].map((durationDays) => ({
+    durationDays,
+    text: "Autorizar acceso a tu expediente\n\nTexto de consentimiento de prueba.",
+    acknowledgement: "Entiendo y autorizo el acceso.",
+    sha256: "a".repeat(64),
+  })),
 };
 
 function renderView() {

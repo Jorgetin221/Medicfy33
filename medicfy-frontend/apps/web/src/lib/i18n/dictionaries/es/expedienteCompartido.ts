@@ -52,7 +52,8 @@ export const expedienteCompartido = {
       vence: "Vence",
     },
     estado: {
-      PENDING_PATIENT: "Esperando al paciente",
+      PENDING_PATIENT: "En espera de autorización",
+      PENDING_CUSTODIAN: "En espera de autorización",
       APPROVED: "Autorizada",
       DENIED: "No autorizada",
       EXPIRED_UNANSWERED: "No autorizada",
@@ -216,8 +217,37 @@ export const expedienteCompartido = {
     cancelar: "Cancelar",
     suspendido: "Acceso suspendido.",
   },
+  // Bandeja del médico tratante (doble autorización con el paciente).
+  porAutorizar: {
+    nav: "Por autorizar",
+    navPendientes: "Por autorizar: {n} pendientes",
+    titulo: "Solicitudes por autorizar",
+    subtitulo:
+      "Otros médicos piden ver el expediente de tus pacientes. El acceso solo se activa si tú y tu paciente lo aprueban.",
+    cargando: "Cargando solicitudes…",
+    vacio: "No tienes solicitudes por autorizar.",
+    pideVer: "pide ver el expediente de tu paciente.",
+    paciente: "Paciente",
+    recibida: "Recibida el {fecha} · vence el {vence}",
+    pacienteYaAutorizo: "Tu paciente ya autorizó esta solicitud. Falta tu aprobación.",
+    pacientePendiente: "Tu paciente todavía no responde. El acceso se activará cuando los dos lo aprueben.",
+    aprobar: "Aprobar",
+    rechazar: "Rechazar",
+    confirmarAprobarTitulo: "¿Aprobar que se comparta el expediente?",
+    confirmarAprobarCuerpo:
+      "{medico} podrá ver en modo solo lectura el expediente de {paciente}, siempre que tu paciente también lo autorice.",
+    confirmarRechazarTitulo: "¿Rechazar la solicitud?",
+    confirmarRechazarCuerpo: "{medico} no podrá ver el expediente, aunque tu paciente lo autorice.",
+    aprobadaActiva: "Aprobaste. Tu paciente ya había autorizado, así que el acceso está activo.",
+    aprobadaFaltaPaciente: "Aprobaste. El acceso se activará cuando tu paciente también lo autorice.",
+    rechazada: "Rechazaste la solicitud.",
+  },
   // Bandeja del paciente con cuenta (campana en /mi-cuenta).
   bandeja: {
+    esperandoMedico: "Ya autorizaste esta solicitud. Falta que {medico}, tu médico tratante, también la apruebe.",
+    aprobadaFaltaMedico: "Autorizaste el acceso. Tu médico tratante también debe aprobarlo; cuando lo haga, aparecerá en \"Accesos que has autorizado\".",
+    consultas: "Lo ha consultado {n} vez/veces · última: {fecha}",
+    sinConsultas: "Aún no lo ha consultado.",
     campana: "Notificaciones",
     campanaPendientes: "Notificaciones: {n} pendientes",
     titulo: "Notificaciones",

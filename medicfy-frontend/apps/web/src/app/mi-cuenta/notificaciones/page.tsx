@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useI18n } from "@/lib/i18n/context";
 import type { MessageKey } from "@/lib/i18n/dictionaries";
-import { formatDateMedium } from "@/lib/i18n/format";
+import { formatDateMedium, formatDateTimeMedium } from "@/lib/i18n/format";
 
 // Notificaciones del paciente con cuenta: solicitudes de médicos para
 // ver su expediente (aprobar o rechazar con la sesión iniciada, mismas
@@ -45,7 +45,7 @@ export default function NotificacionesPage() {
   );
 }
 
-type Outcome = "aprobada" | "rechazada" | "revocado";
+type Outcome = "aprobada" | "aprobadaFaltaMedico" | "rechazada" | "revocado";
 
 function NotificacionesContent({ accessToken, onChanged }: { accessToken: string; onChanged: () => void }) {
   const { t, locale } = useI18n();
@@ -80,13 +80,20 @@ function NotificacionesContent({ accessToken, onChanged }: { accessToken: string
     setActionError(null);
     setPendingId(requestId);
     try {
-      await apiFetch(`/record-share/me/requests/${requestId}/decide`, { method: "POST", body, accessToken });
-      setOutcome(body.decision === "APPROVED" ? "aprobada" : "rechazada");
+      const res = await apiFetch<{ status: "APPROVED" | "DENIED" | "PENDING_CUSTODIAN" }>(`/record-share/me/requests/${requestId}/decide`, {
+        method: "POST",
+        body,
+        accessToken,
+      });
+      setOutcome(res.status === "APPROVED" ? "aprobada" : res.status === "PENDING_CUSTODIAN" ? "aprobadaFaltaMedico" : "rechazada");
       setOpenId(null);
       await load();
       onChanged();
     } catch (error) {
       setActionError(error);
+      // Si el texto cambió (p. ej. pasó la medianoche y la fecha de
+      // vencimiento es otra), se recarga para que lo lea de nuevo.
+      await load();
     } finally {
       setPendingId(null);
     }
@@ -146,7 +153,9 @@ function NotificacionesContent({ accessToken, onChanged }: { accessToken: string
                         vence: formatDateMedium(locale, request.expiresAt),
                       })}
                     </p>
-                    {openId === request.id ? (
+                    {request.awaitingCustodian ? (
+                      <Aviso variant="info" title={t("expedienteCompartido.bandeja.esperandoMedico", { medico: request.custodianDisplayName })} />
+                    ) : openId === request.id ? (
                       <>
                         <DecisionForm info={request} pending={pendingId === request.id} onDecide={(body) => void decide(request.id, body)} t={t} />
                         <div>
@@ -203,6 +212,14 @@ function NotificacionesContent({ accessToken, onChanged }: { accessToken: string
                         inicio: formatDateMedium(locale, grant.startsAt),
                         fin: formatDateMedium(locale, grant.revokedAt ?? grant.expiresAt),
                       })}
+                    </p>
+                    <p className="text-sm text-gray-700">
+                      {grant.views.length > 0
+                        ? t("expedienteCompartido.bandeja.consultas", {
+                            n: grant.views.length,
+                            fecha: formatDateTimeMedium(locale, grant.views[0]?.viewedAt ?? grant.startsAt),
+                          })
+                        : t("expedienteCompartido.bandeja.sinConsultas")}
                     </p>
                     {grant.status === "ACTIVE" ? (
                       <div>

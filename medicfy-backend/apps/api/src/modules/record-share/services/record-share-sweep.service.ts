@@ -64,13 +64,15 @@ export class RecordShareSweepService implements OnModuleInit, OnModuleDestroy {
 
   private async expireUnansweredRequests(now: Date): Promise<number> {
     const due = await this.prisma.recordShareRequest.findMany({
-      where: { status: "PENDING_PATIENT", expiresAt: { lt: now } },
+      // Doble autorización: también vence si el paciente ya aprobó pero
+      // su médico tratante no respondió a tiempo.
+      where: { status: { in: ["PENDING_PATIENT", "PENDING_CUSTODIAN"] }, expiresAt: { lt: now } },
       take: BATCH_SIZE,
     });
     let expired = 0;
     for (const request of due) {
       const { count } = await this.prisma.recordShareRequest.updateMany({
-        where: { id: request.id, status: "PENDING_PATIENT" },
+        where: { id: request.id, status: { in: ["PENDING_PATIENT", "PENDING_CUSTODIAN"] } },
         data: { status: "EXPIRED_UNANSWERED" },
       });
       if (count === 0) continue;

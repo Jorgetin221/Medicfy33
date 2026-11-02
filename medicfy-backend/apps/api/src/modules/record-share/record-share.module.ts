@@ -13,6 +13,7 @@ import { RecordShareRevocationController } from "./record-share-revocation.contr
 import { RecordShareCustodianController } from "./record-share-custodian.controller";
 import { RecordShareAdminController } from "./record-share-admin.controller";
 import { RecordSharePatientController } from "./record-share-patient.controller";
+import { RecordShareCustodianApprovalController } from "./record-share-custodian-approval.controller";
 import { RecordShareRequestService } from "./services/record-share-request.service";
 import { RecordShareAuthorizationService } from "./services/record-share-authorization.service";
 import { SharedSummaryService } from "./services/shared-summary.service";
@@ -22,6 +23,7 @@ import { RecordShareRevocationService } from "./services/record-share-revocation
 import { RecordShareSweepService } from "./services/record-share-sweep.service";
 import { RecordShareOversightService } from "./services/record-share-oversight.service";
 import { RecordSharePatientInboxService } from "./services/record-share-patient-inbox.service";
+import { RecordShareCustodianApprovalService } from "./services/record-share-custodian-approval.service";
 import { SharedRecordGuard } from "./shared-record.guard";
 import { RECORD_SHARE_NOTIFICATION_PORT } from "./record-share-notification.port";
 import { ConsoleRecordShareNotificationAdapter } from "./console-record-share-notification.adapter";
@@ -54,6 +56,7 @@ import { ConsoleRecordShareNotificationAdapter } from "./console-record-share-no
     RecordShareCustodianController,
     RecordShareAdminController,
     RecordSharePatientController,
+    RecordShareCustodianApprovalController,
   ],
   providers: [
     RecordShareRequestService,
@@ -67,6 +70,7 @@ import { ConsoleRecordShareNotificationAdapter } from "./console-record-share-no
     RecordShareSweepService,
     RecordShareOversightService,
     RecordSharePatientInboxService,
+    RecordShareCustodianApprovalService,
     { provide: RECORD_SHARE_NOTIFICATION_PORT, useClass: ConsoleRecordShareNotificationAdapter },
   ],
   exports: [SharedSummaryService],

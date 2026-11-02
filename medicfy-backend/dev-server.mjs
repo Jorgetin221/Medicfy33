@@ -2587,12 +2587,53 @@ const server = http.createServer(async (req, res) => {
     return sub ? patients.find(p => p.userId === sub) : undefined;
   };
 
+  // Mismo texto de autorización que el backend real
+  // (record-share-consent-text.ts): nombre legal del médico que solicita
+  // y fecha de vencimiento según la duración elegida.
+  const requesterLegalNameOf = (r) => {
+    const doctor = allUsers().find(u => u.id === r.requesterDoctorId)?.doctor;
+    return doctor ? `${doctor.legalFirstName} ${doctor.legalLastName}`.trim() : r.requesterDisplayName;
+  };
+  const renderConsent = (name, durationDays, startsAt) => {
+    const fecha = new Intl.DateTimeFormat('es-MX', { timeZone: 'America/Mexico_City', dateStyle: 'long' })
+      .format(new Date(startsAt.getTime() + durationDays * 86400000));
+    const text = `Autorizar acceso a tu expediente\n\nEl/la Dr(a). ${name} solicita ver tu expediente clínico.\n\nSi autorizas, podrá consultar en modo solo lectura la información registrada por los médicos que te han atendido en Medicfy, incluyendo:\n\n• Notas de consulta, diagnósticos y tratamientos\n• Recetas\n• Estudios de laboratorio e imagen\n• Alergias y antecedentes\n\nEl acceso:\n\n• Será únicamente para tu atención médica.\n• Estará vigente hasta el ${fecha}.\n• Quedará registrado, y podrás ver cuándo lo consultó.\n• Puedes revocarlo en cualquier momento desde tu cuenta.`;
+    const acknowledgement = `Entiendo que el/la Dr(a). ${name} podrá ver la información que otros médicos registraron sobre mí y autorizo el acceso.`;
+    return { durationDays, text, acknowledgement, sha256: createHash('sha256').update(`${text}\n\n${acknowledgement}`).digest('hex') };
+  };
+  const consentOptionsOf = (r, now) => [7, 30, 90].filter(d => d <= r.requestedDurationDays).map(d => renderConsent(requesterLegalNameOf(r), d, now));
+  const PENDING_SHARE_STATUSES = ['PENDING_PATIENT', 'PENDING_CUSTODIAN'];
+  // Doble autorización: el acceso se crea cuando aprueba el segundo de
+  // los dos (paciente y médico tratante). El vencimiento cuenta desde
+  // que decidió el paciente, que es la fecha que leyó en el texto.
+  const createMockGrant = (request) => {
+    const pat = patients.find(p => p.id === request.patientId);
+    const consent = request.patientConsent;
+    mockShareGrants.push({
+      id: randomUUID(),
+      requestId: request.id,
+      requesterDoctorId: request.requesterDoctorId,
+      requesterDisplayName: request.requesterDisplayName,
+      requesterLicense: request.requesterLicense,
+      custodianDoctorUserId: request.custodianDoctorUserId || doctorUser.id,
+      patientId: request.patientId,
+      patientName: pat ? [pat.firstName, pat.lastNamePaternal, pat.lastNameMaternal].filter(Boolean).join(' ') : '',
+      patientBirthDate: pat?.birthDate ?? null,
+      scope: consent.approvedScope,
+      status: 'ACTIVE',
+      startsAt: new Date().toISOString(),
+      expiresAt: new Date(new Date(consent.decidedAt).getTime() + consent.durationDays * 86400000).toISOString(),
+      revokedAt: null,
+    });
+    request.status = 'APPROVED';
+  };
+
   if (pathname === '/record-share/me/requests' && method === 'GET') {
     const pat = ownPatientForShare();
     if (!pat) return sendJson([]);
-    const now = new Date().toISOString();
+    const now = new Date();
     return sendJson(recordShareRequests
-      .filter(r => r.patientId === pat.id && r.status === 'PENDING_PATIENT' && r.expiresAt > now)
+      .filter(r => r.patientId === pat.id && PENDING_SHARE_STATUSES.includes(r.status) && r.expiresAt > now.toISOString())
       .map(r => ({
         id: r.id,
         requesterDisplayName: r.requesterDisplayName,
@@ -2602,10 +2643,11 @@ const server = http.createServer(async (req, res) => {
         reason: r.reason,
         requestedScope: r.requestedScope,
         requestedDurationDays: r.requestedDurationDays,
-        consentTextVersion: 'draft-2026-10-31',
-        consentText: 'Texto de consentimiento de demostración (mock) — ver record-share-consent-text.ts para el real.',
+        consentTextVersion: 'v1-2026-11-02',
+        consentOptions: consentOptionsOf(r, now),
         createdAt: r.createdAt,
         expiresAt: r.expiresAt,
+        awaitingCustodian: r.status === 'PENDING_CUSTODIAN',
       })));
   }
 
@@ -2626,26 +2668,66 @@ const server = http.createServer(async (req, res) => {
     if (body.durationDays > request.requestedDurationDays) {
       return sendError('RECORD_SHARE_DURATION_EXCEEDS_REQUEST', 'La duración autorizada no puede ampliar lo solicitado.', 422);
     }
-    request.status = 'APPROVED';
-    const startsAt = new Date();
-    mockShareGrants.push({
-      id: randomUUID(),
-      requestId: request.id,
-      requesterDoctorId: request.requesterDoctorId,
-      requesterDisplayName: request.requesterDisplayName,
-      requesterLicense: request.requesterLicense,
-      custodianDoctorUserId: request.custodianDoctorUserId || doctorUser.id,
-      patientId: pat.id,
-      patientName: [pat.firstName, pat.lastNamePaternal, pat.lastNameMaternal].filter(Boolean).join(' '),
-      patientBirthDate: pat.birthDate,
-      scope,
-      status: 'ACTIVE',
-      startsAt: startsAt.toISOString(),
-      expiresAt: new Date(startsAt.getTime() + body.durationDays * 86400000).toISOString(),
-      revokedAt: null,
-    });
+    if (body.acknowledged !== true) {
+      return sendError('VALIDATION_ERROR', 'Debes confirmar que entiendes y autorizas el acceso.', 400);
+    }
+    const now = new Date();
+    if (renderConsent(requesterLegalNameOf(request), body.durationDays, now).sha256 !== body.consentTextSha256) {
+      return sendError('RECORD_SHARE_CONSENT_TEXT_CHANGED', 'El texto de la autorización cambió. Revísalo de nuevo antes de aprobar.', 409);
+    }
+    request.patientConsent = { approvedScope: scope, durationDays: body.durationDays, decidedAt: now.toISOString() };
+    if (request.custodianDecision === 'APPROVED') {
+      createMockGrant(request);
+    } else {
+      request.status = 'PENDING_CUSTODIAN';
+    }
     saveMockState();
-    return sendJson({ status: 'APPROVED' });
+    return sendJson({ status: request.status });
+  }
+
+  // Bandeja del médico tratante (custodio).
+  if (pathname === '/record-share/custodian/requests' && method === 'GET') {
+    const user = getCurrentUser(req);
+    const now = new Date().toISOString();
+    return sendJson(recordShareRequests
+      .filter(r => (r.custodianDoctorUserId || doctorUser.id) === user.id && (r.custodianDecision || 'PENDING') === 'PENDING'
+        && PENDING_SHARE_STATUSES.includes(r.status) && r.expiresAt > now)
+      .map(r => {
+        const pat = patients.find(p => p.id === r.patientId);
+        return {
+          id: r.id,
+          patientId: r.patientId,
+          patientName: pat ? [pat.firstName, pat.lastNamePaternal, pat.lastNameMaternal].filter(Boolean).join(' ') : '',
+          patientMedicfyId: pat?.medicfyId ?? '',
+          requesterDisplayName: r.requesterDisplayName,
+          requesterLicense: r.requesterLicense,
+          requesterSpecialtyName: null,
+          reason: r.reason,
+          requestedScope: r.requestedScope,
+          requestedDurationDays: r.requestedDurationDays,
+          patientApproved: r.status === 'PENDING_CUSTODIAN',
+          createdAt: r.createdAt,
+          expiresAt: r.expiresAt,
+        };
+      }));
+  }
+
+  const custodianDecide = pathname.match(/^\/record-share\/custodian\/requests\/([^/]+)\/decide$/);
+  if (custodianDecide && method === 'POST') {
+    const user = getCurrentUser(req);
+    const request = recordShareRequests.find(r => r.id === custodianDecide[1]
+      && (r.custodianDoctorUserId || doctorUser.id) === user.id && (r.custodianDecision || 'PENDING') === 'PENDING'
+      && PENDING_SHARE_STATUSES.includes(r.status));
+    if (!request) return sendError('RECORD_SHARE_REQUEST_NOT_FOUND', 'Esta solicitud ya no está disponible.', 404);
+    request.custodianDecision = body.decision === 'APPROVED' ? 'APPROVED' : 'DENIED';
+    request.custodianDecidedAt = new Date().toISOString();
+    if (request.custodianDecision === 'DENIED') {
+      request.status = 'DENIED';
+    } else if (request.status === 'PENDING_CUSTODIAN') {
+      createMockGrant(request);
+    }
+    saveMockState();
+    return sendJson({ status: request.status });
   }
 
   if (pathname === '/record-share/me/grants' && method === 'GET') {
@@ -2656,7 +2738,7 @@ const server = http.createServer(async (req, res) => {
       .map(g => ({
         id: g.id, requesterDisplayName: g.requesterDisplayName, requesterLicense: g.requesterLicense,
         custodianDisplayName: doctorDisplayNameOf(g.custodianDoctorUserId), scope: g.scope, startsAt: g.startsAt, expiresAt: g.expiresAt,
-        status: g.status, revokedAt: g.revokedAt,
+        status: g.status, revokedAt: g.revokedAt, views: [],
       })));
   }
 
@@ -2679,7 +2761,7 @@ const server = http.createServer(async (req, res) => {
   const cancelShareRequest = pathname.match(/^\/record-share\/requests\/([^/]+)\/cancel$/);
   if (cancelShareRequest && method === 'POST') {
     const user = getCurrentUser(req);
-    const request = recordShareRequests.find(r => r.id === cancelShareRequest[1] && r.requesterDoctorId === user.id && r.status === 'PENDING_PATIENT');
+    const request = recordShareRequests.find(r => r.id === cancelShareRequest[1] && r.requesterDoctorId === user.id && ['PENDING_PATIENT', 'PENDING_CUSTODIAN'].includes(r.status));
     if (!request) return sendError('RECORD_SHARE_REQUEST_NOT_CANCELLABLE', 'No se pudo cancelar la solicitud.', 400);
     request.status = 'CANCELLED_BY_REQUESTER';
     return sendJson({ cancelled: true });
@@ -2690,6 +2772,12 @@ const server = http.createServer(async (req, res) => {
   // (PR-EXP-02 arriba), así que CUALQUIER token resuelve a esta misma
   // solicitud de demostración — solo para probar la pantalla en /dev,
   // nunca el emparejamiento real (eso vive contra Postgres real).
+  const renderConsentForDemo = (name, durationDays) => {
+    const fecha = new Intl.DateTimeFormat('es-MX', { timeZone: 'America/Mexico_City', dateStyle: 'long' }).format(new Date(Date.now() + durationDays * 86400000));
+    const text = `Autorizar acceso a tu expediente\n\nEl/la Dr(a). ${name} solicita ver tu expediente clínico.\n\n(Texto de demostración del mock — el real está en record-share-consent-text.ts.)\n\n• Estará vigente hasta el ${fecha}.`;
+    const acknowledgement = `Entiendo que el/la Dr(a). ${name} podrá ver la información que otros médicos registraron sobre mí y autorizo el acceso.`;
+    return { durationDays, text, acknowledgement, sha256: createHash('sha256').update(`${text}\n\n${acknowledgement}`).digest('hex') };
+  };
   const authInfo = pathname.match(/^\/record-share\/authorize\/([^/]+)$/);
   if (authInfo && method === 'GET') {
     return sendJson({
@@ -2699,8 +2787,8 @@ const server = http.createServer(async (req, res) => {
       reason: 'Valoración por dolor torácico y antecedentes cardiovasculares',
       requestedScope: ['SUMMARY'],
       requestedDurationDays: 30,
-      consentTextVersion: 'draft-2026-10-31',
-      consentText: 'Texto de consentimiento de demostración (mock) — ver record-share-consent-text.ts para el real.'
+      consentTextVersion: 'v1-2026-11-02',
+      consentOptions: [7, 30].map(d => renderConsentForDemo('Elena Cruz', d)),
     });
   }
 

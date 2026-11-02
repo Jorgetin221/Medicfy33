@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import QRCode from "qrcode";
 import type { PatientAccountStatus, PatientActivationLinkIssued } from "@medicfy/contracts";
 import { apiFetch } from "@/lib/api-client";
 import { Card, ErrorState, LoadingState } from "@/components/ui/states";
@@ -11,6 +12,9 @@ import { useI18n } from "@/lib/i18n/context";
 import { formatDateMedium } from "@/lib/i18n/format";
 
 const COPIED_FEEDBACK_MS = 2000;
+// Tamaño del QR en pixeles: legible desde la pantalla de un celular y
+// suficiente para imprimirlo.
+const QR_SIZE_PX = 256;
 
 // wa.me exige el número sin "+" ni separadores. Sin teléfono, WhatsApp
 // abre el selector de contacto con el mensaje ya escrito.
@@ -41,6 +45,10 @@ export function PatientAccountPanel({
   const [issuing, setIssuing] = useState(false);
   const [issueError, setIssueError] = useState<unknown>(null);
   const [copied, setCopied] = useState(false);
+  // QR del MISMO enlace (mismo token, un solo uso): para que el paciente
+  // lo escanee con su celular en el consultorio.
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const [qrError, setQrError] = useState<unknown>(null);
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -59,6 +67,8 @@ export function PatientAccountPanel({
     setIssueError(null);
     setIssuing(true);
     setCopied(false);
+    setQrDataUrl(null);
+    setQrError(null);
     try {
       setIssued(await apiFetch<PatientActivationLinkIssued>(`/patients/${patientId}/activation-link`, { method: "POST", accessToken }));
       await load();
@@ -66,6 +76,15 @@ export function PatientAccountPanel({
       setIssueError(error);
     } finally {
       setIssuing(false);
+    }
+  }
+
+  async function generateQr(url: string) {
+    setQrError(null);
+    try {
+      setQrDataUrl(await QRCode.toDataURL(url, { width: QR_SIZE_PX, margin: 1 }));
+    } catch (error) {
+      setQrError(error);
     }
   }
 
@@ -128,7 +147,30 @@ export function PatientAccountPanel({
                   >
                     {t("vinculacion.ficha.whatsapp")}
                   </a>
+                  <Button type="button" variant="secondary" onClick={() => void generateQr(issued.url)}>
+                    {t("vinculacion.ficha.generarQr")}
+                  </Button>
                 </div>
+                {qrError ? <ErrorState error={qrError} /> : null}
+                {qrDataUrl ? (
+                  <div className="flex flex-col items-start gap-2">
+                    <img
+                      src={qrDataUrl}
+                      width={QR_SIZE_PX}
+                      height={QR_SIZE_PX}
+                      alt={t("vinculacion.ficha.qrAlt", { nombre: firstName })}
+                      className="rounded-md border border-gray-300 bg-white"
+                    />
+                    <p className="text-sm text-gray-700">{t("vinculacion.ficha.qrAyuda")}</p>
+                    <a
+                      href={qrDataUrl}
+                      download={`activacion-medicfy-${firstName.trim().toLowerCase().replace(/\s+/g, "-")}.png`}
+                      className="inline-flex min-h-[44px] items-center text-base font-medium text-brand-700 underline"
+                    >
+                      {t("vinculacion.ficha.descargarQr")}
+                    </a>
+                  </div>
+                ) : null}
               </div>
             ) : null}
 

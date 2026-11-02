@@ -930,6 +930,9 @@ enum SensitiveCategory {
 
 enum RecordShareRequestStatus {
   PENDING_PATIENT
+  // El paciente ya autorizó; falta que apruebe su médico tratante
+  // (custodio). Doble autorización — decisión del usuario, 2026-11-02.
+  PENDING_CUSTODIAN
   APPROVED
   DENIED
   EXPIRED_UNANSWERED
@@ -981,17 +984,27 @@ enum RecordShareGrantStatus {
 // R7 (FHIR): sin equivalente directo — es la fase previa al Consent;
 // FHIR no modela "solicitud de consentimiento", solo el consentimiento
 // en sí (ver RecordShareConsent).
+// Decisión del médico tratante (custodio) sobre una solicitud. El
+// acceso solo se crea cuando el paciente Y su médico aprueban.
+enum RecordShareCustodianDecision {
+  PENDING
+  APPROVED
+  DENIED
+
+  @@map("record_share_custodian_decision")
+}
+
 model RecordShareRequest {
-  id                    String                   @id @default(uuid())
-  requesterDoctorId     String
-  custodianDoctorId     String
-  patientId             String
+  id                       String                       @id @default(uuid())
+  requesterDoctorId        String
+  custodianDoctorId        String
+  patientId                String
   // 15–500 caracteres, validado en el contrato Zod (no aquí) — mismo
   // patrón que closeJustification en el flujo de "cerrar sin nota".
-  reason                String
-  requestedScope        ShareScope[]
-  requestedDurationDays Int
-  status                RecordShareRequestStatus @default(PENDING_PATIENT)
+  reason                   String
+  requestedScope           ShareScope[]
+  requestedDurationDays    Int
+  status                   RecordShareRequestStatus     @default(PENDING_PATIENT)
   // Fix post-PR-EXP-01 (2026-10-31, al construir PR-EXP-02): el
   // prompt maestro (PR-EXP-03) pide un "token opaco de un solo
   // propósito" para el enlace de autorización — no existía ningún
@@ -1000,9 +1013,12 @@ model RecordShareRequest {
   // claro viaja únicamente en el enlace enviado al paciente. Su
   // vigencia es la misma que expiresAt (72h) — no hace falta un
   // campo de expiración propio.
-  linkTokenHash         String                   @unique
-  createdAt             DateTime                 @default(now()) @db.Timestamptz(3)
-  expiresAt             DateTime                 @db.Timestamptz(3)
+  linkTokenHash            String                       @unique
+  createdAt                DateTime                     @default(now()) @db.Timestamptz(3)
+  expiresAt                DateTime                     @db.Timestamptz(3)
+  custodianDecision        RecordShareCustodianDecision @default(PENDING)
+  custodianDecidedAt       DateTime?                    @db.Timestamptz(3)
+  custodianDecidedByUserId String?
 
   requesterDoctor Doctor                 @relation("RecordShareRequestRequester", fields: [requesterDoctorId], references: [id])
   custodianDoctor Doctor                 @relation("RecordShareRequestCustodian", fields: [custodianDoctorId], references: [id])

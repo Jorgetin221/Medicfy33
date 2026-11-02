@@ -71,7 +71,9 @@ export class RecordShareRequestService {
     });
     return requests.map((r) => ({
       id: r.id,
-      status: r.status,
+      // RE5: el solicitante no distingue si falta el paciente o su
+      // médico tratante — ambos se le muestran como "en espera".
+      status: r.status === "PENDING_CUSTODIAN" ? "PENDING_PATIENT" : r.status,
       requestedScope: r.requestedScope,
       requestedDurationDays: r.requestedDurationDays,
       reason: r.reason,
@@ -83,7 +85,7 @@ export class RecordShareRequestService {
   async cancel(requesterUserId: string, requestId: string, meta: RequestMeta): Promise<void> {
     const requester = await this.prisma.doctor.findUniqueOrThrow({ where: { userId: requesterUserId } });
     const updated = await this.prisma.recordShareRequest.updateMany({
-      where: { id: requestId, requesterDoctorId: requester.id, status: "PENDING_PATIENT" },
+      where: { id: requestId, requesterDoctorId: requester.id, status: { in: ["PENDING_PATIENT", "PENDING_CUSTODIAN"] } },
       data: { status: "CANCELLED_BY_REQUESTER" },
     });
     if (updated.count !== 1) {

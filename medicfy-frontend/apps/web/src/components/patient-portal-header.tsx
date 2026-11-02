@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import type { PatientShareRequestItem } from "@medicfy/contracts";
 import { apiFetch, expectArray } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
 import { IconBell, IconLogout, IconPulse } from "@/components/ui/nav-icons";
@@ -22,7 +23,9 @@ export function PatientPortalHeader({ accessToken, refreshKey = 0 }: { accessTok
     let cancelled = false;
     apiFetch<unknown>("/record-share/me/requests", { accessToken })
       .then((data) => {
-        if (!cancelled) setPendingCount(expectArray(data).length);
+        // Solo lo que necesita una decisión del paciente: lo que ya
+        // autorizó y espera a su médico no cuenta.
+        if (!cancelled) setPendingCount(expectArray<PatientShareRequestItem>(data).filter((r) => !r.awaitingCustodian).length);
       })
       .catch(() => {
         if (!cancelled) setPendingCount(0);

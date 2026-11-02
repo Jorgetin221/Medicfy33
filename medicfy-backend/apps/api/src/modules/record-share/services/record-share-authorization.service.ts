@@ -1,6 +1,6 @@
 import { randomBytes, randomInt } from "node:crypto";
 import { HttpStatus, Inject, Injectable } from "@nestjs/common";
-import type { Prisma, RecordShareRequest } from "@prisma/client";
+import type { Prisma, RecordShareConsent, RecordShareGrant, RecordShareRequest } from "@prisma/client";
 import {
   SENSITIVE_CATEGORIES,
   type RecordShareAuthorizationInfo,
@@ -12,7 +12,13 @@ import { AuditService } from "../../identity/services/audit.service";
 import type { RequestMeta } from "../../identity/services/auth.service";
 import { RECORD_SHARE_NOTIFICATION_PORT, type RecordShareNotificationPort } from "../record-share-notification.port";
 import { sha256Hex, timingSafeEqualHex } from "../record-share-crypto.util";
-import { RECORD_SHARE_CONSENT_TEXT, RECORD_SHARE_CONSENT_VERSION } from "../record-share-consent-text";
+import {
+  RECORD_SHARE_CONSENT_VERSION,
+  consentOptionsFor,
+  renderRecordShareConsent,
+  requesterLegalName,
+} from "../record-share-consent-text";
+import { lockPendingRequest } from "../record-share-request-lock.util";
 import { doctorDisplayName } from "../record-share-display.util";
 import { RecordShareDoctorNotifierService } from "./record-share-doctor-notifier.service";
 import { recordShareWebOrigin } from "../record-share-web-origin.util";
@@ -42,9 +48,11 @@ export type RecordShareConsentEvidence =
   | { method: "OTP"; channel: "EMAIL" }
   | { method: "PATIENT_SESSION"; channel: null; actorUserId: string };
 
-function requestNoLongerPending(): ApiException {
-  return new ApiException("RECORD_SHARE_REQUEST_NOT_PENDING", "Esta solicitud ya no está pendiente.", HttpStatus.CONFLICT);
-}
+// APPROVED: hay acceso. PENDING_CUSTODIAN: el paciente autorizó y falta
+// su médico tratante. DENIED: rechazada.
+export type RecordShareDecisionOutcome = "APPROVED" | "DENIED" | "PENDING_CUSTODIAN";
+
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class RecordShareAuthorizationService {
@@ -69,7 +77,7 @@ export class RecordShareAuthorizationService {
       requestedScope: request.requestedScope,
       requestedDurationDays: request.requestedDurationDays,
       consentTextVersion: RECORD_SHARE_CONSENT_VERSION,
-      consentText: RECORD_SHARE_CONSENT_TEXT,
+      consentOptions: consentOptionsFor(request.requestedDurationDays, requesterLegalName(requester), new Date()),
     };
   }
 
@@ -164,139 +172,154 @@ export class RecordShareAuthorizationService {
     await this.prisma.recordShareChallenge.update({ where: { id: challenge.id }, data: { consumedAt: new Date() } });
   }
 
-  async decide(token: string, input: RecordShareDecisionInput, meta: RequestMeta): Promise<{ status: "APPROVED" | "DENIED" }> {
+  async decide(token: string, input: RecordShareDecisionInput, meta: RequestMeta): Promise<{ status: RecordShareDecisionOutcome }> {
     const request = await this.resolvePendingRequest(token);
     await this.assertOtpRecentlyVerified(request.id);
-    return this.applyDecision(request, input, meta, { method: "OTP", channel: "EMAIL" });
+    return this.applyDecision(request.id, input, meta, { method: "OTP", channel: "EMAIL" });
   }
 
-  // Núcleo compartido por la página pública (OTP) y la bandeja del
-  // paciente con cuenta (PATIENT_SESSION). Quien llama ya verificó la
-  // identidad; aquí se aplican las reglas de la decisión (RE1, "nunca
-  // ampliar") y se guarda la evidencia.
+  // Núcleo de la decisión DEL PACIENTE, compartido por la página pública
+  // (OTP) y su bandeja con cuenta (PATIENT_SESSION). Quien llama ya
+  // verificó la identidad. Doble autorización: si el médico tratante aún
+  // no aprueba, la autorización del paciente queda guardada y la
+  // solicitud pasa a PENDING_CUSTODIAN; el acceso se crea cuando aprueba
+  // el segundo de los dos (ver RecordShareCustodianApprovalService).
   async applyDecision(
-    request: RecordShareRequest,
+    requestId: string,
     input: RecordShareDecisionInput,
     meta: RequestMeta,
     evidence: RecordShareConsentEvidence
-  ): Promise<{ status: "APPROVED" | "DENIED" }> {
+  ): Promise<{ status: RecordShareDecisionOutcome }> {
     const actorUserId = evidence.method === "PATIENT_SESSION" ? evidence.actorUserId : undefined;
-    const consentTextSha256 = sha256Hex(RECORD_SHARE_CONSENT_TEXT);
+    const now = new Date();
 
-    if (input.decision === "DENIED") {
-      await this.prisma.$transaction(async (tx) => {
-        await tx.recordShareConsent.create({
-          data: {
-            requestId: request.id,
-            decision: "DENIED",
-            approvedScope: [],
-            durationDays: request.requestedDurationDays,
-            consentTextVersion: RECORD_SHARE_CONSENT_VERSION,
-            consentTextSha256,
-            method: evidence.method,
-            channel: evidence.channel,
-            decidedAt: new Date(),
-            ipAddress: meta.ip,
-            userAgent: meta.userAgent,
-          },
-        });
-        await this.markRequestDecided(tx, request.id, "DENIED");
-      });
-      await this.auditService.log({
-        ...(actorUserId ? { actorUserId, actorRole: "PATIENT" } : {}),
-        action: "SHARE_DENIED",
-        resourceType: "record_share_request",
-        resourceId: request.id,
-        patientId: request.patientId,
-        result: "SUCCESS",
+    const result = await this.prisma.$transaction(async (tx) => {
+      const request = await lockPendingRequest(tx, requestId, ["PENDING_PATIENT"]);
+      const requester = await tx.doctor.findUniqueOrThrow({ where: { id: request.requesterDoctorId } });
+      const requesterName = requesterLegalName(requester);
+      const consentBase = {
+        requestId: request.id,
+        consentTextVersion: RECORD_SHARE_CONSENT_VERSION,
+        method: evidence.method,
+        channel: evidence.channel,
+        decidedAt: now,
         ipAddress: meta.ip,
         userAgent: meta.userAgent,
-      });
-      // PR-EXP-06/RE5: mismo aviso que "vencida sin respuesta".
-      await this.doctorNotifier.notAuthorized(request);
-      return { status: "DENIED" };
-    }
+      };
 
-    // §6: "nunca ampliar" — se revalida en el servidor, no solo en la
-    // UI (prueba directa a la API, criterio de terminación de PR-EXP-03).
-    const requestedScope = new Set(request.requestedScope);
-    const scopeWithinRequest = input.approvedScope.every((s) => requestedScope.has(s));
-    const includesSummary = input.approvedScope.includes("SUMMARY");
-    if (!scopeWithinRequest || !includesSummary) {
-      throw new ApiException("RECORD_SHARE_SCOPE_EXCEEDS_REQUEST", "El alcance autorizado no puede ampliar lo solicitado.", HttpStatus.UNPROCESSABLE_ENTITY);
-    }
-    if (input.durationDays > request.requestedDurationDays) {
-      throw new ApiException("RECORD_SHARE_DURATION_EXCEEDS_REQUEST", "La duración autorizada no puede ampliar lo solicitado.", HttpStatus.UNPROCESSABLE_ENTITY);
-    }
+      if (input.decision === "DENIED") {
+        const rendered = renderRecordShareConsent(requesterName, request.requestedDurationDays, now);
+        await tx.recordShareConsent.create({
+          data: { ...consentBase, decision: "DENIED", approvedScope: [], durationDays: request.requestedDurationDays, consentTextSha256: rendered.sha256 },
+        });
+        await tx.recordShareRequest.update({ where: { id: request.id }, data: { status: "DENIED" } });
+        return { status: "DENIED" as const, request };
+      }
 
-    const excludedCategories = SENSITIVE_CATEGORIES.filter((c) => !input.includedSensitiveCategories.includes(c));
-    const startsAt = new Date();
-    const expiresAt = new Date(startsAt.getTime() + input.durationDays * 24 * 60 * 60 * 1000);
-    // PR-EXP-06: enlace de revocación — solo el hash vive en la base.
-    const revokeToken = randomBytes(32).toString("base64url");
-
-    const grant = await this.prisma.$transaction(async (tx) => {
+      this.assertWithinRequest(request, input);
+      // El texto que leyó el paciente (nombre del médico + fecha de
+      // vencimiento de ESTA duración) debe ser el que se guarda. Si la
+      // fecha cambió entre que lo leyó y que aprobó (p. ej. pasó la
+      // medianoche), se le pide revisarlo de nuevo.
+      const rendered = renderRecordShareConsent(requesterName, input.durationDays, now);
+      if (rendered.sha256 !== input.consentTextSha256) {
+        throw new ApiException(
+          "RECORD_SHARE_CONSENT_TEXT_CHANGED",
+          "El texto de la autorización cambió. Revísalo de nuevo antes de aprobar.",
+          HttpStatus.CONFLICT
+        );
+      }
       const consent = await tx.recordShareConsent.create({
         data: {
-          requestId: request.id,
+          ...consentBase,
           decision: "APPROVED",
           approvedScope: input.approvedScope,
           includedSensitiveCategories: input.includedSensitiveCategories,
           pregnancyExcluded: input.pregnancyExcluded,
           durationDays: input.durationDays,
-          consentTextVersion: RECORD_SHARE_CONSENT_VERSION,
-          consentTextSha256,
-          method: evidence.method,
-          channel: evidence.channel,
-          decidedAt: startsAt,
-          ipAddress: meta.ip,
-          userAgent: meta.userAgent,
+          consentTextSha256: rendered.sha256,
         },
       });
-      const created = await tx.recordShareGrant.create({
-        data: {
-          consentId: consent.id,
-          revokeTokenHash: sha256Hex(revokeToken),
-          requesterDoctorId: request.requesterDoctorId,
-          custodianDoctorId: request.custodianDoctorId,
-          patientId: request.patientId,
-          scope: input.approvedScope,
-          excludedCategories,
-          pregnancyExcluded: input.pregnancyExcluded,
-          startsAt,
-          expiresAt,
-          status: "ACTIVE",
-        },
-      });
-      await this.markRequestDecided(tx, request.id, "APPROVED");
-      return created;
+
+      if (request.custodianDecision !== "APPROVED") {
+        await tx.recordShareRequest.update({ where: { id: request.id }, data: { status: "PENDING_CUSTODIAN" } });
+        return { status: "PENDING_CUSTODIAN" as const, request };
+      }
+      const created = await this.createGrantInTx(tx, request, consent);
+      await tx.recordShareRequest.update({ where: { id: request.id }, data: { status: "APPROVED" } });
+      return { status: "APPROVED" as const, request, consent, ...created };
     });
 
+    const auditAction = { DENIED: "SHARE_DENIED", PENDING_CUSTODIAN: "SHARE_PATIENT_APPROVED", APPROVED: "SHARE_APPROVED" }[result.status];
     await this.auditService.log({
       ...(actorUserId ? { actorUserId, actorRole: "PATIENT" } : {}),
-      action: "SHARE_APPROVED",
+      action: auditAction,
       resourceType: "record_share_request",
-      resourceId: request.id,
-      patientId: request.patientId,
+      resourceId: result.request.id,
+      patientId: result.request.patientId,
       result: "SUCCESS",
       ipAddress: meta.ip,
       userAgent: meta.userAgent,
     });
 
+    if (result.status === "DENIED") {
+      // PR-EXP-06/RE5: mismo aviso que "vencida sin respuesta".
+      await this.doctorNotifier.notAuthorized(result.request);
+    } else if (result.status === "APPROVED") {
+      await this.afterGrantCreated(result.grant, result.consent, result.revokeToken);
+    }
+    return { status: result.status };
+  }
+
+  // Crea el acceso a partir de la autorización del paciente. Lo usan las
+  // dos vías: aprueba el paciente cuando su médico ya aprobó, o aprueba
+  // el médico cuando el paciente ya había aprobado.
+  //
+  // El vencimiento se cuenta desde que DECIDIÓ el paciente, no desde que
+  // se creó el acceso: es la fecha que leyó en el texto ("vigente hasta
+  // ..."), aunque su médico apruebe días después.
+  async createGrantInTx(
+    tx: Prisma.TransactionClient,
+    request: RecordShareRequest,
+    consent: RecordShareConsent
+  ): Promise<{ grant: RecordShareGrant; revokeToken: string }> {
+    const excludedCategories = SENSITIVE_CATEGORIES.filter((c) => !consent.includedSensitiveCategories.includes(c));
+    const expiresAt = new Date(consent.decidedAt.getTime() + consent.durationDays * ONE_DAY_MS);
+    // PR-EXP-06: enlace de revocación — solo el hash vive en la base.
+    const revokeToken = randomBytes(32).toString("base64url");
+    const grant = await tx.recordShareGrant.create({
+      data: {
+        consentId: consent.id,
+        revokeTokenHash: sha256Hex(revokeToken),
+        requesterDoctorId: request.requesterDoctorId,
+        custodianDoctorId: request.custodianDoctorId,
+        patientId: request.patientId,
+        scope: consent.approvedScope,
+        excludedCategories,
+        pregnancyExcluded: consent.pregnancyExcluded,
+        startsAt: new Date(),
+        expiresAt,
+        status: "ACTIVE",
+      },
+    });
+    return { grant, revokeToken };
+  }
+
+  async afterGrantCreated(grant: RecordShareGrant, consent: RecordShareConsent, revokeToken: string): Promise<void> {
     // Por la vía pública, la confirmación con el enlace de revocación
     // llega por el mismo canal que el código. Con cuenta no hay canal
     // externo: el paciente ve y revoca sus accesos dentro de su cuenta.
-    if (evidence.method === "OTP") {
+    if (consent.method === "OTP") {
       const [patient, requester] = await Promise.all([
-        this.prisma.patient.findUniqueOrThrow({ where: { id: request.patientId } }),
-        this.prisma.doctor.findUniqueOrThrow({ where: { id: request.requesterDoctorId } }),
+        this.prisma.patient.findUniqueOrThrow({ where: { id: grant.patientId } }),
+        this.prisma.doctor.findUniqueOrThrow({ where: { id: grant.requesterDoctorId } }),
       ]);
       await this.notifications.sendApprovalConfirmation({
         channel: "EMAIL",
         destination: patient.email,
         requesterDisplayName: doctorDisplayName(requester),
-        scope: input.approvedScope,
-        expiresAt,
+        scope: grant.scope,
+        expiresAt: grant.expiresAt,
         revocationUrl: `${recordShareWebOrigin()}/expediente-compartido/revocar/${revokeToken}`,
       });
     }
@@ -304,19 +327,18 @@ export class RecordShareAuthorizationService {
     // custodio (aviso, sin el nombre del paciente — RE9).
     await this.doctorNotifier.approved(grant);
     await this.doctorNotifier.custodianNotice(grant);
-
-    return { status: "APPROVED" };
   }
 
-  // Compare-and-set: si el paciente decide dos veces a la vez (doble
-  // clic, dos pestañas) o el barrido la venció en medio, solo una
-  // transacción la cierra y la otra se revierte entera.
-  private async markRequestDecided(tx: Prisma.TransactionClient, requestId: string, status: "APPROVED" | "DENIED"): Promise<void> {
-    const { count } = await tx.recordShareRequest.updateMany({
-      where: { id: requestId, status: "PENDING_PATIENT", expiresAt: { gt: new Date() } },
-      data: { status },
-    });
-    if (count !== 1) throw requestNoLongerPending();
+  // §6: "nunca ampliar" — se revalida en el servidor, no solo en la UI.
+  private assertWithinRequest(request: RecordShareRequest, input: Extract<RecordShareDecisionInput, { decision: "APPROVED" }>): void {
+    const requestedScope = new Set(request.requestedScope);
+    const scopeWithinRequest = input.approvedScope.every((s) => requestedScope.has(s));
+    if (!scopeWithinRequest || !input.approvedScope.includes("SUMMARY")) {
+      throw new ApiException("RECORD_SHARE_SCOPE_EXCEEDS_REQUEST", "El alcance autorizado no puede ampliar lo solicitado.", HttpStatus.UNPROCESSABLE_ENTITY);
+    }
+    if (input.durationDays > request.requestedDurationDays) {
+      throw new ApiException("RECORD_SHARE_DURATION_EXCEEDS_REQUEST", "La duración autorizada no puede ampliar lo solicitado.", HttpStatus.UNPROCESSABLE_ENTITY);
+    }
   }
 
   private async resolvePendingRequest(token: string): Promise<RecordShareRequest> {

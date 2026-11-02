@@ -41,7 +41,7 @@ export class RecordShareRequestsController {
 
   @Post(":id/cancel")
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: "Cancela una solicitud propia que siga PENDING_PATIENT" })
+  @ApiOperation({ summary: "Cancela una solicitud propia que siga pendiente (paciente o médico tratante)" })
   @ApiResponse({ status: 200 })
   @ApiResponse({ status: 400, description: "RECORD_SHARE_REQUEST_NOT_CANCELLABLE" })
   async cancel(@Param("id") id: string, @Req() req: Request) {

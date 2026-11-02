@@ -17,6 +17,10 @@ export const vinculacion = {
     copiar: "Copiar",
     copiado: "Copiado",
     whatsapp: "Compartir por WhatsApp",
+    generarQr: "Generar QR",
+    qrAlt: "Código QR del enlace de activación de {nombre}",
+    qrAyuda: "Pide al paciente que lo escanee con la cámara de su celular. Es el mismo enlace: de un solo uso y vence en 7 días.",
+    descargarQr: "Descargar QR",
     mensajeWhatsapp:
       "Hola {nombre}, este es tu enlace para activar tu cuenta de Medicfy y tener acceso a tu expediente: {url} — es personal, de un solo uso y vence en 7 días.",
     menorTitulo: "Paciente menor de edad",

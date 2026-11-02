@@ -290,6 +290,10 @@ export const MESSAGES_EN: Record<string, string> = {
   // Expediente compartido — bandeja del paciente con cuenta.
   "Esta solicitud ya no está pendiente.": "This request is no longer pending.",
   "Esta solicitud ya no está disponible.": "This request is no longer available.",
+  "El texto de la autorización cambió. Revísalo de nuevo antes de aprobar.":
+    "The authorization text changed. Review it again before approving.",
+  "Solo el médico tratante puede autorizar que se comparta el expediente de su paciente.":
+    "Only the treating physician can authorize sharing their patient's record.",
 };
 
 // Los mensajes que interpolan un valor (nombre de un término, conteo,

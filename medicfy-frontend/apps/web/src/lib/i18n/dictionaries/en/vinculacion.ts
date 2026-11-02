@@ -16,6 +16,10 @@ export const vinculacion: typeof es = {
     copiar: "Copy",
     copiado: "Copied",
     whatsapp: "Share on WhatsApp",
+    generarQr: "Generate QR",
+    qrAlt: "QR code of {nombre}'s activation link",
+    qrAyuda: "Ask the patient to scan it with their phone camera. It's the same link: single-use and expires in 7 days.",
+    descargarQr: "Download QR",
     mensajeWhatsapp:
       "Hi {nombre}, here is your link to activate your Medicfy account and access your record: {url} — it's personal, single-use and expires in 7 days.",
     menorTitulo: "Underage patient",
