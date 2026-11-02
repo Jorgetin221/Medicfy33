@@ -15,6 +15,7 @@ import {
   type PracticeLocationInput,
 } from "@medicfy/contracts";
 import { apiFetch, apiUpload, expectArray } from "@/lib/api-client";
+import { DoctorPhotoUploader } from "./doctor-photo-uploader";
 import { useRemoteBlobUrl } from "@/lib/use-remote-blob-url";
 import { useAuth } from "@/lib/auth-context";
 import { useDoctorProfile, type DoctorProfile, type DoctorVerificationStatus } from "@/lib/use-doctor-profile";
@@ -658,16 +659,10 @@ function SpecialtyLicenseSection({
   );
 }
 
-// DOC-11: photoUrl viaja como URL de texto (doctorProfileUpdateSchema
-// ya lo define como z.string().url(), no como un fileKey subido) — a
-// diferencia de logo/firma (BrandingSection, abajo), que sí pasan por
-// FileStoragePort porque esos nunca se muestran fuera de un PDF ya
-// generado. Un médico verificado necesita que su foto sea una URL de
-// verdad para cuando exista el directorio público (Hallazgo #4 de la
-// auditoría) — enrutarla por el mismo mecanismo privado de
-// logo/firma la dejaría inservible para eso.
+// La foto de perfil ya NO viaja en este formulario como URL de texto:
+// se sube con DoctorPhotoUploader (POST /doctors/me/photo), que la
+// guarda y la sirve públicamente para el perfil y el directorio.
 const professionalInfoFormSchema = z.object({
-  photoUrl: z.string().trim(),
   biography: z.string().trim(),
   yearsExperience: z.string().trim(),
   languages: z.string().trim(),
@@ -690,7 +685,6 @@ function ProfessionalInfoSection({
   const form = useForm<ProfessionalInfoFormValues>({
     resolver: useZodResolver<ProfessionalInfoFormValues>(professionalInfoFormSchema),
     defaultValues: {
-      photoUrl: doctor.photoUrl ?? "",
       biography: doctor.biography ?? "",
       yearsExperience: doctor.yearsExperience !== null ? String(doctor.yearsExperience) : "",
       languages: doctor.languages.join(", "),
@@ -702,10 +696,6 @@ function ProfessionalInfoSection({
     setError(null);
     setSaved(false);
 
-    if (values.photoUrl && !/^https?:\/\//.test(values.photoUrl)) {
-      form.setError("photoUrl", { message: t("perfil.profesional.urlCompleta") });
-      return;
-    }
     if (values.biography && containsContactInfo(values.biography)) {
       form.setError("biography", { message: t("perfil.profesional.biografiaSinContacto") });
       return;
@@ -726,7 +716,6 @@ function ProfessionalInfoSection({
     // (M2-RN-001 style: .optional() significa "no lo toques", no
     // ".nullable()"). Vaciar el campo y guardar no lo borra.
     const payload = {
-      photoUrl: values.photoUrl || undefined,
       biography: values.biography || undefined,
       yearsExperience,
       university: values.university || undefined,
@@ -736,7 +725,7 @@ function ProfessionalInfoSection({
         .filter(Boolean),
     };
     const parsed = doctorProfileUpdateSchema
-      .pick({ photoUrl: true, biography: true, yearsExperience: true, university: true, languages: true })
+      .pick({ biography: true, yearsExperience: true, university: true, languages: true })
       .safeParse(payload);
     if (!parsed.success) {
       setError(parsed.error);
@@ -757,14 +746,12 @@ function ProfessionalInfoSection({
       <h2 className="font-heading text-xl text-brand-900">{t("perfil.profesional.titulo")}</h2>
       <p className="text-sm text-gray-500">{t("perfil.profesional.subtitulo")}</p>
       <form onSubmit={form.handleSubmit(onSubmit)} className="mt-4 flex flex-col gap-4" noValidate>
-        <FieldWrapper
-          label={t("perfil.profesional.foto")}
-          htmlFor="photoUrl"
-          hint={t("perfil.profesional.fotoAyuda")}
-          error={form.formState.errors.photoUrl?.message}
-        >
-          <TextInput id="photoUrl" type="url" placeholder="https://..." error={!!form.formState.errors.photoUrl} {...form.register("photoUrl")} />
-        </FieldWrapper>
+        <DoctorPhotoUploader
+          photoUrl={doctor.photoUrl}
+          initial={doctor.legalFirstName.charAt(0).toUpperCase()}
+          accessToken={accessToken}
+          onChanged={onSaved}
+        />
         <FieldWrapper
           label={t("perfil.profesional.biografia")}
           htmlFor="biography"

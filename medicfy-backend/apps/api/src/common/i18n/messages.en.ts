@@ -260,6 +260,10 @@ export const MESSAGES_EN: Record<string, string> = {
   "Este enlace ya no es válido. Puede que haya vencido o que la solicitud ya se haya respondido.":
     "This link is no longer valid. It may have expired, or the request may have already been answered.",
   "Verifica el código antes de continuar.": "Verify the code before continuing.",
+  // Foto de perfil del médico.
+  "Formato no permitido. Usa JPG, PNG o WebP.": "Format not allowed. Use JPG, PNG or WebP.",
+  "La foto supera los 5 MB permitidos.": "The photo exceeds the 5 MB limit.",
+  "Foto no encontrada.": "Photo not found.",
   // PR-EXP-06 — revocación, custodio y admin.
   "Este enlace ya no es válido o ya no hay accesos vigentes que revocar.":
     "This link is no longer valid, or there is no active access left to revoke.",

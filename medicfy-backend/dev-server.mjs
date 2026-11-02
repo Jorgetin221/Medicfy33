@@ -993,6 +993,40 @@ const server = http.createServer(async (req, res) => {
 
   // Perfil → Marca: logo y firma visual. Los usan la receta y la orden
   // (membrete y firma). Misma forma que BrandingAssetsController.
+  // Foto de perfil del médico — mismo contrato que DoctorPhotoController
+  // (POST/DELETE /doctors/me/photo) y la ruta pública de DoctorPublicController.
+  if (pathname === '/doctors/me/photo' && method === 'POST') {
+    const file = await readUploadedFile(req, rawBuffer).catch(() => null);
+    if (!file) return sendError('FILE_REQUIRED', 'Debes adjuntar un archivo.', 400);
+    const ext = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp' }[file.contentType];
+    if (!ext) return sendError('PHOTO_INVALID_FORMAT', 'Formato no permitido. Usa JPG, PNG o WebP.', 400);
+    if (file.buffer.length > 5 * 1024 * 1024) return sendError('PHOTO_TOO_LARGE', 'La foto supera los 5 MB permitidos.', 400);
+    const doctor = getCurrentUser(req).doctor || doctorUser.doctor;
+    const fileName = `${randomUUID()}${ext}`;
+    const previous = (doctor.photoUrl ?? '').match(/\/photo\/([0-9a-f-]{36}\.(jpg|png|webp))$/);
+    if (previous) fs.rmSync(path.join(MOCK_FILES_DIR, `photo-${previous[1]}`), { force: true });
+    saveMockFile(`photo-${fileName}`, file.buffer);
+    doctor.photoUrl = `http://localhost:${PORT}/doctors/${doctor.slug}/public/photo/${fileName}`;
+    saveMockState();
+    return sendJson({ photoUrl: doctor.photoUrl }, 201);
+  }
+  if (pathname === '/doctors/me/photo' && method === 'DELETE') {
+    const doctor = getCurrentUser(req).doctor || doctorUser.doctor;
+    const previous = (doctor.photoUrl ?? '').match(/\/photo\/([0-9a-f-]{36}\.(jpg|png|webp))$/);
+    if (previous) fs.rmSync(path.join(MOCK_FILES_DIR, `photo-${previous[1]}`), { force: true });
+    doctor.photoUrl = null;
+    saveMockState();
+    return sendJson({ removed: true });
+  }
+  const publicPhoto = pathname.match(/^\/doctors\/([^/]+)\/public\/photo\/([0-9a-f-]{36}\.(jpg|png|webp))$/);
+  if (publicPhoto && method === 'GET') {
+    const owner = allUsers().find(u => u.doctor && u.doctor.slug === publicPhoto[1]);
+    const current = owner?.doctor?.photoUrl ?? '';
+    const file = current.endsWith(`/photo/${publicPhoto[2]}`) ? readMockFile(`photo-${publicPhoto[2]}`) : null;
+    if (!file) return sendError('PHOTO_NOT_FOUND', 'Foto no encontrada.', 404);
+    return sendFile(file, { jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp' }[publicPhoto[3]]);
+  }
+
   if (pathname === '/doctors/me/branding-assets' && method === 'POST') {
     const kind = parsedUrl.query.kind;
     if (kind !== 'logo' && kind !== 'signature') return sendError('VALIDATION_ERROR', 'kind inválido.', 400);

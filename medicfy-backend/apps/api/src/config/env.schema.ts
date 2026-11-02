@@ -19,6 +19,14 @@ const envSchema = z.object({
   // point at the frontend too, flagged, not changed here to avoid
   // touching an already-shipped M1 env contract for an unrelated fix).
   WEB_ORIGIN: z.string().url().default("http://localhost:3000"),
+  // Foto de perfil del médico (medios PÚBLICOS, nunca clínicos): carpeta
+  // del servidor donde se guardan. Absoluta y fuera del código, para que
+  // sobreviva a cada despliegue. Sin valor: /var/lib/medicfy/media en
+  // producción, .local-file-storage/public-media en local.
+  PUBLIC_MEDIA_DIR: z.string().min(1).optional(),
+  // URL pública de ESTA API (p. ej. https://api.medicfy.com.mx), con la
+  // que se arma la dirección de la foto. Sin valor se usa APP_BASE_URL.
+  PUBLIC_API_URL: z.string().url().optional(),
   // A-16: cuántos proxies inversos hay delante del API (nginx = 1). Sin
   // valor: 1 en producción (siempre detrás de nginx), 0 en local.
   TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).optional(),

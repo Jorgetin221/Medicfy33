@@ -11,7 +11,7 @@ import { PracticeLocationService } from "./services/practice-location.service";
 import { ServiceOfferingService } from "./services/service-offering.service";
 import { DoctorVerificationService } from "./services/doctor-verification.service";
 import { DoctorPostService } from "./services/doctor-post.service";
-import { FILE_STORAGE_PORT } from "./services/file-storage.port";
+import { FILE_STORAGE_PORT, PUBLIC_MEDIA_STORAGE } from "./services/file-storage.port";
 import { LocalDiskFileStorageAdapter } from "./services/local-disk-file-storage.adapter";
 import { DOCTOR_SUSPENSION_EFFECTS } from "./services/doctor-suspension-effects.port";
 import { AppointmentCancellationSuspensionAdapter } from "./services/appointment-cancellation-suspension.adapter";
@@ -27,6 +27,9 @@ import { AdminDoctorsController } from "./admin-doctors.controller";
 import { AdminDoctorPostsController } from "./admin-doctor-posts.controller";
 import { SpecialtiesController } from "./specialties.controller";
 import { DoctorsSearchController } from "./doctors-search.controller";
+import { DoctorPhotoController } from "./doctor-photo.controller";
+import { DoctorPhotoService } from "./services/doctor-photo.service";
+import { DiskPublicMediaStorageAdapter } from "./services/disk-public-media-storage.adapter";
 
 @Module({
   // Memory storage: DoctorDocumentService needs file.buffer (not a
@@ -49,6 +52,7 @@ import { DoctorsSearchController } from "./doctors-search.controller";
     DoctorPublicController,
     DoctorDocumentsController,
     BrandingAssetsController,
+    DoctorPhotoController,
     PracticeLocationsController,
     DoctorServicesController,
     DoctorPostsController,
@@ -62,11 +66,13 @@ import { DoctorsSearchController } from "./doctors-search.controller";
     DoctorProfileService,
     DoctorDocumentService,
     DoctorBrandingService,
+    DoctorPhotoService,
     PracticeLocationService,
     ServiceOfferingService,
     DoctorVerificationService,
     DoctorPostService,
     { provide: FILE_STORAGE_PORT, useClass: LocalDiskFileStorageAdapter },
+    { provide: PUBLIC_MEDIA_STORAGE, useClass: DiskPublicMediaStorageAdapter },
     { provide: DOCTOR_SUSPENSION_EFFECTS, useClass: AppointmentCancellationSuspensionAdapter },
   ],
   exports: [DoctorProfileService],

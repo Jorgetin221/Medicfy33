@@ -1,8 +1,9 @@
-import { Controller, Get, Param, StreamableFile } from "@nestjs/common";
+import { Controller, Get, Header, Param, StreamableFile } from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import { DoctorProfileService } from "./services/doctor-profile.service";
 import { ServiceOfferingService } from "./services/service-offering.service";
 import { DoctorPostService } from "./services/doctor-post.service";
+import { DoctorPhotoService } from "./services/doctor-photo.service";
 import { DownloadThrottle } from "../../common/rate-limit";
 
 // M5-RN-007: "el enlace público del médico (/dr/{slug})" — sin guard,
@@ -15,7 +16,8 @@ export class DoctorPublicController {
   constructor(
     private readonly doctorProfileService: DoctorProfileService,
     private readonly serviceOfferingService: ServiceOfferingService,
-    private readonly postService: DoctorPostService
+    private readonly postService: DoctorPostService,
+    private readonly photoService: DoctorPhotoService
   ) {}
 
   @Get()
@@ -46,5 +48,17 @@ export class DoctorPublicController {
   ): Promise<StreamableFile> {
     const asset = await this.postService.getPublicMediaBytes(slug, postId, mediaId);
     return new StreamableFile(asset.buffer, { type: asset.contentType });
+  }
+
+  // Foto de perfil: pública por diseño (perfil público, directorio,
+  // portada). Solo responde la foto VIGENTE; el nombre del archivo es
+  // único por subida, así que se puede cachear sin riesgo de servir una
+  // foto vieja.
+  @Get("photo/:fileName")
+  @Header("Cache-Control", "public, max-age=86400, immutable")
+  @ApiOperation({ summary: "Sirve la foto de perfil vigente del médico" })
+  async getPhoto(@Param("slug") slug: string, @Param("fileName") fileName: string): Promise<StreamableFile> {
+    const photo = await this.photoService.getPublicPhoto(slug, fileName);
+    return new StreamableFile(photo.buffer, { type: photo.contentType });
   }
 }

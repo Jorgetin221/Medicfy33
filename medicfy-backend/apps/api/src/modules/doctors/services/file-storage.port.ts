@@ -20,3 +20,9 @@ export interface FileStoragePort {
 }
 
 export const FILE_STORAGE_PORT = Symbol("FILE_STORAGE_PORT");
+
+// Medios PÚBLICOS (hoy: foto de perfil del médico). Token aparte a
+// propósito: este almacenamiento SÍ se permite en producción (disco
+// del VPS), y nunca debe recibir un archivo clínico — esos siguen en
+// FILE_STORAGE_PORT, bloqueado en producción hasta tener S3/R2 (§4.3).
+export const PUBLIC_MEDIA_STORAGE = Symbol("PUBLIC_MEDIA_STORAGE");

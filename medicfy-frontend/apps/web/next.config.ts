@@ -15,7 +15,8 @@ const reportOnlyCsp = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https:",
+  // Foto de perfil del médico: la sirve la API (http://localhost:3001 en dev).
+  "img-src 'self' data: blob: https: http://localhost:*",
   "font-src 'self' data:",
   "connect-src 'self' https: http://localhost:*",
   "frame-src 'self' https: http://localhost:*",
