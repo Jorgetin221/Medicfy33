@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { apiFetch, expectArray } from "@/lib/api-client";
+import { ApiError, apiFetch, expectArray } from "@/lib/api-client";
+import { tokenPrimaryRole } from "@/lib/jwt-claims";
 import { useAuth } from "@/lib/auth-context";
 import { useSpecialties } from "@/lib/use-specialties";
 import { Card, LoadingState, EmptyState, ErrorState } from "@/components/ui/states";
@@ -102,7 +103,10 @@ export default function HomePage() {
           </ul>
         </section>
 
-        {accessToken ? <MyDoctorsSection accessToken={accessToken} /> : null}
+        {/* M3-RN-007: "Tus médicos" es SOLO para sesión de paciente. Con
+            sesión de médico o admin la API responde "no tienes
+            expediente de paciente" y la portada lo mostraba como error. */}
+        {accessToken && tokenPrimaryRole(accessToken) === "PATIENT" ? <MyDoctorsSection accessToken={accessToken} /> : null}
 
         <SpecialtiesSection />
         <FeaturedDoctorsSection />
@@ -248,9 +252,13 @@ function MyDoctorsSection({ accessToken }: { accessToken: string }) {
       .then((data) => {
         if (!cancelled) setDoctors(expectArray<LinkedDoctor>(data));
       })
-      // B-12: un fallo ya no se ve igual que "no tienes médicos".
+      // B-12: un fallo ya no se ve igual que "no tienes médicos". Pero
+      // un paciente sin expediente propio todavía (registro reciente)
+      // no es un fallo: simplemente aún no tiene médicos.
       .catch((error: unknown) => {
-        if (!cancelled) setDoctorsError(error);
+        if (cancelled) return;
+        if (error instanceof ApiError && error.code === "PATIENT_PROFILE_NOT_FOUND") setDoctors([]);
+        else setDoctorsError(error);
       });
     return () => {
       cancelled = true;
