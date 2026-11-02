@@ -183,6 +183,7 @@ model User {
   curatedLabReferenceRanges LabReferenceRange[]       @relation("LabReferenceRangeCurator")
   notifications             Notification[]
   notificationAccessTokens  NotificationAccessToken[]
+  patientLinkRequests       PatientLinkRequest[]
 
   // M12-RN-003: "no se pueden desactivar por completo, pero sí elegir
   // canal". WHATSAPP es una opción válida en el dato aunque hoy no
@@ -705,7 +706,14 @@ model Patient {
   // solo metadata de Prisma para poder consultar en ambos sentidos.
   recordShareRequests RecordShareRequest[]
   recordShareGrants   RecordShareGrant[]
+  // Vinculación de cuenta (ver PatientActivationLink/PatientLinkRequest).
+  activationLinks     PatientActivationLink[]
+  linkRequests        PatientLinkRequest[]
 
+  // El teléfono NO es único (familias comparten número) — índice
+  // simple, solo para la búsqueda de coincidencias al registrarse y
+  // la advertencia de posible duplicado del médico.
+  @@index([phoneE164])
   @@map("patients")
 }
 
@@ -749,6 +757,91 @@ model PatientGuardian {
   // M-17: llave foránea de lectura frecuente, sin índice propio.
   @@index([patientId])
   @@map("patient_guardians")
+}
+
+// ─── Vinculación de cuentas de paciente ───
+//
+// Un Patient tiene como máximo una cuenta (patients.userId es @unique y
+// opcional desde M5a). Estos dos modelos son las únicas dos vías para
+// llenar ese userId en un Patient que ya existe sin cuenta:
+//
+// 1. PatientActivationLink — el médico genera un enlace de un solo uso
+//    y lo comparte él mismo (WhatsApp, etc.): no hay SMS ni correo
+//    reales todavía, así que ningún paso depende de enviar un código.
+//    Solo se guarda el sha256 del token (mismo patrón que
+//    PasswordResetToken/NotificationAccessToken). EXPIRED se marca de
+//    forma perezosa al leer el enlace, sin scheduler (mismo patrón que
+//    CareRelationship).
+// 2. PatientLinkRequest — una persona se registra sola y su teléfono
+//    coincide con uno o más Patient sin cuenta: no se crea un Patient
+//    nuevo, se crea una solicitud por cada coincidencia y el médico
+//    tratante aprueba o rechaza. El teléfono nunca vincula solo.
+enum PatientActivationLinkStatus {
+  PENDING
+  USED
+  REVOKED
+  EXPIRED
+
+  @@map("patient_activation_link_status")
+}
+
+model PatientActivationLink {
+  id              String                      @id @default(uuid())
+  patientId       String
+  tokenHash       String                      @unique
+  status          PatientActivationLinkStatus @default(PENDING)
+  expiresAt       DateTime                    @db.Timestamptz(3)
+  createdByUserId String
+  createdAt       DateTime                    @default(now()) @db.Timestamptz(3)
+  usedAt          DateTime?                   @db.Timestamptz(3)
+  usedByUserId    String?
+  revokedAt       DateTime?                   @db.Timestamptz(3)
+  revokedByUserId String?
+
+  patient Patient @relation(fields: [patientId], references: [id])
+
+  @@index([patientId, status])
+  @@map("patient_activation_links")
+}
+
+enum PatientLinkRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  // Cerrada sin decisión propia: otra solicitud del mismo User o del
+  // mismo Patient se aprobó, o el Patient se vinculó por enlace.
+  CANCELLED
+
+  @@map("patient_link_request_status")
+}
+
+// Los campos claimed* son lo que la persona escribió al registrarse —
+// el médico los compara contra el expediente antes de decidir. Nunca
+// se muestran al usuario que se registró (no debe saber qué
+// expediente coincidió).
+model PatientLinkRequest {
+  id                      String                   @id @default(uuid())
+  userId                  String
+  patientId               String
+  status                  PatientLinkRequestStatus @default(PENDING)
+  claimedFirstName        String
+  claimedLastNamePaternal String
+  claimedLastNameMaternal String?
+  claimedBirthDate        DateTime                 @db.Date
+  claimedSexAtBirth       SexAtBirth
+  claimedPhoneE164        String
+  claimedEmail            String
+  createdAt               DateTime                 @default(now()) @db.Timestamptz(3)
+  decidedAt               DateTime?                @db.Timestamptz(3)
+  decidedByUserId         String?
+
+  user    User    @relation(fields: [userId], references: [id])
+  patient Patient @relation(fields: [patientId], references: [id])
+
+  @@unique([userId, patientId])
+  @@index([patientId, status])
+  @@index([userId, status])
+  @@map("patient_link_requests")
 }
 
 enum CareRelationshipStatus {
@@ -857,6 +950,10 @@ enum RecordShareConsentDecision {
 // cambio de código, no una migración de datos existentes.
 enum RecordShareConsentMethod {
   OTP
+  // El paciente decidió desde su propia cuenta, con sesión iniciada
+  // (aviso dentro de la cuenta). La sesión es la prueba de identidad;
+  // no hubo código ni canal externo.
+  PATIENT_SESSION
 
   @@map("record_share_consent_method")
 }
@@ -925,7 +1022,7 @@ model RecordShareRequest {
 // cuenta existente (00-DESCUBRIMIENTO.md Q5) y aquí quien responde el
 // OTP es el paciente desde un enlace público, sin cuenta.
 model RecordShareChallenge {
-  id             String              @id @default(uuid())
+  id             String                      @id @default(uuid())
   requestId      String
   // Fix post-PR-EXP-01 (al construir PR-EXP-06): un OTP de revocación
   // vive sobre la MISMA solicitud que el de autorización — sin este
@@ -938,12 +1035,12 @@ model RecordShareChallenge {
   // teléfono/correo (R2/RE9).
   destinationRef String
   codeHash       String
-  attempts       Int                 @default(0)
-  resends        Int                 @default(0)
-  expiresAt      DateTime            @db.Timestamptz(3)
-  consumedAt     DateTime?           @db.Timestamptz(3)
-  lockedUntil    DateTime?           @db.Timestamptz(3)
-  createdAt      DateTime            @default(now()) @db.Timestamptz(3)
+  attempts       Int                         @default(0)
+  resends        Int                         @default(0)
+  expiresAt      DateTime                    @db.Timestamptz(3)
+  consumedAt     DateTime?                   @db.Timestamptz(3)
+  lockedUntil    DateTime?                   @db.Timestamptz(3)
+  createdAt      DateTime                    @default(now()) @db.Timestamptz(3)
 
   request RecordShareRequest @relation(fields: [requestId], references: [id])
 
@@ -978,7 +1075,10 @@ model RecordShareConsent {
   consentTextVersion          String
   consentTextSha256           String
   method                      RecordShareConsentMethod   @default(OTP)
-  channel                     VerificationChannel
+  // Canal por el que llegó el código. Nulo cuando method =
+  // PATIENT_SESSION: no hubo canal externo, y guardar "EMAIL" sería
+  // evidencia falsa.
+  channel                     VerificationChannel?
   decidedAt                   DateTime                   @db.Timestamptz(3)
   // 🔒 LEGAL (D-EXP-12, pendiente de abogado de datos): se guardan
   // como evidencia del consentimiento, igual que en Consent (M1) —

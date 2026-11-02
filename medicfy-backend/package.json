@@ -14,7 +14,9 @@
     "typecheck": "turbo run typecheck",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
-    "db:seed": "prisma db seed"
+    "db:seed": "prisma db seed",
+    "db:normalize-phones": "tsx --env-file=.env scripts/normalize-patient-phones.ts",
+    "db:report-duplicates": "tsx --env-file=.env scripts/report-possible-duplicates.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

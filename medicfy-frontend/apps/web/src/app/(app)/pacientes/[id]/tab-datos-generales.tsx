@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/states";
 import { useI18n } from "@/lib/i18n/context";
 import { formatDateLong } from "@/lib/i18n/format";
 import { sexAtBirthLabel } from "@/lib/sex-label";
+import { PatientAccountPanel } from "./patient-account-panel";
 
 function Field({ label, value }: { label: string; value: string }) {
   return (
@@ -18,10 +19,11 @@ function Field({ label, value }: { label: string; value: string }) {
 // Solo lectura por ahora — PATCH /patients/:id (edición de datos
 // generales) todavía no existe en el backend; no hay a qué llamar
 // desde aquí sin inventar un endpoint fuera del plan aprobado.
-export function TabDatosGenerales({ patient }: { patient: PatientSummary }) {
+export function TabDatosGenerales({ patient, accessToken }: { patient: PatientSummary; accessToken: string }) {
   const { t, locale } = useI18n();
 
   return (
+    <div className="flex flex-col gap-4">
     <Card>
       <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label={t("pacientes.datosGenerales.nombreCompleto")} value={[patient.firstName, patient.lastNamePaternal, patient.lastNameMaternal].filter(Boolean).join(" ")} />
@@ -48,5 +50,7 @@ export function TabDatosGenerales({ patient }: { patient: PatientSummary }) {
         </div>
       )}
     </Card>
+    <PatientAccountPanel patientId={patient.id} accessToken={accessToken} firstName={patient.firstName} phoneE164={patient.phoneE164} />
+    </div>
   );
 }

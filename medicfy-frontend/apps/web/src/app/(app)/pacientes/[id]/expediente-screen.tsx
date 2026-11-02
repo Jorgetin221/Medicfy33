@@ -19,6 +19,7 @@ import { TabRecetas } from "./tab-recetas";
 import { TabOrdenes } from "./tab-ordenes";
 import { TabProtocolos } from "./tab-protocolos";
 import { TabCompartido } from "./tab-compartido";
+import { PatientLinkRequests } from "./patient-link-requests";
 import { sexAtBirthLabel } from "@/lib/sex-label";
 
 // Expediente — encabezado clínico persistente con alertas críticas
@@ -71,7 +72,7 @@ export function ExpedienteScreen({ patientId, accessToken }: { patientId: string
   const activeAllergyCount = allergies.filter((a) => a.status === "ACTIVE").length;
 
   const tabs: TabItem[] = [
-    { id: "general", label: t("pacientes.expediente.tabs.datosGenerales"), content: <TabDatosGenerales patient={patient} /> },
+    { id: "general", label: t("pacientes.expediente.tabs.datosGenerales"), content: <TabDatosGenerales patient={patient} accessToken={accessToken} /> },
     {
       id: "antecedentes",
       label: t("pacientes.expediente.tabs.antecedentes"),
@@ -144,6 +145,10 @@ export function ExpedienteScreen({ patientId, accessToken }: { patientId: string
       {startConsultationError ? <ErrorState error={startConsultationError} onRetry={() => void startConsultation()} /> : null}
 
       {activeAllergyCount > 0 && <AllergySummary allergies={allergies} loadState="ready" />}
+
+      {/* Vinculación de cuentas: solo aparece si alguien se registró con
+          el teléfono de este paciente y espera que el médico confirme. */}
+      <PatientLinkRequests patientId={patientId} accessToken={accessToken} />
 
       <Tabs items={tabs} />
 

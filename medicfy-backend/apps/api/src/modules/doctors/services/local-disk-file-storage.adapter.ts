@@ -31,10 +31,14 @@ export function extensionForMimeType(mimeType: string): string {
 @Injectable()
 export class LocalDiskFileStorageAdapter implements FileStoragePort {
   private readonly logger = new Logger(LocalDiskFileStorageAdapter.name);
-  private readonly root = resolve(process.cwd(), ".local-file-storage");
+  // Integrado desde el VPS (2026-11-02): carpeta configurable, fuera del
+  // código para que sobreviva a cada despliegue.
+  private readonly root = resolve(process.env.LOCAL_FILE_STORAGE_DIR ?? join(process.cwd(), ".local-file-storage"));
 
   private assertNotProduction(): void {
-    if (process.env.NODE_ENV === "production") {
+    // ALLOW_LOCAL_FILE_STORAGE=true: excepción explícita para el VPS
+    // actual, que aún no tiene S3/R2.
+    if (process.env.NODE_ENV === "production" && process.env.ALLOW_LOCAL_FILE_STORAGE !== "true") {
       throw new Error(
         "LocalDiskFileStorageAdapter must not run in production — wire S3/R2 (spec §4.3) before deploying."
       );

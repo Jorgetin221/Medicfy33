@@ -20,6 +20,7 @@ import { ProtocolsModule } from "./modules/protocols/protocols.module";
 import { AssistantModule } from "./modules/assistant/assistant.module";
 import { AtlasModule } from "./modules/atlas/atlas.module";
 import { RecordShareModule } from "./modules/record-share/record-share.module";
+import { PatientAccountsModule } from "./modules/patient-accounts/patient-accounts.module";
 
 @Module({
   imports: [
@@ -57,6 +58,7 @@ import { RecordShareModule } from "./modules/record-share/record-share.module";
     AssistantModule,
     AtlasModule,
     RecordShareModule,
+    PatientAccountsModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

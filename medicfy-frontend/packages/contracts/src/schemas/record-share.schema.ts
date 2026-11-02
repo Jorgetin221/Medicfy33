@@ -119,6 +119,31 @@ export const recordShareAuthorizationInfoSchema = z.object({
 });
 export type RecordShareAuthorizationInfo = z.infer<typeof recordShareAuthorizationInfoSchema>;
 
+// Bandeja del paciente CON CUENTA (campana en /mi-cuenta): la misma
+// información que la página pública de autorización, más el médico que
+// lleva el expediente (el paciente lo conoce: es su propio médico) y
+// la vigencia de la solicitud. Nunca dato clínico.
+export interface PatientShareRequestItem extends RecordShareAuthorizationInfo {
+  id: string;
+  custodianDisplayName: string;
+  createdAt: string;
+  expiresAt: string;
+}
+
+// Accesos que el propio paciente autorizó, para revocarlos desde su
+// cuenta (ya no recibe enlace de revocación por correo).
+export interface PatientShareGrantItem {
+  id: string;
+  requesterDisplayName: string;
+  requesterLicense: string;
+  custodianDisplayName: string;
+  scope: ShareScope[];
+  startsAt: string;
+  expiresAt: string;
+  status: RecordShareGrantStatus;
+  revokedAt: string | null;
+}
+
 // Sección B: 6 dígitos. El formato se valida aquí; que sea el código
 // correcto, vigente y no usado lo decide el servidor.
 export const recordShareOtpVerifySchema = z.object({

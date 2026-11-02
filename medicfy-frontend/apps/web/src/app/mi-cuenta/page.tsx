@@ -6,10 +6,12 @@ import Link from "next/link";
 import { apiFetch, ApiError, expectArray } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
 import { Card, LoadingState, EmptyState, ErrorState } from "@/components/ui/states";
-import { IconPulse, IconLogout } from "@/components/ui/nav-icons";
+import { Aviso } from "@/components/ui/alert";
+import { PatientPortalHeader } from "@/components/patient-portal-header";
 import { EstadoCita, type AppointmentStatus } from "@/components/ui/status-badge";
 import { useI18n, useT } from "@/lib/i18n/context";
 import { formatDateTimeLong } from "@/lib/i18n/format";
+import type { OwnPatientLinkStatus } from "@medicfy/contracts";
 
 interface OwnPatientProfile {
   id: string;
@@ -35,8 +37,7 @@ interface OwnAppointment {
 // tiene sentido para una sesión PATIENT.
 export default function MiCuentaPage() {
   const router = useRouter();
-  const { accessToken, isLoading: authLoading, logout } = useAuth();
-  const t = useT();
+  const { accessToken, isLoading: authLoading } = useAuth();
 
   useEffect(() => {
     if (!authLoading && !accessToken) {
@@ -52,23 +53,9 @@ export default function MiCuentaPage() {
     );
   }
 
-  async function handleLogout() {
-    await logout();
-    router.push("/login");
-  }
-
   return (
     <div className="min-h-screen bg-gray-100">
-      <header className="flex items-center justify-between border-b border-gray-300 bg-white px-6 py-4">
-        <span className="flex items-center gap-2 font-heading text-lg text-brand-900">
-          <IconPulse className="h-6 w-6 text-brand-700" />
-          Medicfy BETA
-        </span>
-        <button type="button" onClick={() => void handleLogout()} className="flex items-center gap-2 text-sm font-medium text-gray-700">
-          <IconLogout className="h-5 w-5" />
-          {t("nav.rail.cerrarSesion")}
-        </button>
-      </header>
+      <PatientPortalHeader accessToken={accessToken} />
       <MiCuentaContent accessToken={accessToken} />
     </div>
   );
@@ -94,6 +81,23 @@ function MiCuentaContent({ accessToken }: { accessToken: string }) {
   }, [accessToken]);
 
   const notFound = error instanceof ApiError && error.status === 404;
+  // Sin expediente propio: ¿hay una vinculación pendiente de que el
+  // médico confirme? Mensaje neutro — nunca cuál expediente ni de quién.
+  const [linkStatus, setLinkStatus] = useState<OwnPatientLinkStatus | null>(null);
+  useEffect(() => {
+    if (!notFound) return;
+    let cancelled = false;
+    apiFetch<{ status: OwnPatientLinkStatus }>("/patients/me/link-status", { accessToken })
+      .then((res) => {
+        if (!cancelled) setLinkStatus(res.status);
+      })
+      .catch(() => {
+        if (!cancelled) setLinkStatus("NONE");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [notFound, accessToken]);
 
   return (
     <main className="mx-auto flex max-w-2xl flex-col gap-6 p-6">
@@ -103,7 +107,12 @@ function MiCuentaContent({ accessToken }: { accessToken: string }) {
       </div>
 
       {profile === null && !error ? <LoadingState /> : null}
-      {notFound ? (
+      {notFound && linkStatus === "PENDING_REVIEW" ? (
+        <Aviso variant="info" title={t("vinculacion.revisionPendiente.titulo")}>
+          {t("vinculacion.revisionPendiente.cuerpo")}
+        </Aviso>
+      ) : null}
+      {notFound && linkStatus !== null && linkStatus !== "PENDING_REVIEW" ? (
         <Card>
           <p className="text-base text-gray-700">
             {t("cuenta.sinExpediente")}

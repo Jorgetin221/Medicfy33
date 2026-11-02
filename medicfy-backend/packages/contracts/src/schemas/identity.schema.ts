@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { MAX_EMAIL_LENGTH, normalizeEmail } from "../validators/email";
 import { isStrongPassword } from "../validators/password";
-import { isValidMxPhoneE164 } from "../validators/phone";
+import { isValidMxPhoneE164, normalizeMxPhoneInput } from "../validators/phone";
 import { isValidCedulaFormat } from "../validators/cedula";
 import { calculateAge } from "../validators/age";
 import { birthDateSchema } from "./patient.schema";
@@ -21,7 +21,13 @@ const passwordSchema = z
   .max(PASSWORD_MAX_LENGTH, "La contraseña no puede pasar de 128 caracteres.")
   .refine(isStrongPassword, "Usa al menos 8 caracteres (letras, números o símbolos).");
 
-const mxPhoneSchema = z.string().refine(isValidMxPhoneE164, "Ingresa un teléfono a 10 dígitos.");
+// Se normaliza a E.164 antes de validar: el mismo número escrito de dos
+// formas distintas tiene que quedar guardado igual, o la detección de
+// coincidencias por teléfono no lo encuentra.
+const mxPhoneSchema = z.preprocess(
+  normalizeMxPhoneInput,
+  z.string().refine(isValidMxPhoneE164, "Ingresa un teléfono a 10 dígitos.")
+);
 
 const cedulaSchema = z
   .string()
@@ -38,6 +44,20 @@ const cedulaSchema = z
 // menor no puede otorgar por sí mismo el consentimiento de datos
 // sensibles de salud (§6.4) — sigue dado de alta por un adulto vía
 // POST /patients (DOCTOR/ASSISTANT), con su tutor.
+// Las tres casillas de M1-RN-003. Compartidas por el registro y por la
+// activación de cuenta con enlace del médico: las mismas reglas en los
+// dos caminos que crean una cuenta de paciente.
+const patientConsentsSchema = z.object({
+  privacyNotice: z.literal(true, {
+    errorMap: () => ({ message: "Debes aceptar el aviso de privacidad." }),
+  }),
+  sensitiveData: z.literal(true, {
+    errorMap: () => ({ message: "Debes aceptar el tratamiento de datos sensibles de salud." }),
+  }),
+  digitalPrescriptionChannel: z.boolean(),
+});
+export type PatientConsentsInput = z.infer<typeof patientConsentsSchema>;
+
 export const registerPatientSchema = z
   .object({
     email: emailSchema,
@@ -48,15 +68,7 @@ export const registerPatientSchema = z
     lastNameMaternal: z.string().max(120).optional(),
     birthDate: birthDateSchema,
     sexAtBirth: z.enum(["F", "M"]),
-    consents: z.object({
-      privacyNotice: z.literal(true, {
-        errorMap: () => ({ message: "Debes aceptar el aviso de privacidad." }),
-      }),
-      sensitiveData: z.literal(true, {
-        errorMap: () => ({ message: "Debes aceptar el tratamiento de datos sensibles de salud." }),
-      }),
-      digitalPrescriptionChannel: z.boolean(),
-    }),
+    consents: patientConsentsSchema,
   })
   .superRefine((data, ctx) => {
     const age = calculateAge(new Date(`${data.birthDate}T00:00:00Z`));
@@ -69,6 +81,41 @@ export const registerPatientSchema = z
     }
   });
 export type RegisterPatientInput = z.infer<typeof registerPatientSchema>;
+
+// identityReviewPending: el teléfono coincidió con uno o más
+// expedientes sin cuenta, así que NO se creó un expediente nuevo y el
+// médico tratante debe confirmar la identidad. A propósito no dice cuál
+// expediente, de quién ni cuántos.
+// emailVerificationRequired: si es false, no se envió código y la
+// cuenta ya puede iniciar sesión (verificación de correo del paciente
+// desactivada en el servidor).
+export interface RegisterPatientResult {
+  userId: string;
+  identityReviewPending: boolean;
+  emailVerificationRequired: boolean;
+}
+
+// Activación de cuenta con el enlace que generó el médico. Mismas
+// reglas de correo, contraseña y consentimientos que el registro. Si
+// el correo ya tiene una cuenta de paciente sin expediente (p. ej. se
+// registró sola y quedó pendiente de revisión), la contraseña es la de
+// esa cuenta y el enlace la vincula en vez de crear otra.
+export const patientActivationSubmitSchema = z
+  .object({
+    email: emailSchema,
+    password: passwordSchema,
+    consents: patientConsentsSchema,
+  })
+  .strict();
+export type PatientActivationSubmitInput = z.infer<typeof patientActivationSubmitSchema>;
+
+// Lo único que la página pública muestra antes de activar: nombre de
+// pila y Medicfy ID para que el paciente confirme que es él. Nunca
+// dato clínico.
+export interface PatientActivationInfo {
+  firstName: string;
+  medicfyId: string;
+}
 
 // Fields per the M1 flow text (§7 M1, step 1): "email, contraseña,
 // nombre legal, cédula profesional, especialidad, teléfono". Document

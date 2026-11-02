@@ -1,6 +1,6 @@
 import { HttpStatus, Injectable } from "@nestjs/common";
 import type { Patient } from "@prisma/client";
-import type { PatientCreateInput } from "@medicfy/contracts";
+import type { PatientCreateInput, PatientDuplicateCandidate, PatientDuplicateCheckInput } from "@medicfy/contracts";
 import { PrismaService } from "../../../prisma/prisma.service";
 import { ApiException } from "../../../common/api-exception";
 import { nextMedicfyId } from "../../../common/medicfy-id.util";
@@ -101,6 +101,28 @@ export class PatientService {
       throw new ApiException("PATIENT_NOT_FOUND", "Paciente no encontrado.", HttpStatus.NOT_FOUND);
     }
     return patient;
+  }
+
+  // Advertencia de posible duplicado al dar de alta: mismo teléfono
+  // normalizado (el contrato ya lo normaliza a E.164) + misma fecha de
+  // nacimiento, SOLO entre los pacientes con vínculo activo de este
+  // médico. Nunca de otros médicos: confirmaría a un tercero que esa
+  // persona se atiende en otro consultorio.
+  async findPossibleDuplicates(doctorId: string, input: PatientDuplicateCheckInput): Promise<PatientDuplicateCandidate[]> {
+    const rows = await this.prisma.patient.findMany({
+      where: {
+        phoneE164: input.phoneE164,
+        birthDate: new Date(`${input.birthDate}T00:00:00Z`),
+        careRelationships: { some: { doctorId, status: "ACTIVE", expiresAt: { gt: new Date() } } },
+      },
+      select: { id: true, medicfyId: true, firstName: true, lastNamePaternal: true, lastNameMaternal: true },
+      orderBy: { createdAt: "asc" },
+    });
+    return rows.map((row) => ({
+      id: row.id,
+      medicfyId: row.medicfyId,
+      fullName: [row.firstName, row.lastNamePaternal, row.lastNameMaternal].filter(Boolean).join(" "),
+    }));
   }
 
   // M5-RN-009: resuelve la fila propia de un paciente autoregistrado —

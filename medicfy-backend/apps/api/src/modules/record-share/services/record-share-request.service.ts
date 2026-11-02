@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { HttpStatus, Inject, Injectable, Logger } from "@nestjs/common";
+import { HttpStatus, Injectable, Logger } from "@nestjs/common";
 import type { Doctor } from "@prisma/client";
 import { isMinor, normalizeEmail, type ShareRequestCreateInput, type ShareRequestSummary } from "@medicfy/contracts";
 import { PrismaService } from "../../../prisma/prisma.service";
@@ -8,11 +8,8 @@ import { AuditService } from "../../identity/services/audit.service";
 import type { RequestMeta } from "../../identity/services/auth.service";
 import { CareRelationshipService } from "../../scheduling/services/care-relationship.service";
 import { normalizeMxPhoneToE164, normalizePersonName } from "../patient-identity-normalizer.util";
-import { RECORD_SHARE_NOTIFICATION_PORT, type RecordShareNotificationPort } from "../record-share-notification.port";
 import { sha256Hex } from "../record-share-crypto.util";
-import { doctorDisplayName } from "../record-share-display.util";
 import { safeErrorLabel } from "../record-share-log.util";
-import { recordShareWebOrigin } from "../record-share-web-origin.util";
 
 const DAILY_REQUEST_LIMIT = 20;
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -37,8 +34,7 @@ export class RecordShareRequestService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
-    private readonly careRelationshipService: CareRelationshipService,
-    @Inject(RECORD_SHARE_NOTIFICATION_PORT) private readonly notifications: RecordShareNotificationPort
+    private readonly careRelationshipService: CareRelationshipService
   ) {}
 
   /**
@@ -216,6 +212,16 @@ export class RecordShareRequestService {
       return;
     }
 
+    // Decisión del usuario (2026-11-02): solo pacientes CON CUENTA. La
+    // solicitud le llega dentro de su cuenta (campana en /mi-cuenta) y
+    // decide con su sesión iniciada — hoy no hay correo ni SMS reales
+    // para alcanzar a alguien sin cuenta. Sin cuenta, no se crea nada y
+    // el médico ve la misma respuesta genérica de siempre (RE5).
+    if (patient.userId === null) {
+      await this.logNoMatch(requester, "patient_without_account", patient.id);
+      return;
+    }
+
     const activeCustodians = await this.careRelationshipService.listActiveDoctorsForPatient(patient.id);
 
     if (activeCustodians.some((doctor) => doctor.id === requester.id)) {
@@ -240,14 +246,13 @@ export class RecordShareRequestService {
       return;
     }
 
-    const requesterDisplayName = doctorDisplayName(requester);
-    // ⚠️ Decisión por defecto (02-solicitud-del-medico.md §3): EMAIL,
-    // porque Patient.phoneE164/email son siempre obligatorios (nunca
-    // faltan) y no hay todavía ningún adaptador real de SMS/WhatsApp.
-    const channel = "EMAIL" as const;
-    const destination = patient.email;
-
     for (const custodian of activeCustodians) {
+      // linkTokenHash es obligatorio en el modelo (página pública de
+      // autorización con código). El token en claro ya no viaja a
+      // ningún lado: la solicitud se atiende dentro de la cuenta del
+      // paciente (RecordSharePatientInboxService). La página pública se
+      // conserva para cuando exista un proveedor de correo real
+      // (D-EXP-13).
       const plainToken = randomBytes(32).toString("base64url");
       const request = await this.prisma.recordShareRequest.create({
         data: {
@@ -271,16 +276,6 @@ export class RecordShareRequestService {
         patientId: patient.id,
         result: "SUCCESS",
         metadata: { custodianDoctorId: custodian.id },
-      });
-
-      const authorizationUrl = `${recordShareWebOrigin()}/expediente-compartido/autorizar/${plainToken}`;
-      await this.notifications.sendAuthorizationRequest({
-        channel,
-        destination,
-        requesterDisplayName,
-        requesterLicense: requester.professionalLicense,
-        requesterSpecialtyName: requester.primarySpecialty?.nameEs ?? null,
-        authorizationUrl,
       });
     }
   }

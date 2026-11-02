@@ -4,12 +4,13 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Controller, useForm } from "react-hook-form";
-import { patientCreateSchema, isMinor, type PatientCreateInput } from "@medicfy/contracts";
-import { apiFetch } from "@/lib/api-client";
+import { patientCreateSchema, isMinor, type PatientCreateInput, type PatientDuplicateCandidate } from "@medicfy/contracts";
+import { apiFetch, expectArray } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { FieldWrapper, TextInput, SelectInput } from "@/components/ui/field";
 import { Card, ErrorState, LoadingState } from "@/components/ui/states";
+import { Aviso } from "@/components/ui/alert";
 import { DateInput } from "@/components/ui/date-input";
 import { toIsoDateKey } from "@/lib/i18n/format";
 import { useT } from "@/lib/i18n/context";
@@ -36,6 +37,10 @@ export default function NuevoPacientePage() {
   const { accessToken, isLoading: authLoading } = useAuth();
   const [createdPatientId, setCreatedPatientId] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<unknown>(null);
+  // Advertencia de posible duplicado: los valores ya validados esperan
+  // a que el médico abra el existente o decida continuar.
+  const [duplicates, setDuplicates] = useState<{ candidates: PatientDuplicateCandidate[]; values: PatientCreateInput } | null>(null);
+  const [isCreatingAnyway, setIsCreatingAnyway] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !accessToken) {
@@ -51,7 +56,7 @@ export default function NuevoPacientePage() {
   const birthDate = form.watch("birthDate");
   const minor = birthDate ? isMinor(new Date(`${birthDate}T00:00:00Z`)) : false;
 
-  async function onSubmit(values: PatientCreateInput) {
+  async function createPatient(values: PatientCreateInput) {
     setSubmitError(null);
     try {
       const res = await apiFetch<{ id: string; medicfyId: string }>("/patients", { method: "POST", body: values, accessToken });
@@ -59,6 +64,43 @@ export default function NuevoPacientePage() {
     } catch (error) {
       setSubmitError(error);
     }
+  }
+
+  // Antes de crear: ¿ya hay un paciente propio con el mismo teléfono y
+  // fecha de nacimiento? El servidor solo busca entre los pacientes de
+  // este médico. Es advertencia, no bloqueo: si la verificación falla
+  // (red, servidor sin la ruta), el alta sigue — la creación misma
+  // reporta sus propios errores.
+  async function onSubmit(values: PatientCreateInput) {
+    setSubmitError(null);
+    setDuplicates(null);
+    const candidates = await findPossibleDuplicates(values);
+    if (candidates.length > 0) {
+      setDuplicates({ candidates, values });
+      return;
+    }
+    await createPatient(values);
+  }
+
+  async function findPossibleDuplicates(values: PatientCreateInput): Promise<PatientDuplicateCandidate[]> {
+    try {
+      return expectArray<PatientDuplicateCandidate>(
+        await apiFetch<unknown>("/patients/duplicate-check", {
+          method: "POST",
+          body: { phoneE164: values.phoneE164, birthDate: values.birthDate },
+          accessToken,
+        })
+      );
+    } catch {
+      return [];
+    }
+  }
+
+  async function createAnyway() {
+    if (!duplicates) return;
+    setIsCreatingAnyway(true);
+    await createPatient(duplicates.values);
+    setIsCreatingAnyway(false);
   }
 
   if (authLoading || !accessToken) {
@@ -225,6 +267,31 @@ export default function NuevoPacientePage() {
                 />
               </FieldWrapper>
             </fieldset>
+          ) : null}
+
+          {duplicates ? (
+            <Aviso variant="advertencia" title={t("vinculacion.duplicado.titulo")}>
+              <div className="flex flex-col gap-3">
+                <p>{t("vinculacion.duplicado.cuerpo")}</p>
+                <ul className="flex flex-col gap-2">
+                  {duplicates.candidates.map((candidate) => (
+                    <li key={candidate.id} className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-base text-gray-900">
+                        {candidate.fullName} · {candidate.medicfyId}
+                      </span>
+                      <Link href={`/pacientes/${candidate.id}`} className="inline-flex min-h-[44px] items-center text-base font-medium text-brand-700 underline">
+                        {t("vinculacion.duplicado.abrir")}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+                <div>
+                  <Button type="button" variant="secondary" isLoading={isCreatingAnyway} onClick={() => void createAnyway()}>
+                    {t("vinculacion.duplicado.continuar")}
+                  </Button>
+                </div>
+              </div>
+            </Aviso>
           ) : null}
 
           {submitError ? <ErrorState error={submitError} /> : null}

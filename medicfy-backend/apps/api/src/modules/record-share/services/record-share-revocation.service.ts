@@ -22,6 +22,10 @@ const OTP_VERIFIED_WINDOW_MS = 30 * 60 * 1000;
 // que revocar" (mismo criterio que LINK_INVALID_MESSAGE).
 const LINK_INVALID_MESSAGE = "Este enlace ya no es válido o ya no hay accesos vigentes que revocar.";
 
+// Señal interna: cada vía de revocación la traduce a su propio error
+// público (enlace inválido vs. acceso ya no vigente).
+class GrantNotRevocableError extends Error {}
+
 /**
  * PR-EXP-06 — revocación por el paciente (06-notificaciones-revocacion-
  * caducidad.md §2). El enlace llega en la confirmación de aprobación;
@@ -118,30 +122,47 @@ export class RecordShareRevocationService {
   async revoke(token: string, grantId: string, meta: RequestMeta): Promise<{ revoked: true }> {
     const linkGrant = await this.resolveLinkGrant(token);
     await this.assertOtpRecentlyVerified(await this.requestIdOf(linkGrant));
-
-    // Solo grants del MISMO paciente del enlace y todavía vigentes.
-    // Compare-and-set: si otro proceso (barrido, admin) cambió el
-    // estado en medio, count=0 y se responde como enlace inválido.
-    const { count } = await this.prisma.recordShareGrant.updateMany({
-      where: { id: grantId, patientId: linkGrant.patientId, status: "ACTIVE" },
-      data: { status: "REVOKED_BY_PATIENT", revokedAt: new Date() },
+    const grant = await this.revokeActiveGrantOfPatient(linkGrant.patientId, grantId, meta).catch((error: unknown) => {
+      throw error instanceof GrantNotRevocableError
+        ? new ApiException("RECORD_SHARE_LINK_INVALID", LINK_INVALID_MESSAGE, HttpStatus.NOT_FOUND)
+        : error;
     });
-    if (count === 0) {
-      throw new ApiException("RECORD_SHARE_LINK_INVALID", LINK_INVALID_MESSAGE, HttpStatus.NOT_FOUND);
-    }
-
-    const grant = await this.prisma.recordShareGrant.findUniqueOrThrow({
-      where: { id: grantId },
-      include: { requesterDoctor: true, patient: true },
-    });
-    await this.audit("SHARE_REVOKED", grant, "SUCCESS", meta);
-    await this.doctorNotifier.revoked(grant);
     await this.notifications.sendRevocationNotice({
       channel: "EMAIL",
       destination: grant.patient.email,
       requesterDisplayName: doctorDisplayName(grant.requesterDoctor),
     });
     return { revoked: true };
+  }
+
+  // Revocación desde la propia cuenta del paciente (sesión iniciada en
+  // lugar de enlace + código). Sin aviso por correo: lo ve en su cuenta.
+  async revokeFromPatientAccount(actorUserId: string, patientId: string, grantId: string, meta: RequestMeta): Promise<{ revoked: true }> {
+    await this.revokeActiveGrantOfPatient(patientId, grantId, meta, actorUserId).catch((error: unknown) => {
+      throw error instanceof GrantNotRevocableError
+        ? new ApiException("RECORD_SHARE_GRANT_NOT_ACTIVE", "Ese acceso ya no está vigente.", HttpStatus.NOT_FOUND)
+        : error;
+    });
+    return { revoked: true };
+  }
+
+  // Solo grants del MISMO paciente y todavía vigentes. Compare-and-set:
+  // si otro proceso (barrido, admin) cambió el estado en medio, count=0.
+  // El bloqueo es inmediato: SharedRecordGuard revisa status en cada request.
+  private async revokeActiveGrantOfPatient(patientId: string, grantId: string, meta: RequestMeta, actorUserId?: string) {
+    const { count } = await this.prisma.recordShareGrant.updateMany({
+      where: { id: grantId, patientId, status: "ACTIVE" },
+      data: { status: "REVOKED_BY_PATIENT", revokedAt: new Date() },
+    });
+    if (count === 0) throw new GrantNotRevocableError();
+
+    const grant = await this.prisma.recordShareGrant.findUniqueOrThrow({
+      where: { id: grantId },
+      include: { requesterDoctor: true, patient: true },
+    });
+    await this.audit("SHARE_REVOKED", grant, "SUCCESS", meta, actorUserId);
+    await this.doctorNotifier.revoked(grant);
+    return grant;
   }
 
   // El token sigue sirviendo mientras su grant exista — aunque ese
@@ -176,8 +197,9 @@ export class RecordShareRevocationService {
     }
   }
 
-  private audit(action: string, grant: RecordShareGrant, result: "SUCCESS" | "DENIED", meta: RequestMeta): Promise<void> {
+  private audit(action: string, grant: RecordShareGrant, result: "SUCCESS" | "DENIED", meta: RequestMeta, actorUserId?: string): Promise<void> {
     return this.auditService.log({
+      ...(actorUserId ? { actorUserId, actorRole: "PATIENT" } : {}),
       action,
       resourceType: "record_share_grant",
       resourceId: grant.id,

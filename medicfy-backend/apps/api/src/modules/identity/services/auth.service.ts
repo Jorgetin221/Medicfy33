@@ -3,9 +3,9 @@ import { HttpStatus } from "@nestjs/common";
 import { randomBytes, createHash } from "node:crypto";
 import { z } from "zod";
 import { hash as argon2Hash } from "argon2";
-import type { RegisterDoctorInput, RegisterPatientInput } from "@medicfy/contracts";
-import { IDENTITY_ERROR_CODES } from "@medicfy/contracts";
-import type { RoleName, UserStatus } from "@prisma/client";
+import type { PatientConsentsInput, RegisterDoctorInput, RegisterPatientInput, RegisterPatientResult } from "@medicfy/contracts";
+import { IDENTITY_ERROR_CODES, isMinor, normalizeMxPhoneToE164 } from "@medicfy/contracts";
+import type { Patient, RoleName, UserStatus } from "@prisma/client";
 import { PrismaService } from "../../../prisma/prisma.service";
 import { ApiException } from "../../../common/api-exception";
 import { PasswordService } from "./password.service";
@@ -17,6 +17,7 @@ import { VerificationCodeService } from "./verification-code.service";
 import { CryptoService } from "./crypto.service";
 import { NOTIFICATION_PORT, type NotificationPort } from "./notification.port";
 import { CURRENT_PRIVACY_NOTICE_VERSION } from "../legal-document-versions";
+import { isPatientEmailVerificationEnabled } from "../patient-email-verification";
 import { generateDoctorSlug } from "../../../common/slug.util";
 import { nextMedicfyId } from "../../../common/medicfy-id.util";
 import { signPurposeToken, verifyPurposeToken } from "../../../common/purpose-token.util";
@@ -69,24 +70,64 @@ export class AuthService {
     }
   }
 
-  async registerPatient(input: RegisterPatientInput, meta: RequestMeta): Promise<{ userId: string }> {
+  // Vinculación de cuentas: si el teléfono coincide con uno o más
+  // expedientes SIN cuenta, NO se crea un Patient nuevo (sería el
+  // duplicado que esto evita) — se crea el User y una solicitud de
+  // vinculación pendiente por cada coincidencia, y el médico tratante
+  // decide. El teléfono nunca vincula solo: no es único (familias
+  // comparten número). Un expediente que ya tiene cuenta no cuenta
+  // como coincidencia y no se revela. Sin coincidencias, todo sigue
+  // exactamente como antes.
+  async registerPatient(input: RegisterPatientInput, meta: RequestMeta): Promise<RegisterPatientResult> {
     await this.assertEmailAvailable(input.email);
     const passwordHash = await this.passwordService.hash(input.password);
+    const phoneE164 = normalizeMxPhoneToE164(input.phone) ?? input.phone;
+    const matches = await this.findUnlinkedAdultPatientsByPhone(phoneE164);
     // Secuencia de Postgres, no transaccional por diseño (ver
     // medicfy-id.util.ts) — se pide antes de abrir la transacción,
-    // igual que PatientService.createByDoctor.
-    const medicfyId = await nextMedicfyId(this.prisma);
+    // igual que PatientService.createByDoctor. Solo si de verdad se
+    // va a crear un Patient: un folio consumido sin fila es un hueco.
+    const medicfyId = matches.length === 0 ? await nextMedicfyId(this.prisma) : null;
+    const birthDate = new Date(`${input.birthDate}T00:00:00Z`);
+    const emailVerificationRequired = isPatientEmailVerificationEnabled();
 
-    const user = await this.prisma.$transaction(async (tx) => {
+    const { user, linkRequestIds } = await this.prisma.$transaction(async (tx) => {
       const created = await tx.user.create({
         data: {
           email: input.email,
-          phoneE164: input.phone,
+          phoneE164,
           passwordHash,
           primaryRole: "PATIENT",
+          // Sin verificación de correo la cuenta nace activa, pero
+          // emailVerifiedAt se queda nulo: el correo sigue SIN verificar
+          // y así lo dice el dato (ver patient-email-verification.ts).
+          ...(emailVerificationRequired ? {} : { status: "ACTIVE" as const }),
         },
       });
       await tx.userRole.create({ data: { userId: created.id, role: "PATIENT" } });
+
+      if (medicfyId === null) {
+        const requests = await Promise.all(
+          matches.map((patient) =>
+            tx.patientLinkRequest.create({
+              data: {
+                userId: created.id,
+                patientId: patient.id,
+                claimedFirstName: input.firstName,
+                claimedLastNamePaternal: input.lastNamePaternal,
+                claimedLastNameMaternal: input.lastNameMaternal ?? null,
+                claimedBirthDate: birthDate,
+                claimedSexAtBirth: input.sexAtBirth,
+                claimedPhoneE164: phoneE164,
+                claimedEmail: input.email,
+              },
+              select: { id: true, patientId: true },
+            })
+          )
+        );
+        return { user: created, linkRequestIds: requests };
+      }
+
       // M5-RN-009: antes de v2.3 esta operación solo creaba el `user`
       // — la fila `patients` quedaba pendiente para siempre, así que
       // "For My Patients" y el agendamiento público no tenían dueño
@@ -100,46 +141,105 @@ export class AuthService {
           firstName: input.firstName,
           lastNamePaternal: input.lastNamePaternal,
           lastNameMaternal: input.lastNameMaternal ?? null,
-          birthDate: new Date(`${input.birthDate}T00:00:00Z`),
+          birthDate,
           sexAtBirth: input.sexAtBirth,
-          phoneE164: input.phone,
+          phoneE164,
           email: input.email,
           source: "SELF_SIGNUP",
         },
       });
-      return created;
+      return { user: created, linkRequestIds: [] };
     });
 
-    // M1-RN-003: three separate, unchecked-by-default consent decisions.
-    await this.consentService.record({
-      userId: user.id,
-      consentType: "PRIVACY_NOTICE",
-      documentVersion: CURRENT_PRIVACY_NOTICE_VERSION,
-      granted: input.consents.privacyNotice,
-      ipAddress: meta.ip,
-      userAgent: meta.userAgent,
-    });
-    await this.consentService.record({
-      userId: user.id,
-      consentType: "SENSITIVE_DATA",
-      documentVersion: CURRENT_PRIVACY_NOTICE_VERSION,
-      granted: input.consents.sensitiveData,
-      ipAddress: meta.ip,
-      userAgent: meta.userAgent,
-    });
-    await this.consentService.record({
-      userId: user.id,
-      consentType: "DIGITAL_PRESCRIPTION_CHANNEL",
-      documentVersion: CURRENT_PRIVACY_NOTICE_VERSION,
-      granted: input.consents.digitalPrescriptionChannel,
-      ipAddress: meta.ip,
-      userAgent: meta.userAgent,
-    });
+    for (const request of linkRequestIds) {
+      await this.auditService.log({
+        actorUserId: user.id,
+        actorRole: "PATIENT",
+        action: "patient.link_request.created",
+        resourceType: "patient_link_request",
+        resourceId: request.id,
+        patientId: request.patientId,
+        result: "SUCCESS",
+        ipAddress: meta.ip,
+        userAgent: meta.userAgent,
+        metadata: { matchedBy: "phone" },
+      });
+    }
 
-    const code = await this.verificationCodeService.issue(user.id, "EMAIL");
-    await this.notifications.sendEmailVerificationCode(user.email, code);
+    await this.recordPatientConsents(user.id, input.consents, meta);
 
-    return { userId: user.id };
+    if (emailVerificationRequired) {
+      const code = await this.verificationCodeService.issue(user.id, "EMAIL");
+      await this.notifications.sendEmailVerificationCode(user.email, code);
+    }
+
+    return { userId: user.id, identityReviewPending: linkRequestIds.length > 0, emailVerificationRequired };
+  }
+
+  // Menores fuera a propósito: el sistema no tiene acceso de tutores
+  // con cuenta, y el teléfono de un menor suele ser el de su tutor —
+  // vincular la cuenta de un adulto al expediente de un niño sería
+  // exactamente el error que no se puede cometer.
+  private async findUnlinkedAdultPatientsByPhone(phoneE164: string): Promise<Patient[]> {
+    const candidates = await this.prisma.patient.findMany({ where: { phoneE164, userId: null } });
+    return candidates.filter((patient) => !isMinor(patient.birthDate));
+  }
+
+  // M1-RN-003: three separate, unchecked-by-default consent decisions.
+  // Público: la activación de cuenta con enlace del médico
+  // (PatientActivationService) captura las mismas tres casillas.
+  async recordPatientConsents(userId: string, consents: PatientConsentsInput, meta: RequestMeta): Promise<void> {
+    const decisions = [
+      { consentType: "PRIVACY_NOTICE", granted: consents.privacyNotice },
+      { consentType: "SENSITIVE_DATA", granted: consents.sensitiveData },
+      { consentType: "DIGITAL_PRESCRIPTION_CHANNEL", granted: consents.digitalPrescriptionChannel },
+    ] as const;
+    for (const decision of decisions) {
+      await this.consentService.record({
+        userId,
+        consentType: decision.consentType,
+        documentVersion: CURRENT_PRIVACY_NOTICE_VERSION,
+        granted: decision.granted,
+        ipAddress: meta.ip,
+        userAgent: meta.userAgent,
+      });
+    }
+  }
+
+  // Activación con enlace del médico: "dejar al paciente con sesión
+  // iniciada". Mismo cierre que un login correcto (sesión, auditoría).
+  // PATIENT nunca exige MFA (M1-RN-005), así que no hay paso intermedio.
+  async startPatientSessionAfterActivation(userId: string, meta: RequestMeta): Promise<IssuedTokens> {
+    return this.completeLogin(userId, "PATIENT", meta);
+  }
+
+  // Público para la activación con enlace: una contraseña equivocada al
+  // vincular una cuenta existente cuenta contra el mismo bloqueo que el
+  // login (M1-RN-006) — si no, el enlace sería una vía de fuerza bruta.
+  async verifyPasswordForAccountLink(userId: string, passwordHash: string, password: string, meta: RequestMeta): Promise<void> {
+    const ok = await this.passwordService.verify(passwordHash, password);
+    if (ok) {
+      await this.prisma.user.update({ where: { id: userId }, data: { failedLoginAttempts: 0, lockoutCount: 0 } });
+      return;
+    }
+    const lockedUntil = await this.handleFailedLogin(userId, meta);
+    if (lockedUntil) {
+      throw new ApiException(
+        "AUTH_ACCOUNT_LOCKED",
+        "Cuenta bloqueada temporalmente por múltiples intentos fallidos.",
+        IDENTITY_ERROR_CODES.AUTH_ACCOUNT_LOCKED,
+        { retry_after: lockedUntil.toISOString() }
+      );
+    }
+    throw new ApiException(
+      "AUTH_INVALID_CREDENTIALS",
+      "Correo o contraseña incorrectos.",
+      IDENTITY_ERROR_CODES.AUTH_INVALID_CREDENTIALS
+    );
+  }
+
+  async hashPassword(password: string): Promise<string> {
+    return this.passwordService.hash(password);
   }
 
   // Flow step 1 per spec §7 M1: "email, contraseña, nombre legal,
@@ -312,7 +412,14 @@ export class AuthService {
       data: { failedLoginAttempts: 0, lockoutCount: 0 },
     });
 
-    if (!user.emailVerifiedAt) {
+    // Una cuenta creada o vinculada con el enlace de activación del
+    // médico no pasó por el código de correo: el enlace, que el médico
+    // entregó en persona o por su propio canal, ya acreditó la
+    // identidad (hoy no se envían correos reales).
+    // Pacientes: la verificación de correo puede estar desactivada (ver
+    // patient-email-verification.ts).
+    const patientWithoutEmailVerification = user.primaryRole === "PATIENT" && !isPatientEmailVerificationEnabled();
+    if (!user.emailVerifiedAt && !patientWithoutEmailVerification && !(await this.wasActivatedByDoctorLink(user.id))) {
       throw new ApiException(
         "AUTH_EMAIL_NOT_VERIFIED",
         "Verifica tu correo electrónico antes de iniciar sesión.",
@@ -340,7 +447,7 @@ export class AuthService {
       }
     }
 
-    if (MFA_REQUIRED_ROLES.includes(user.primaryRole)) {
+     if (process.env.MFA_DISABLED !== "true" && MFA_REQUIRED_ROLES.includes(user.primaryRole)) {
       if (user.mfaEnabled) {
         const mfaSessionToken = signPurposeToken("mfa_pending", { sub: user.id }, MFA_SESSION_TOKEN_TTL_SECONDS);
         return { mfaRequired: true, mfaSessionToken };
@@ -363,6 +470,14 @@ export class AuthService {
     }
 
     return this.completeLogin(user.id, user.primaryRole, meta);
+  }
+
+  private async wasActivatedByDoctorLink(userId: string): Promise<boolean> {
+    const link = await this.prisma.patientActivationLink.findFirst({
+      where: { usedByUserId: userId, status: "USED" },
+      select: { id: true },
+    });
+    return link !== null;
   }
 
   async completeMfaLogin(mfaSessionToken: string, code: string, meta: RequestMeta): Promise<IssuedTokens> {

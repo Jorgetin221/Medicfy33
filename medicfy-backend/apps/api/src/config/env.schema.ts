@@ -35,6 +35,19 @@ const envSchema = z.object({
     .enum(["true", "false"])
     .default("false")
     .transform((v) => v === "true"),
+  // Verificación de correo del paciente con código (ver
+  // modules/identity/patient-email-verification.ts). Desactivada por
+  // defecto mientras no haya proveedor de correo real.
+  PATIENT_EMAIL_VERIFICATION_ENABLED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((v) => v === "true"),
+  // Excepciones explícitas para el VPS actual (integradas 2026-11-02;
+  // antes vivían solo como cambios sin subir en el servidor). Sin ellas,
+  // NODE_ENV=production rechaza los adaptadores de desarrollo.
+  ALLOW_CONSOLE_NOTIFICATIONS: z.enum(["true", "false"]).optional(),
+  ALLOW_LOCAL_FILE_STORAGE: z.enum(["true", "false"]).optional(),
+  LOCAL_FILE_STORAGE_DIR: z.string().min(1).optional(),
   // Fase 8 · Prompt 51 ("El Segundo Lector"). Opcional a propósito: el
   // resto de la aplicación arranca y sirve todo lo demás sin esta
   // clave — ClaudeModelAdapter la lee de forma perezosa y se degrada

@@ -2,7 +2,7 @@
 import url from 'node:url';
 import fs from 'node:fs';
 import path from 'node:path';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
 const PORT = 3001;
 
@@ -41,6 +41,46 @@ const doctorUser = {
     minBookingNoticeMinutes: 120,
     maxBookingWindowDays: 90
   }
+};
+
+// Segundo médico VERIFICADO del mock, para probar en local el
+// expediente compartido entre dos médicos (uno solicita, el otro es el
+// custodio). Mismas credenciales de demostración que el médico demo:
+// el mock no valida contraseñas, solo el correo (R7: dato sintético).
+const franklinUser = {
+  ...doctorUser,
+  id: "user-doctor-2",
+  email: "franklin@medicfy.dev",
+  doctor: {
+    ...doctorUser.doctor,
+    id: "doc-2",
+    userId: "user-doctor-2",
+    slug: "franklin-diaz",
+    legalFirstName: "Franklin",
+    legalLastName: "Díaz",
+    professionalLicense: "87654321",
+    displayName: "Dr. Franklin Díaz",
+    photoUrl: null,
+  },
+};
+
+// Tercer médico VERIFICADO del mock, para pruebas locales con más de
+// dos médicos (dato sintético, R7).
+const sofiaUser = {
+  ...doctorUser,
+  id: "user-doctor-3",
+  email: "sofia@medicfy.dev",
+  doctor: {
+    ...doctorUser.doctor,
+    id: "doc-3",
+    userId: "user-doctor-3",
+    slug: "sofia-ramirez",
+    legalFirstName: "Sofía",
+    legalLastName: "Ramírez",
+    professionalLicense: "11223344",
+    displayName: "Dra. Sofía Ramírez",
+    photoUrl: null,
+  },
 };
 
 const adminUser = {
@@ -132,8 +172,24 @@ let registeredDoctors = [
   }
 ];
 
+// Pacientes con cuenta creados en el mock (registro propio o enlace de
+// activación). Se guardan en .mock-data/state.json.
+let registeredPatientUsers = [];
+
+// Médico tratante (custodio) de un paciente del mock: quien lo dio de
+// alta. Los pacientes anteriores a este campo son del médico demo.
+function custodianUserIdOf(patient) {
+  return patient.custodianDoctorUserId || doctorUser.id;
+}
+
+function doctorDisplayNameOf(userId) {
+  const doctor = allUsers().find(u => u.id === userId)?.doctor;
+  if (!doctor) return '';
+  return doctor.displayName || `${doctor.legalFirstName} ${doctor.legalLastName}`.trim();
+}
+
 function allUsers() {
-  return [doctorUser, adminUser, ...registeredDoctors];
+  return [doctorUser, franklinUser, sofiaUser, adminUser, ...registeredDoctors, ...registeredPatientUsers];
 }
 
 // Antes, /auth/login siempre devolvía el mismo token fijo sin
@@ -185,12 +241,21 @@ function getCurrentUser(req) {
 // necesario para que "Solicitar expediente"/"Mis solicitudes" se vean
 // y funcionen en /dev sin backend real.
 let recordShareRequests = [];
+// Accesos que un paciente con cuenta autorizó desde su bandeja.
+let mockShareGrants = [];
 const AUTH_DEMO_OTP = '123456';
 const recordShareAuthDemo = { verified: false };
 // PR-EXP-06: estado mutable del grant demo — revocar (paciente) o
 // suspender (admin) lo saca de ACTIVE y el visor responde 403, igual
 // que el SharedRecordGuard real. Reportes de abuso en memoria.
 const recordShareDemoState = { grantStatus: 'ACTIVE', revokeVerified: false, revokedAt: null, abuseReports: [] };
+
+// Vinculación de cuentas de paciente: enlaces de activación en memoria
+// (el backend real solo guarda el sha256 del token).
+const mockActivationLinks = [];
+// Solicitudes de vinculación (registro propio cuyo teléfono coincide con
+// expedientes sin cuenta). Misma forma que PatientLinkRequestView.
+let mockLinkRequests = [];
 
 let patients = [
   {
@@ -516,6 +581,13 @@ function saveMockState() {
     issuedLabOrders,
     labResults,
     doctor: doctorUser.doctor,
+    registeredPatientUsers,
+    mockLinkRequests,
+    // Médicos registrados desde /registro-medico: antes se perdían al
+    // reiniciar el mock.
+    registeredDoctors: registeredDoctors.filter(u => !u.id.startsWith('demo-doc-')),
+    recordShareRequests,
+    mockShareGrants,
   }, null, 2));
 }
 
@@ -531,6 +603,13 @@ function loadMockState() {
       historyItems[patient.id] ??= [];
     }
     Object.assign(encounters, state.encounters ?? {});
+    registeredPatientUsers = state.registeredPatientUsers ?? [];
+    for (const doctor of state.registeredDoctors ?? []) {
+      if (!registeredDoctors.some(u => u.id === doctor.id)) registeredDoctors.push(doctor);
+    }
+    recordShareRequests = state.recordShareRequests ?? [];
+    mockShareGrants = state.mockShareGrants ?? [];
+    mockLinkRequests = state.mockLinkRequests ?? [];
     issuedPrescriptions.push(...(state.issuedPrescriptions ?? []));
     issuedLabOrders.push(...(state.issuedLabOrders ?? []));
     labResults.push(...(state.labResults ?? []));
@@ -1263,17 +1342,23 @@ const server = http.createServer(async (req, res) => {
     return sendJson(await openDailyRoom(apt));
   }
 
+  // Cada médico ve solo a SUS pacientes (los que dio de alta), como el
+  // backend real con care_relationship — así un médico puede pedir el
+  // expediente de un paciente que lleva otro.
   if (pathname === '/patients' && method === 'GET') {
+    const user = getCurrentUser(req);
+    const mine = patients.filter(p => custodianUserIdOf(p) === user.id);
     const q = (parsedUrl.query.query || '').toLowerCase();
     if (q) {
-      return sendJson(patients.filter(p => `${p.firstName} ${p.lastNamePaternal} ${p.lastNameMaternal || ''} ${p.medicfyId}`.toLowerCase().includes(q)));
+      return sendJson(mine.filter(p => `${p.firstName} ${p.lastNamePaternal} ${p.lastNameMaternal || ''} ${p.medicfyId}`.toLowerCase().includes(q)));
     }
-    return sendJson(patients);
+    return sendJson(mine);
   }
 
   if (pathname === '/patients' && method === 'POST') {
     const newPat = {
       id: `pat-${Date.now()}`,
+      custodianDoctorUserId: getCurrentUser(req).id,
       medicfyId: `MED-000${patients.length + 1}`,
       firstName: body.firstName,
       lastNamePaternal: body.lastNamePaternal,
@@ -1294,6 +1379,164 @@ const server = http.createServer(async (req, res) => {
     historyItems[newPat.id] = [];
     saveMockState();
     return sendJson(newPat, 201);
+  }
+
+  // Vinculación de cuentas de paciente (modules/patient-accounts). El
+  // mock no reproduce las transacciones ni la detección por teléfono
+  // (eso vive contra Postgres real) — solo lo necesario para ver la
+  // ficha, el enlace y la página /activar-cuenta en /dev.
+  if (pathname === '/patients/duplicate-check' && method === 'POST') {
+    return sendJson(
+      patients
+        .filter(p => p.phoneE164 === body.phoneE164 && p.birthDate === body.birthDate)
+        .map(p => ({ id: p.id, medicfyId: p.medicfyId, fullName: [p.firstName, p.lastNamePaternal, p.lastNameMaternal].filter(Boolean).join(' ') }))
+    );
+  }
+
+  // Portal del paciente: SIEMPRE se resuelve por el usuario de la
+  // sesión (sub del token), igual que PatientService.findByUserId en el
+  // backend real. Antes no existían y caían en GET /patients/:id, que
+  // con un id desconocido devuelve patients[0] — el paciente veía el
+  // expediente de otra persona.
+  const ownPatient = () => {
+    const auth = req.headers['authorization'] || '';
+    const sub = parseMockToken(auth.startsWith('Bearer ') ? auth.slice(7) : null);
+    return sub ? patients.find(p => p.userId === sub) : undefined;
+  };
+
+  if (pathname === '/patients/me' && method === 'GET') {
+    const pat = ownPatient();
+    if (!pat) return sendError('PATIENT_PROFILE_NOT_FOUND', 'Todavía no tienes un expediente de paciente propio.', 404);
+    return sendJson(pat);
+  }
+
+  if (pathname === '/patients/me/appointments' && method === 'GET') {
+    const pat = ownPatient();
+    if (!pat) return sendError('PATIENT_PROFILE_NOT_FOUND', 'Todavía no tienes un expediente de paciente propio.', 404);
+    return sendJson(
+      appointments
+        .filter(a => a.patientId === pat.id)
+        .map(a => ({
+          ...a,
+          doctor: { displayName: null, legalFirstName: doctorUser.doctor.legalFirstName, legalLastName: doctorUser.doctor.legalLastName, slug: doctorUser.doctor.slug },
+        }))
+    );
+  }
+
+  if (pathname === '/patients/me/link-status' && method === 'GET') {
+    if (ownPatient()) return sendJson({ status: 'LINKED' });
+    const auth = req.headers['authorization'] || '';
+    const sub = parseMockToken(auth.startsWith('Bearer ') ? auth.slice(7) : null);
+    const pending = mockLinkRequests.some(r => r.userId === sub && r.status === 'PENDING');
+    return sendJson({ status: pending ? 'PENDING_REVIEW' : 'NONE' });
+  }
+
+  if (pathname.match(/^\/patients\/[^\/]+\/account-status$/) && method === 'GET') {
+    const pat = patients.find(p => p.id === pathname.split('/')[2]);
+    if (!pat) return sendError('PATIENT_NOT_FOUND', 'Paciente no encontrado.', 404);
+    const link = mockActivationLinks.find(l => l.patientId === pat.id && l.status === 'PENDING');
+    return sendJson({
+      hasAccount: Boolean(pat.userId),
+      isMinor: ageFromBirthDate(pat.birthDate) < 18,
+      pendingActivationLink: link ? { createdAt: link.createdAt, expiresAt: link.expiresAt } : null,
+      pendingLinkRequestCount: mockLinkRequests.filter(r => r.patientId === pat.id && r.status === 'PENDING').length,
+    });
+  }
+
+  if (pathname.match(/^\/patients\/[^\/]+\/activation-link$/) && method === 'POST') {
+    const pat = patients.find(p => p.id === pathname.split('/')[2]);
+    if (!pat) return sendError('PATIENT_NOT_FOUND', 'Paciente no encontrado.', 404);
+    if (pat.userId) return sendError('PATIENT_ALREADY_HAS_ACCOUNT', 'Este paciente ya tiene una cuenta activa.', 409);
+    if (ageFromBirthDate(pat.birthDate) < 18) {
+      return sendError('PATIENT_ACTIVATION_MINOR_UNSUPPORTED', 'La activación de cuenta para pacientes menores de edad (a través de su tutor) todavía no está disponible.', 422);
+    }
+    for (const l of mockActivationLinks) if (l.patientId === pat.id && l.status === 'PENDING') l.status = 'REVOKED';
+    const token = randomBytes(32).toString('base64url');
+    const link = { token, patientId: pat.id, status: 'PENDING', createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 7 * 86400000).toISOString() };
+    mockActivationLinks.push(link);
+    return sendJson({ url: `${process.env.WEB_ORIGIN || 'http://localhost:3000'}/activar-cuenta/${token}`, expiresAt: link.expiresAt }, 201);
+  }
+
+  const linkRequestView = (r) => {
+    const pat = patients.find(p => p.id === r.patientId);
+    return {
+      id: r.id, patientId: r.patientId, medicfyId: pat?.medicfyId ?? '', status: r.status, createdAt: r.createdAt,
+      claimed: r.claimed,
+      record: pat ? {
+        firstName: pat.firstName, lastNamePaternal: pat.lastNamePaternal, lastNameMaternal: pat.lastNameMaternal ?? null,
+        birthDate: pat.birthDate, sexAtBirth: pat.sexAtBirth, phoneE164: pat.phoneE164, email: pat.email,
+      } : r.claimed,
+    };
+  };
+
+  if (pathname.match(/^\/patients\/[^\/]+\/link-requests$/) && method === 'GET') {
+    const patId = pathname.split('/')[2];
+    return sendJson(mockLinkRequests.filter(r => r.patientId === patId && r.status === 'PENDING').map(linkRequestView));
+  }
+
+  if (pathname === '/patient-link-requests' && method === 'GET') {
+    return sendJson(mockLinkRequests.filter(r => r.status === 'PENDING').map(linkRequestView));
+  }
+
+  if (pathname.match(/^\/patient-link-requests\/[^\/]+\/(approve|reject)$/) && method === 'POST') {
+    const [, , requestId, decision] = pathname.split('/');
+    const request = mockLinkRequests.find(r => r.id === requestId);
+    if (!request) return sendError('PATIENT_LINK_REQUEST_NOT_FOUND', 'Solicitud no encontrada.', 404);
+    if (request.status !== 'PENDING') return sendError('PATIENT_LINK_REQUEST_RESOLVED', 'Esta solicitud ya fue resuelta.', 409);
+    const now = new Date().toISOString();
+    if (decision === 'reject') {
+      request.status = 'REJECTED';
+      request.decidedAt = now;
+      saveMockState();
+      return sendJson({ rejected: true });
+    }
+    const pat = patients.find(p => p.id === request.patientId);
+    if (!pat || pat.userId) return sendError('PATIENT_ALREADY_HAS_ACCOUNT', 'Este paciente ya tiene una cuenta activa.', 409);
+    if (patients.some(p => p.userId === request.userId)) {
+      return sendError('PATIENT_LINK_USER_ALREADY_LINKED', 'Esta cuenta ya está vinculada a otro expediente.', 409);
+    }
+    pat.userId = request.userId;
+    request.status = 'APPROVED';
+    request.decidedAt = now;
+    // Cierra las demás solicitudes del mismo usuario o del mismo expediente
+    // y revoca los enlaces pendientes del expediente, como el backend real.
+    for (const other of mockLinkRequests) {
+      if (other.status === 'PENDING' && (other.userId === request.userId || other.patientId === request.patientId)) {
+        other.status = 'CANCELLED';
+        other.decidedAt = now;
+      }
+    }
+    for (const l of mockActivationLinks) if (l.patientId === pat.id && l.status === 'PENDING') l.status = 'REVOKED';
+    saveMockState();
+    return sendJson({ approved: true });
+  }
+
+  if (pathname.match(/^\/patient-activation\/[^\/]+$/)) {
+    const token = pathname.split('/')[2];
+    const link = mockActivationLinks.find(l => l.token === token && l.status === 'PENDING' && l.expiresAt > new Date().toISOString());
+    const pat = link && patients.find(p => p.id === link.patientId && !p.userId);
+    if (!link || !pat) return sendError('PATIENT_ACTIVATION_LINK_INVALID', 'Este enlace ya no es válido. Pide a tu médico uno nuevo.', 404);
+    if (method === 'GET') return sendJson({ firstName: pat.firstName, medicfyId: pat.medicfyId });
+    if (method === 'POST') {
+      const email = String(body.email || '').trim().toLowerCase();
+      // Correo de una cuenta de paciente sin expediente (p. ej. registrada
+      // y pendiente de revisión): se vincula esa misma cuenta. El mock no
+      // valida contraseñas.
+      const existing = allUsers().find(u => u.email.toLowerCase() === email);
+      if (existing && (existing.primaryRole !== 'PATIENT' || patients.some(p => p.userId === existing.id))) {
+        return sendError('PATIENT_ACTIVATION_ACCOUNT_NOT_ELIGIBLE', 'Esta cuenta no se puede vincular a este expediente. Usa otro correo o pide ayuda a tu médico.', 409);
+      }
+      const user = existing ?? { id: `user-${Date.now()}`, email, primaryRole: 'PATIENT', status: 'ACTIVE', emailVerifiedAt: null };
+      if (!existing) registeredPatientUsers.push(user);
+      link.status = 'USED';
+      pat.userId = user.id;
+      for (const r of mockLinkRequests) {
+        if (r.status === 'PENDING' && (r.patientId === pat.id || r.userId === user.id)) r.status = 'CANCELLED';
+      }
+      saveMockState();
+      res.setHeader('Set-Cookie', `refresh_token=${user.id}; HttpOnly; Path=/; SameSite=Lax`);
+      return sendJson({ accessToken: makeMockToken(user) });
+    }
   }
 
   if (pathname === '/patients/me/doctors' && method === 'GET') {
@@ -1891,6 +2134,62 @@ const server = http.createServer(async (req, res) => {
   // bloquea el registro por la cédula, solo se valida su formato en
   // el frontend (packages/contracts/validators/cedula.ts). No hay
   // ninguna consulta real a la SEP, ni en el mock ni en la API real.
+  // Registro propio de paciente, con la misma regla que
+  // AuthService.registerPatient: si el teléfono coincide con expedientes
+  // SIN cuenta de pacientes adultos, no se crea expediente nuevo — se
+  // crea la cuenta y una solicitud de vinculación por coincidencia.
+  if (pathname === '/auth/register/patient' && method === 'POST') {
+    const email = String(body.email || '').trim().toLowerCase();
+    if (allUsers().some(u => u.email.toLowerCase() === email)) {
+      return sendError('EMAIL_ALREADY_REGISTERED', 'Este correo ya está registrado. Si ya tienes cuenta, inicia sesión; si quieres añadir un rol, contacta a soporte.', 409);
+    }
+    // Verificación de correo del paciente desactivada (igual que el
+    // backend real con PATIENT_EMAIL_VERIFICATION_ENABLED sin definir).
+    const user = { id: `user-pat-${Date.now()}`, email, primaryRole: 'PATIENT', status: 'ACTIVE', emailVerifiedAt: null };
+    registeredPatientUsers.push(user);
+    const matches = patients.filter(p => !p.userId && p.phoneE164 === body.phone && ageFromBirthDate(p.birthDate) >= 18);
+    const createdAt = new Date().toISOString();
+    if (matches.length > 0) {
+      for (const pat of matches) {
+        mockLinkRequests.push({
+          id: `lr-${Date.now()}-${pat.id}`,
+          userId: user.id,
+          patientId: pat.id,
+          status: 'PENDING',
+          createdAt,
+          claimed: {
+            firstName: body.firstName, lastNamePaternal: body.lastNamePaternal, lastNameMaternal: body.lastNameMaternal || null,
+            birthDate: body.birthDate, sexAtBirth: body.sexAtBirth, phoneE164: body.phone, email,
+          },
+        });
+      }
+    } else {
+      const newPat = {
+        id: `pat-${Date.now()}`,
+        userId: user.id,
+        medicfyId: `MED-000${patients.length + 1}`,
+        firstName: body.firstName,
+        lastNamePaternal: body.lastNamePaternal,
+        lastNameMaternal: body.lastNameMaternal || null,
+        birthDate: body.birthDate,
+        sexAtBirth: body.sexAtBirth,
+        bloodType: null,
+        phoneE164: body.phone,
+        email,
+        emergencyContactName: null,
+        emergencyContactPhone: null,
+        emergencyContactRelation: null,
+        guardians: [],
+      };
+      patients.push(newPat);
+      allergies[newPat.id] = [];
+      medications[newPat.id] = [];
+      historyItems[newPat.id] = [];
+    }
+    saveMockState();
+    return sendJson({ userId: user.id, identityReviewPending: matches.length > 0, emailVerificationRequired: false }, 201);
+  }
+
   if (pathname === '/auth/register/doctor' && method === 'POST') {
     const id = `user-doc-${Date.now()}`;
     const specialty = specialties.find(s => s.code === body.primarySpecialtyCode) || null;
@@ -1935,6 +2234,7 @@ const server = http.createServer(async (req, res) => {
       }
     };
     registeredDoctors.push(newDoctor);
+    saveMockState();
     return sendJson({ userId: id }, 201);
   }
 
@@ -2236,23 +2536,139 @@ const server = http.createServer(async (req, res) => {
   }
 
   // PR-EXP-02 (expediente compartido) — respuesta SIEMPRE genérica
-  // (RE5), igual que el backend real: el mock no intenta emparejar
-  // contra ningún paciente, solo crea una fila de demostración para
-  // que "Mis solicitudes" tenga algo que mostrar.
+  // (RE5), igual que el backend real. Emparejamiento simplificado del
+  // mock: nombre + fecha de nacimiento + teléfono o correo, solo
+  // pacientes CON CUENTA (decisión 2026-11-02). En el mock todos los
+  // pacientes los lleva el médico demo (doctorUser), así que la
+  // solicitud se crea solo si quien pide es OTRO médico.
   if (pathname === '/record-share/requests' && method === 'POST') {
     const user = getCurrentUser(req);
     if (user.primaryRole !== 'DOCTOR') return sendError('DOCTOR_NOT_VERIFIED', 'Tu cuenta de médico aún no está verificada.', 403);
-    recordShareRequests.push({
-      id: `rsr-${recordShareRequests.length + 1}`,
-      requesterDoctorId: user.id,
-      status: 'PENDING_PATIENT',
-      requestedScope: Array.isArray(body.scope) ? body.scope : ['SUMMARY'],
-      requestedDurationDays: body.durationDays || 30,
-      reason: body.reason || '',
-      createdAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString()
-    });
+    const norm = (v) => String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().replace(/\s+/g, ' ');
+    const wanted = body.patient || {};
+    const phone = wanted.phone ? `+52${String(wanted.phone).replace(/\D/g, '').slice(-10)}` : null;
+    const match = patients.find(p =>
+      p.userId &&
+      norm(p.firstName) === norm(wanted.firstName) &&
+      norm(p.lastNamePaternal) === norm(wanted.lastNamePaternal) &&
+      p.birthDate === wanted.birthDate &&
+      ((phone && p.phoneE164 === phone) || (wanted.email && norm(p.email) === norm(wanted.email)))
+    );
+    // Igual que el backend real: no se crea si quien pide ya es el
+    // médico tratante del paciente.
+    if (match && custodianUserIdOf(match) !== user.id) {
+      const doc = user.doctor || {};
+      recordShareRequests.push({
+        id: randomUUID(),
+        requesterDoctorId: user.id,
+        custodianDoctorUserId: custodianUserIdOf(match),
+        requesterDisplayName: doc.displayName || `${doc.legalFirstName || ''} ${doc.legalLastName || ''}`.trim(),
+        requesterLicense: doc.professionalLicense || '',
+        patientId: match.id,
+        status: 'PENDING_PATIENT',
+        requestedScope: Array.isArray(body.scope) ? body.scope : ['SUMMARY'],
+        requestedDurationDays: body.durationDays || 30,
+        reason: body.reason || '',
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString()
+      });
+      saveMockState();
+    }
     return sendJson({ message: 'Si los datos coinciden con un expediente en Medicfy, el paciente recibirá un mensaje para autorizar tu solicitud.' });
+  }
+
+  // Bandeja del paciente con cuenta (campana en /mi-cuenta).
+  const sessionUserId = () => {
+    const auth = req.headers['authorization'] || '';
+    return parseMockToken(auth.startsWith('Bearer ') ? auth.slice(7) : null);
+  };
+  const ownPatientForShare = () => {
+    const sub = sessionUserId();
+    return sub ? patients.find(p => p.userId === sub) : undefined;
+  };
+
+  if (pathname === '/record-share/me/requests' && method === 'GET') {
+    const pat = ownPatientForShare();
+    if (!pat) return sendJson([]);
+    const now = new Date().toISOString();
+    return sendJson(recordShareRequests
+      .filter(r => r.patientId === pat.id && r.status === 'PENDING_PATIENT' && r.expiresAt > now)
+      .map(r => ({
+        id: r.id,
+        requesterDisplayName: r.requesterDisplayName,
+        requesterLicense: r.requesterLicense,
+        requesterSpecialtyName: null,
+        custodianDisplayName: doctorDisplayNameOf(r.custodianDoctorUserId || doctorUser.id),
+        reason: r.reason,
+        requestedScope: r.requestedScope,
+        requestedDurationDays: r.requestedDurationDays,
+        consentTextVersion: 'draft-2026-10-31',
+        consentText: 'Texto de consentimiento de demostración (mock) — ver record-share-consent-text.ts para el real.',
+        createdAt: r.createdAt,
+        expiresAt: r.expiresAt,
+      })));
+  }
+
+  const meDecide = pathname.match(/^\/record-share\/me\/requests\/([^/]+)\/decide$/);
+  if (meDecide && method === 'POST') {
+    const pat = ownPatientForShare();
+    const request = pat && recordShareRequests.find(r => r.id === meDecide[1] && r.patientId === pat.id && r.status === 'PENDING_PATIENT');
+    if (!request) return sendError('RECORD_SHARE_REQUEST_NOT_FOUND', 'Esta solicitud ya no está disponible.', 404);
+    if (body.decision === 'DENIED') {
+      request.status = 'DENIED';
+      saveMockState();
+      return sendJson({ status: 'DENIED' });
+    }
+    const scope = Array.isArray(body.approvedScope) ? body.approvedScope : [];
+    if (!scope.includes('SUMMARY') || scope.some(x => !request.requestedScope.includes(x))) {
+      return sendError('RECORD_SHARE_SCOPE_EXCEEDS_REQUEST', 'El alcance autorizado no puede ampliar lo solicitado.', 422);
+    }
+    if (body.durationDays > request.requestedDurationDays) {
+      return sendError('RECORD_SHARE_DURATION_EXCEEDS_REQUEST', 'La duración autorizada no puede ampliar lo solicitado.', 422);
+    }
+    request.status = 'APPROVED';
+    const startsAt = new Date();
+    mockShareGrants.push({
+      id: randomUUID(),
+      requestId: request.id,
+      requesterDoctorId: request.requesterDoctorId,
+      requesterDisplayName: request.requesterDisplayName,
+      requesterLicense: request.requesterLicense,
+      custodianDoctorUserId: request.custodianDoctorUserId || doctorUser.id,
+      patientId: pat.id,
+      patientName: [pat.firstName, pat.lastNamePaternal, pat.lastNameMaternal].filter(Boolean).join(' '),
+      patientBirthDate: pat.birthDate,
+      scope,
+      status: 'ACTIVE',
+      startsAt: startsAt.toISOString(),
+      expiresAt: new Date(startsAt.getTime() + body.durationDays * 86400000).toISOString(),
+      revokedAt: null,
+    });
+    saveMockState();
+    return sendJson({ status: 'APPROVED' });
+  }
+
+  if (pathname === '/record-share/me/grants' && method === 'GET') {
+    const pat = ownPatientForShare();
+    if (!pat) return sendJson([]);
+    return sendJson(mockShareGrants
+      .filter(g => g.patientId === pat.id)
+      .map(g => ({
+        id: g.id, requesterDisplayName: g.requesterDisplayName, requesterLicense: g.requesterLicense,
+        custodianDisplayName: doctorDisplayNameOf(g.custodianDoctorUserId), scope: g.scope, startsAt: g.startsAt, expiresAt: g.expiresAt,
+        status: g.status, revokedAt: g.revokedAt,
+      })));
+  }
+
+  const meRevoke = pathname.match(/^\/record-share\/me\/grants\/([^/]+)\/revoke$/);
+  if (meRevoke && method === 'POST') {
+    const pat = ownPatientForShare();
+    const grant = pat && mockShareGrants.find(g => g.id === meRevoke[1] && g.patientId === pat.id && g.status === 'ACTIVE');
+    if (!grant) return sendError('RECORD_SHARE_GRANT_NOT_ACTIVE', 'Ese acceso ya no está vigente.', 404);
+    grant.status = 'REVOKED_BY_PATIENT';
+    grant.revokedAt = new Date().toISOString();
+    saveMockState();
+    return sendJson({ revoked: true });
   }
 
   if (pathname === '/record-share/requests/mine' && method === 'GET') {
@@ -2335,12 +2751,32 @@ const server = http.createServer(async (req, res) => {
     studyOrders: null
   };
 
+  // Accesos reales del mock (autorizados por un paciente con cuenta)
+  // del médico en sesión. Su resumen va vacío: el mock no tiene el
+  // expediente de ese paciente y no inventa datos clínicos (R7).
+  const myMockGrants = () => {
+    const user = getCurrentUser(req);
+    return mockShareGrants
+      .filter(g => g.requesterDoctorId === user.id)
+      .map(g => ({
+        id: g.id, patientName: g.patientName, patientBirthDate: g.patientBirthDate, custodianDisplayName: doctorDisplayNameOf(g.custodianDoctorUserId),
+        scope: g.scope, status: g.status === 'ACTIVE' && g.expiresAt <= new Date().toISOString() ? 'EXPIRED' : g.status,
+        startsAt: g.startsAt, expiresAt: g.expiresAt,
+      }));
+  };
+  const EMPTY_SUMMARY = { allergies: [], medications: [], activeDiagnoses: [], historyItems: [], pregnancy: null, latestVitals: null, results: null, signedNotes: null, prescriptions: null, studyOrders: null };
+
   if (pathname === '/record-share/grants/mine' && method === 'GET') {
-    return sendJson([DEMO_GRANT]);
+    return sendJson([DEMO_GRANT, ...myMockGrants()]);
   }
 
   const viewerDetail = pathname.match(/^\/record-share\/grants\/([^/]+)$/);
   if (viewerDetail && method === 'GET') {
+    const mockGrant = myMockGrants().find(g => g.id === viewerDetail[1]);
+    if (mockGrant) {
+      if (mockGrant.status !== 'ACTIVE') return sendError('RECORD_SHARE_ACCESS_DENIED', 'No tienes acceso a este expediente compartido.', 403);
+      return sendJson({ ...mockGrant, summary: EMPTY_SUMMARY });
+    }
     if (viewerDetail[1] !== DEMO_GRANT.id || recordShareDemoState.grantStatus !== 'ACTIVE') return sendError('RECORD_SHARE_ACCESS_DENIED', 'No tienes acceso a este expediente compartido.', 403);
     return sendJson({ ...DEMO_GRANT, summary: DEMO_SUMMARY });
   }
@@ -2386,6 +2822,14 @@ const server = http.createServer(async (req, res) => {
 
   const custodianShares = pathname.match(/^\/record-share\/patients\/([^/]+)\/shares$/);
   if (custodianShares && method === 'GET') {
+    const custodian = getCurrentUser(req);
+    const realShares = mockShareGrants
+      .filter(g => g.patientId === custodianShares[1] && g.custodianDoctorUserId === custodian.id)
+      .map(g => ({
+        id: g.id, requesterDisplayName: g.requesterDisplayName, requesterLicense: g.requesterLicense, scope: g.scope,
+        status: g.status, startsAt: g.startsAt, expiresAt: g.expiresAt, revokedAt: g.revokedAt, views: [], abuseReported: false,
+      }));
+    if (realShares.length > 0) return sendJson(realShares);
     return sendJson([{
       id: DEMO_GRANT.id,
       requesterDisplayName: 'Dra. Ana Solicitante',

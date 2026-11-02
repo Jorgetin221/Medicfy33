@@ -28,7 +28,9 @@ export class ConsoleRecordShareNotificationAdapter implements RecordShareNotific
   }
 
   private assertNotProduction(): void {
-    if (process.env.NODE_ENV === "production") {
+    // ALLOW_CONSOLE_NOTIFICATIONS=true: excepción explícita para el VPS
+    // actual, que aún no tiene proveedor real de correo/SMS.
+    if (process.env.NODE_ENV === "production" && process.env.ALLOW_CONSOLE_NOTIFICATIONS !== "true") {
       throw new Error(PRODUCTION_ERROR);
     }
   }

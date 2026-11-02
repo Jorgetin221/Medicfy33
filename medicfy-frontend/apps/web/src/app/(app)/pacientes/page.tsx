@@ -11,6 +11,7 @@ import { ButtonLink } from "@/components/ui/button";
 import { useT } from "@/lib/i18n/context";
 import { patientAgeYears, patientFullName } from "../consulta/[appointmentId]/types";
 import { sexAtBirthLabel } from "@/lib/sex-label";
+import { PendingLinkRequestsBanner } from "./pending-link-requests-banner";
 
 interface PatientListItem {
   id: string;
@@ -81,6 +82,8 @@ function PacientesContent({ accessToken }: { accessToken: string }) {
         </div>
         <ButtonLink href="/pacientes/nuevo">{t("pacientes.nuevoPaciente")}</ButtonLink>
       </div>
+
+      <PendingLinkRequestsBanner accessToken={accessToken} />
 
       {error ? <ErrorState error={error} onRetry={load} /> : null}
       {!patients && !error ? <LoadingState /> : null}

@@ -1,7 +1,12 @@
-import { Body, Controller, Get, HttpStatus, Param, Post, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Req, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import type { Request } from "express";
-import { patientCreateSchema, type PatientCreateInput } from "@medicfy/contracts";
+import {
+  patientCreateSchema,
+  patientDuplicateCheckSchema,
+  type PatientCreateInput,
+  type PatientDuplicateCheckInput,
+} from "@medicfy/contracts";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { ApiException } from "../../common/api-exception";
 import { JwtAuthGuard } from "../identity/guards/jwt-auth.guard";
@@ -45,6 +50,32 @@ export class PatientsController {
     const { user } = req as AuthenticatedRequest;
     const doctor = await this.schedulingAuth.resolveActingDoctor(user.sub);
     return this.patientService.createByDoctor(doctor.id, user.sub, body);
+  }
+
+  // Parte 3 (vinculación de cuentas): antes de crear, el formulario
+  // pregunta si ya hay un paciente propio con el mismo teléfono y fecha
+  // de nacimiento. Advertencia, no bloqueo: el médico decide.
+  @Post("duplicate-check")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Posibles duplicados (mismo teléfono normalizado + fecha de nacimiento) entre los pacientes del propio médico" })
+  async duplicateCheck(
+    @Body(new ZodValidationPipe(patientDuplicateCheckSchema)) body: PatientDuplicateCheckInput,
+    @Req() req: Request
+  ) {
+    const { user } = req as AuthenticatedRequest;
+    const doctor = await this.schedulingAuth.resolveActingDoctor(user.sub);
+    const candidates = await this.patientService.findPossibleDuplicates(doctor.id, body);
+    for (const candidate of candidates) {
+      await this.auditService.log({
+        actorUserId: user.sub,
+        action: "patient.duplicate_check.match",
+        resourceType: "patient",
+        resourceId: candidate.id,
+        patientId: candidate.id,
+        result: "SUCCESS",
+      });
+    }
+    return candidates;
   }
 
   // M5-RN-009 (v2.3). Declarado ANTES de :patientId a propósito — dos

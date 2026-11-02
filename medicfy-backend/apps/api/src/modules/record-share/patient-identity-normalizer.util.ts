@@ -1,4 +1,4 @@
-import { isValidMxPhoneE164 } from "@medicfy/contracts";
+import { normalizeMxPhoneToE164 } from "@medicfy/contracts";
 
 // PR-EXP-02 (D-EXP-04): normaliza lo que el médico escribe antes de
 // compararlo contra Patient. A propósito NO reutiliza
@@ -17,18 +17,8 @@ export function normalizePersonName(text: string): string {
   return withoutAccents.toLowerCase().trim().replace(/\s+/g, " ");
 }
 
-// Acepta "+52 55 1234 5678", "5551234567", "52 55 1234 5678", etc.
-// Nunca adivina el código de país si no es México — fuera de ese caso
-// devuelve null y el llamador lo trata como "no se pudo normalizar"
-// (nunca como coincidencia).
-export function normalizeMxPhoneToE164(raw: string): string | null {
-  const digits = raw.replace(/\D/g, "");
-  const candidates = [digits, `52${digits}`];
-  for (const d of candidates) {
-    if (d.length === 12 && d.startsWith("52")) {
-      const e164 = `+${d}`;
-      if (isValidMxPhoneE164(e164)) return e164;
-    }
-  }
-  return null;
-}
+// La normalización de teléfono vive en @medicfy/contracts (una sola
+// regla para el registro, el alta por el médico, las coincidencias y
+// el script de datos). Se reexporta para no cambiar a los llamadores
+// de este track.
+export { normalizeMxPhoneToE164 };

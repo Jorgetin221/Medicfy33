@@ -271,6 +271,25 @@ export const MESSAGES_EN: Record<string, string> = {
   "Ese acceso ya no está vigente.": "That access is no longer active.",
   "No tienes acceso a este expediente compartido.": "You don't have access to this shared record.",
   "Ese alcance no fue autorizado.": "That scope wasn't authorized.",
+
+  // Vinculación de cuentas de paciente (modules/patient-accounts).
+  "Este enlace ya no es válido. Pide a tu médico uno nuevo.":
+    "This link is no longer valid. Ask your doctor for a new one.",
+  "Este paciente ya tiene una cuenta activa.":
+    "This patient already has an active account.",
+  "La activación de cuenta para pacientes menores de edad (a través de su tutor) todavía no está disponible.":
+    "Account activation for underage patients (through their guardian) is not available yet.",
+  "Esta cuenta no se puede vincular a este expediente. Usa otro correo o pide ayuda a tu médico.":
+    "This account cannot be linked to this record. Use another email or ask your doctor for help.",
+  "Solo el médico tratante puede confirmar la identidad de un paciente.":
+    "Only the treating doctor can confirm a patient's identity.",
+  "Esta cuenta ya está vinculada a otro expediente.":
+    "This account is already linked to another record.",
+  "Solicitud no encontrada.":
+    "Request not found.",
+  // Expediente compartido — bandeja del paciente con cuenta.
+  "Esta solicitud ya no está pendiente.": "This request is no longer pending.",
+  "Esta solicitud ya no está disponible.": "This request is no longer available.",
 };
 
 // Los mensajes que interpolan un valor (nombre de un término, conteo,

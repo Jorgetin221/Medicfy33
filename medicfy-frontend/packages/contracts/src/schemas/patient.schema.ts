@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { MAX_EMAIL_LENGTH, normalizeEmail } from "../validators/email";
-import { isValidMxPhoneE164 } from "../validators/phone";
+import { isValidMxPhoneE164, normalizeMxPhoneInput } from "../validators/phone";
 import { isValidCurp } from "../validators/curp";
 import { isValidBirthDate } from "../validators/birthDate";
 import { calculateAge } from "../validators/age";
@@ -16,7 +16,13 @@ const emailSchema = z
   .email("Ingresa un correo electrónico válido.")
   .transform(normalizeEmail);
 
-const phoneSchema = z.string().refine(isValidMxPhoneE164, "Ingresa un teléfono a 10 dígitos.");
+// Normalizado a E.164 antes de validar (mismo motivo que en
+// identity.schema.ts): la comparación de teléfonos es siempre entre
+// valores normalizados.
+const phoneSchema = z.preprocess(
+  normalizeMxPhoneInput,
+  z.string().refine(isValidMxPhoneE164, "Ingresa un teléfono a 10 dígitos.")
+);
 const curpSchema = z.string().refine(isValidCurp, "CURP inválida.");
 
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -91,6 +97,17 @@ export const patientCreateSchema = z
     }
   });
 export type PatientCreateInput = z.infer<typeof patientCreateSchema>;
+
+// Advertencia de posible duplicado al dar de alta un paciente: mismo
+// teléfono normalizado + misma fecha de nacimiento, SOLO entre los
+// pacientes del propio médico (nunca de otros médicos — privacidad).
+export const patientDuplicateCheckSchema = z
+  .object({
+    phoneE164: phoneSchema,
+    birthDate: birthDateSchema,
+  })
+  .strict();
+export type PatientDuplicateCheckInput = z.infer<typeof patientDuplicateCheckSchema>;
 
 export const appointmentCreateSchema = z
   .object({

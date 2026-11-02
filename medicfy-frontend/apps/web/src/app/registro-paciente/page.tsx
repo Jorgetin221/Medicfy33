@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Controller, useForm } from "react-hook-form";
-import { registerPatientSchema, type RegisterPatientInput } from "@medicfy/contracts";
+import { registerPatientSchema, type RegisterPatientInput, type RegisterPatientResult } from "@medicfy/contracts";
 import { apiFetch } from "@/lib/api-client";
 import { AuthLayout } from "@/components/auth-layout";
 import { VerifyEmailStep } from "@/components/verify-email-step";
@@ -39,6 +39,9 @@ export default function RegistroPacientePage() {
   const PANEL_COPY = usePanelCopy();
   const [step, setStep] = useState<"form" | "verify" | "done">("form");
   const [userId, setUserId] = useState<string | null>(null);
+  // El teléfono coincidió con un expediente sin cuenta: no se creó uno
+  // nuevo y el médico debe confirmar. El servidor no dice cuál.
+  const [identityReviewPending, setIdentityReviewPending] = useState(false);
   const [submitError, setSubmitError] = useState<unknown>(null);
 
   // Sin defaultValues.consents: son casillas sin marcar por
@@ -50,9 +53,12 @@ export default function RegistroPacientePage() {
   async function onSubmit(values: RegisterPatientInput) {
     setSubmitError(null);
     try {
-      const res = await apiFetch<{ userId: string }>("/auth/register/patient", { method: "POST", body: values });
+      const res = await apiFetch<RegisterPatientResult>("/auth/register/patient", { method: "POST", body: values });
       setUserId(res.userId);
-      setStep("verify");
+      setIdentityReviewPending(res.identityReviewPending);
+      // Con la verificación de correo del paciente desactivada en el
+      // servidor no se envió código: se salta directo al final.
+      setStep(res.emailVerificationRequired ? "verify" : "done");
     } catch (error) {
       setSubmitError(error);
     }
@@ -67,9 +73,15 @@ export default function RegistroPacientePage() {
       <AuthLayout {...PANEL_COPY}>
         <div className="flex flex-col items-center gap-4 text-center">
           <h1 className="font-heading text-3xl text-brand-900">{t("auth.registroMedico.listoTitulo")}</h1>
-          <Aviso variant="exito" title={t("auth.registroMedico.listoAviso")}>
-            {t("auth.registroPaciente.listoCuerpo")}
-          </Aviso>
+          {identityReviewPending ? (
+            <Aviso variant="info" title={t("vinculacion.revisionPendiente.titulo")}>
+              {t("vinculacion.revisionPendiente.cuerpo")}
+            </Aviso>
+          ) : (
+            <Aviso variant="exito" title={t("auth.registroMedico.listoAviso")}>
+              {t("auth.registroPaciente.listoCuerpo")}
+            </Aviso>
+          )}
           <Button onClick={() => router.push("/login")} className="mt-2 w-full">
             {t("auth.registroMedico.irALogin")}
           </Button>
