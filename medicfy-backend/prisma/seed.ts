@@ -48,11 +48,61 @@ async function seedAdmin(): Promise<void> {
 }
 
 // M8-RN-014: "publica schemas para exactly these four en v1.0".
+// Catálogo de especialidades del registro de médicos (2026-11-02): 28 de
+// entrada directa + 22 de rama. Mismo contenido que la migración
+// 20261102040000_specialties_catalog_v2 (que es la que llega a
+// producción); aquí para que una base local nueva quede igual.
 const SPECIALTIES = [
   { code: "GENERAL", nameEs: "Medicina General", cieGroup: null, requiresSpecialtyLicense: false },
+  { code: "ANATOMIA_PATOLOGICA", nameEs: "Anatomía Patológica", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "ANESTESIOLOGIA", nameEs: "Anestesiología", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "ANGIOLOGIA_CIRUGIA_VASCULAR_Y_ENDOVASCULAR", nameEs: "Angiología, Cirugía Vascular y Endovascular", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "AUDIOLOGIA_OTONEUROLOGIA_Y_FONIATRIA", nameEs: "Audiología, Otoneurología y Foniatría", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "CALIDAD_DE_LA_ATENCION_CLINICA", nameEs: "Calidad de la Atención Clínica", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "CIRUGIA_GENERAL", nameEs: "Cirugía General", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "EPIDEMIOLOGIA", nameEs: "Epidemiología", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "GENETICA_MEDICA", nameEs: "Genética Médica", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "GERIATRIA", nameEs: "Geriatría", cieGroup: null, requiresSpecialtyLicense: true },
   { code: "GINECOLOGIA_OBSTETRICIA", nameEs: "Ginecología y Obstetricia", cieGroup: null, requiresSpecialtyLicense: true },
-  { code: "PEDIATRIA", nameEs: "Pediatría", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "IMAGENOLOGIA_DIAGNOSTICA_Y_TERAPEUTICA", nameEs: "Imagenología Diagnóstica y Terapéutica", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "MEDICINA_DE_LA_ACTIVIDAD_FISICA_Y_DEPORTIVA", nameEs: "Medicina de la Actividad Física y Deportiva", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "MEDICINA_DE_REHABILITACION", nameEs: "Medicina de Rehabilitación", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "MEDICINA_DE_URGENCIAS", nameEs: "Medicina de Urgencias", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "MEDICINA_DEL_TRABAJO_Y_AMBIENTAL", nameEs: "Medicina del Trabajo y Ambiental", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "MEDICINA_FAMILIAR", nameEs: "Medicina Familiar", cieGroup: null, requiresSpecialtyLicense: true },
   { code: "MEDICINA_INTERNA", nameEs: "Medicina Interna", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "MEDICINA_LEGAL", nameEs: "Medicina Legal", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "MEDICINA_NUCLEAR_E_IMAGENOLOGIA_MOLECULAR", nameEs: "Medicina Nuclear e Imagenología Molecular", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "MEDICINA_PREVENTIVA", nameEs: "Medicina Preventiva", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "OFTALMOLOGIA", nameEs: "Oftalmología", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "OTORRINOLARINGOLOGIA_Y_CIRUGIA_DE_CABEZA_Y_CUELLO", nameEs: "Otorrinolaringología y Cirugía de Cabeza y Cuello", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "PATOLOGIA_CLINICA", nameEs: "Patología Clínica", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "PEDIATRIA", nameEs: "Pediatría", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "PSIQUIATRIA", nameEs: "Psiquiatría", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "RADIO_ONCOLOGIA", nameEs: "Radio-oncología", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "TRAUMATOLOGIA_Y_ORTOPEDIA", nameEs: "Traumatología y Ortopedia", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "ALERGIA_E_INMUNOLOGIA_CLINICA", nameEs: "Alergia e Inmunología Clínica", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "CARDIOLOGIA", nameEs: "Cardiología", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "CIRUGIA_CARDIOTORACICA", nameEs: "Cirugía Cardiotorácica", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "CIRUGIA_ONCOLOGICA", nameEs: "Cirugía Oncológica", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "CIRUGIA_PEDIATRICA", nameEs: "Cirugía Pediátrica", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "CIRUGIA_PLASTICA_Y_RECONSTRUCTIVA", nameEs: "Cirugía Plástica y Reconstructiva", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "COLOPROCTOLOGIA", nameEs: "Coloproctología", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "DERMATOLOGIA", nameEs: "Dermatología", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "ENDOCRINOLOGIA", nameEs: "Endocrinología", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "GASTROENTEROLOGIA", nameEs: "Gastroenterología", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "HEMATOLOGIA", nameEs: "Hematología", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "INFECTOLOGIA", nameEs: "Infectología", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "MEDICINA_DEL_ENFERMO_EN_ESTADO_CRITICO", nameEs: "Medicina del Enfermo en Estado Crítico", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "NEFROLOGIA", nameEs: "Nefrología", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "NEUMOLOGIA", nameEs: "Neumología", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "NEUROCIRUGIA", nameEs: "Neurocirugía", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "NEUROLOGIA", nameEs: "Neurología", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "NUTRIOLOGIA_CLINICA", nameEs: "Nutriología Clínica", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "ONCOLOGIA_MEDICA", nameEs: "Oncología Médica", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "REUMATOLOGIA", nameEs: "Reumatología", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "UROLOGIA", nameEs: "Urología", cieGroup: null, requiresSpecialtyLicense: true },
+  { code: "MEDICINA_PALIATIVA", nameEs: "Medicina Paliativa", cieGroup: null, requiresSpecialtyLicense: true },
 ];
 
 // Catálogo CIE-10 completo y vigente — Secretaría de Salud (DGIS/
