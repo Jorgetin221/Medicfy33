@@ -15,7 +15,7 @@ import {
   type PracticeLocationInput,
 } from "@medicfy/contracts";
 import { apiFetch, apiUpload, expectArray } from "@/lib/api-client";
-import { DoctorPhotoUploader } from "./doctor-photo-uploader";
+import { DoctorPhotoEditor } from "./doctor-photo-editor";
 import { useRemoteBlobUrl } from "@/lib/use-remote-blob-url";
 import { useAuth } from "@/lib/auth-context";
 import { useDoctorProfile, type DoctorProfile, type DoctorVerificationStatus } from "@/lib/use-doctor-profile";
@@ -125,7 +125,7 @@ function PerfilContent({ accessToken }: { accessToken: string }) {
         </Link>
       </div>
 
-      <HeroSection doctor={doctor} specialtyName={specialtyName} />
+      <HeroSection doctor={doctor} specialtyName={specialtyName} accessToken={accessToken} onPhotoChanged={reload} />
       <VerificationSection doctor={doctor} accessToken={accessToken} />
       <MfaSection accessToken={accessToken} />
       <LockedFieldsSection doctor={doctor} specialtyName={specialtyName} />
@@ -143,18 +143,28 @@ function PerfilContent({ accessToken }: { accessToken: string }) {
 // ya vive el resto de la pantalla (nada nuevo se inventa) — solo se
 // presentan primero, como en la página pública, para que el médico
 // vea de un vistazo cómo se ve su perfil.
-function HeroSection({ doctor, specialtyName }: { doctor: DoctorProfile; specialtyName: string | null }) {
+function HeroSection({
+  doctor,
+  specialtyName,
+  accessToken,
+  onPhotoChanged,
+}: {
+  doctor: DoctorProfile;
+  specialtyName: string | null;
+  accessToken: string;
+  onPhotoChanged: () => void;
+}) {
   const t = useT();
   return (
     <Card>
       <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:items-start sm:text-left">
-        {doctor.photoUrl ? (
-          <img src={doctor.photoUrl} alt="" className="h-24 w-24 shrink-0 rounded-full object-cover" />
-        ) : (
-          <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-full bg-gray-100 text-2xl text-gray-400" aria-hidden="true">
-            {doctor.legalFirstName.charAt(0).toUpperCase()}
-          </div>
-        )}
+        {/* Foto de perfil: el lápiz abre el editor (elegir, encuadrar, quitar). */}
+        <DoctorPhotoEditor
+          photoUrl={doctor.photoUrl}
+          initial={doctor.legalFirstName.charAt(0).toUpperCase()}
+          accessToken={accessToken}
+          onChanged={onPhotoChanged}
+        />
         <div className="flex-1">
           <h2 className="font-heading text-xl text-brand-900">
             {doctor.displayName ?? `${doctor.legalFirstName} ${doctor.legalLastName}`}
@@ -659,9 +669,9 @@ function SpecialtyLicenseSection({
   );
 }
 
-// La foto de perfil ya NO viaja en este formulario como URL de texto:
-// se sube con DoctorPhotoUploader (POST /doctors/me/photo), que la
-// guarda y la sirve públicamente para el perfil y el directorio.
+// La foto de perfil no vive en este formulario: se edita desde el
+// lápiz del avatar en la cabecera (DoctorPhotoEditor, POST/DELETE
+// /doctors/me/photo).
 const professionalInfoFormSchema = z.object({
   biography: z.string().trim(),
   yearsExperience: z.string().trim(),
@@ -746,12 +756,6 @@ function ProfessionalInfoSection({
       <h2 className="font-heading text-xl text-brand-900">{t("perfil.profesional.titulo")}</h2>
       <p className="text-sm text-gray-500">{t("perfil.profesional.subtitulo")}</p>
       <form onSubmit={form.handleSubmit(onSubmit)} className="mt-4 flex flex-col gap-4" noValidate>
-        <DoctorPhotoUploader
-          photoUrl={doctor.photoUrl}
-          initial={doctor.legalFirstName.charAt(0).toUpperCase()}
-          accessToken={accessToken}
-          onChanged={onSaved}
-        />
         <FieldWrapper
           label={t("perfil.profesional.biografia")}
           htmlFor="biography"
