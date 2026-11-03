@@ -2,6 +2,7 @@ import type { teleconsulta as es } from "../es/teleconsulta";
 
 export const teleconsulta: typeof es = {
   titulo: "Teleconsultation",
+  presencial: "In-person consultation",
   cargando: "Connecting to the video call…",
   avisoGrabacion: "This call is not recorded and is not shared with anyone outside the consultation.",
   proveedorExterno: "The video call runs on an external provider; Medicfy does not store its content.",

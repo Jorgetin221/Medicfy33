@@ -352,7 +352,7 @@ export const clinico: typeof es = {
       "Print this prescription and sign it by hand before handing it to the patient. Once you've handed it over, mark it in the Prescriptions tab of the record.",
     interaccionesInformadas: "Interactions reported",
     duplicidad: "Possible therapeutic duplication",
-    duplicidadCuerpo: "The patient already takes: {medicamentos}. Review before continuing.",
+    duplicidadCuerpo: "The prescription includes more than once: {medicamentos}. Review before continuing.",
     mismaClase: "Same therapeutic class as a medication already active",
     mismaClaseLinea: "{recetado} is the same class as {existente}, which the patient already takes.",
     revisaAntes: "Review before continuing.",
@@ -374,6 +374,9 @@ export const clinico: typeof es = {
     noSePudoTraer: "The last prescription couldn't be retrieved.",
     pdfNoEncontrado: "The PDF for this prescription couldn't be found.",
     indicacionesGenerales: "General instructions (optional)",
+    alergiaNoVerificada: "Allergies could not be checked yet",
+    alergiaNoVerificadaCuerpo: "Review the patient's allergies. When issuing, the prescription is checked against them again and blocked if there is a conflict.",
+    alergiaReaccion: "Recorded reaction: {reaccion} ({severidad}).",
     alergiaBloqueado: "Recorded allergy · blocked",
     alergiaCuerpo: "The patient is allergic to: {agentes}.",
     alergiaDesbloqueo:

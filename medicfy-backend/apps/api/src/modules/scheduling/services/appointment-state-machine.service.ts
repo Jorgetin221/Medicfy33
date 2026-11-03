@@ -28,6 +28,16 @@ function mustGetAppBaseUrl(): string {
   return url;
 }
 
+// Una consulta que termina antes de su hora de fin libera el resto del
+// bloque: si no, la restricción appointments_no_overlap lo sigue
+// ocupando y no se puede atender a nadie más (p. ej. un segundo
+// walk-in) hasta que pase la hora completa del servicio. Solo recorta,
+// nunca alarga, y nunca deja endsAt antes de startsAt.
+export function releaseUnusedTime(appointment: Pick<Appointment, "startsAt" | "endsAt">, now: Date): { endsAt?: Date } {
+  if (now <= appointment.startsAt || now >= appointment.endsAt) return {};
+  return { endsAt: now };
+}
+
 const PAYMENT_WINDOW_MINUTES = 30;
 const NO_SHOW_GRACE_MINUTES = 60;
 const MAX_RESCHEDULES = 2;
@@ -239,7 +249,7 @@ export class AppointmentStateMachineService {
   // (assertSchedulable/availabilitySlots) — esas reglas existen para
   // proteger un espacio FUTURO que alguien más podría reservar; un
   // walk-in no reserva nada, documenta algo que ya está pasando.
-  async startWalkIn(doctorId: string, patientId: string, actorUserId: string): Promise<Appointment> {
+  async startWalkIn(doctorId: string, patientId: string, actorUserId: string, serviceId?: string): Promise<Appointment> {
     // Misma regla de R4 que create(): renueva un vínculo existente,
     // nunca lo crea de cero.
     const priorRelationship = await this.prisma.careRelationship.findFirst({
@@ -254,7 +264,15 @@ export class AppointmentStateMachineService {
       );
     }
 
-    let service = await this.prisma.doctorService.findFirst({ where: { doctorId, isActive: true }, orderBy: { createdAt: "asc" } });
+    // El servicio que el médico eligió manda (duración, precio,
+    // modalidad). Antes se ignoraba y siempre se tomaba el primero
+    // activo. Sin elección, se conserva ese respaldo.
+    let service = serviceId
+      ? await this.prisma.doctorService.findFirst({ where: { id: serviceId, doctorId, isActive: true } })
+      : await this.findDefaultWalkInService(doctorId);
+    if (serviceId && !service) {
+      throw new ApiException("SERVICE_NOT_FOUND", "Servicio no encontrado para este médico.", HttpStatus.NOT_FOUND);
+    }
 
     const doctor = await this.prisma.doctor.findUniqueOrThrow({ where: { id: doctorId } });
     const policy = resolveCancellationPolicy(doctor.cancellationPolicy);
@@ -285,7 +303,11 @@ export class AppointmentStateMachineService {
             doctorId,
             locationId: service.locationId ?? null,
             serviceId: service.id,
-            modality: modalityForServiceType(service.serviceType),
+            // Un walk-in es un paciente que está en el consultorio: es
+            // presencial salvo que el médico haya elegido a propósito un
+            // servicio de teleconsulta. Antes heredaba la modalidad del
+            // primer servicio activo, que podía ser ONLINE.
+            modality: serviceId ? modalityForServiceType(service.serviceType) : "IN_PERSON",
             startsAt,
             endsAt,
             status: "IN_PROGRESS",
@@ -303,10 +325,27 @@ export class AppointmentStateMachineService {
       });
     } catch (error) {
       if (isExclusionViolation(error)) {
-        throw new ApiException("SLOT_TAKEN", "Este horario ya no está disponible.", HttpStatus.CONFLICT);
+        // Un walk-in no eligió horario: "este horario ya no está
+        // disponible" no le dice al médico qué hacer. Lo que choca es
+        // una consulta que sigue abierta o una cita agendada.
+        throw new ApiException(
+          "SLOT_TAKEN",
+          "Ya tienes una consulta en curso o una cita agendada que se cruza con este horario. Cierra la consulta en curso o elige un servicio más corto.",
+          HttpStatus.CONFLICT
+        );
       }
       throw error;
     }
+  }
+
+  // Respaldo de walk-in sin servicio elegido: el primer servicio activo
+  // presencial; uno de teleconsulta solo si no hay otro.
+  private async findDefaultWalkInService(doctorId: string) {
+    const inPerson = await this.prisma.doctorService.findFirst({
+      where: { doctorId, isActive: true, serviceType: { not: "TELECONSULTATION" } },
+      orderBy: { createdAt: "asc" },
+    });
+    return inPerson ?? this.prisma.doctorService.findFirst({ where: { doctorId, isActive: true }, orderBy: { createdAt: "asc" } });
   }
 
   // M5-RN-010/M5-RN-011 (spec §7, v2.3) — agendamiento público
@@ -852,10 +891,12 @@ export class AppointmentStateMachineService {
       );
     }
 
+    const releasedTime = toStatus === "COMPLETED" ? releaseUnusedTime(current, new Date()) : {};
+
     return this.prisma.$transaction(async (tx) => {
       const result = await tx.appointment.updateMany({
         where: { id: appointmentId, status: current.status },
-        data: { status: toStatus, ...extraData },
+        data: { status: toStatus, ...releasedTime, ...extraData },
       });
       if (result.count === 0) {
         throw new ApiException(

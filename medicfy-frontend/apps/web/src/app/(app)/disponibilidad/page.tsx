@@ -61,8 +61,16 @@ interface DoctorService {
   name: string;
   serviceType: "FIRST_VISIT" | "FOLLOW_UP" | "TELECONSULTATION" | "PROCEDURE";
   durationMinutes: number;
-  priceMxn: number;
+  // La API devuelve el precio en centavos (CLAUDE.md §4: dinero en
+  // enteros, nunca float); priceMxn solo existe en el formulario.
+  priceMxnCents: number;
   isActive: boolean;
+}
+
+const MXN_FORMAT = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" });
+
+function formatPriceMxn(cents: number): string {
+  return `${MXN_FORMAT.format(cents / 100)} MXN`;
 }
 
 interface AvailabilityRule {
@@ -283,6 +291,18 @@ function ServicesSection({ accessToken, locations }: { accessToken: string; loca
     }
   }
 
+  // Un servicio con citas no se puede eliminar (el historial lo
+  // referencia); desactivarlo es la salida para dejar de ofrecerlo.
+  async function onToggleActive(service: DoctorService) {
+    setListError(null);
+    try {
+      await apiFetch(`/doctors/me/services/${service.id}`, { method: "PATCH", body: { isActive: !service.isActive }, accessToken });
+      await load();
+    } catch (error) {
+      setListError(error);
+    }
+  }
+
   async function onDelete(id: string) {
     setListError(null);
     try {
@@ -309,13 +329,18 @@ function ServicesSection({ accessToken, locations }: { accessToken: string; loca
             {services.map((s) => (
               <li key={s.id} className="flex items-center justify-between gap-4 rounded-md border border-gray-300 p-3">
                 <p className="text-base text-gray-900">
-                  <span className="font-medium">{s.name}</span> · {translateKeyed(t, SERVICE_TYPE_LABEL_KEYS, s.serviceType)} · {s.durationMinutes} min · $
-                  {s.priceMxn} MXN
+                  <span className="font-medium">{s.name}</span> · {translateKeyed(t, SERVICE_TYPE_LABEL_KEYS, s.serviceType)} · {s.durationMinutes} min ·{" "}
+                  {formatPriceMxn(s.priceMxnCents)}
                   {!s.isActive ? <span className="ml-2 text-sm text-gray-500">{t("disponibilidad.servicios.inactivo")}</span> : null}
                 </p>
-                <button type="button" onClick={() => onDelete(s.id)} className="min-h-[44px] text-sm font-medium text-danger-600 underline">
-                  {t("disponibilidad.consultorios.eliminar")}
-                </button>
+                <div className="flex shrink-0 gap-4">
+                  <button type="button" onClick={() => onToggleActive(s)} className="min-h-[44px] text-sm font-medium text-brand-700 underline">
+                    {s.isActive ? t("disponibilidad.servicios.desactivar") : t("disponibilidad.servicios.activar")}
+                  </button>
+                  <button type="button" onClick={() => onDelete(s.id)} className="min-h-[44px] text-sm font-medium text-danger-600 underline">
+                    {t("disponibilidad.consultorios.eliminar")}
+                  </button>
+                </div>
               </li>
             ))}
           </ul>

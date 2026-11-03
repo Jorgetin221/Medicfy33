@@ -3,9 +3,11 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import {
   prescriptionCreateSchema,
   prescriptionCancelSchema,
+  prescriptionAllergyCheckSchema,
   externalPhysicalPrescriptionCreateSchema,
   type PrescriptionCreateInput,
   type PrescriptionCancelInput,
+  type PrescriptionAllergyCheckInput,
   type ExternalPhysicalPrescriptionCreateInput,
 } from "@medicfy/contracts";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
@@ -49,6 +51,22 @@ export class PrescriptionsController {
       parseIdempotencyKey(idempotencyKeyHeader)
     );
     await this.audit(req, "prescriptions.create", result.prescription.id);
+    return result;
+  }
+
+  // M8-RN-008/M9-RN-008a: verificación previa contra alergias, en
+  // cuanto el médico agrega un medicamento al borrador de receta.
+  // R3: lee alergias del paciente, así que se registra en bitácora.
+  @Post("prescriptions/encounters/:encounterId/allergy-check")
+  @UseGuards(DoctorVerifiedGuard, ResourceAuthorshipGuard)
+  @ApiOperation({ summary: "M8-RN-008: cruza los medicamentos del borrador contra las alergias activas, sin emitir" })
+  async allergyCheck(
+    @Param("encounterId") encounterId: string,
+    @Body(new ZodValidationPipe(prescriptionAllergyCheckSchema)) body: PrescriptionAllergyCheckInput,
+    @Req() req: ClinicalRequest
+  ) {
+    const result = await this.prescriptions.checkAllergiesForDraft(req.clinicalPatientId as string, req.user.sub, body.medicationCatalogIds);
+    await this.audit(req, "prescriptions.allergy_check", encounterId);
     return result;
   }
 

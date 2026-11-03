@@ -77,7 +77,7 @@ export class AppointmentsController {
   async createWalkIn(@Body(new ZodValidationPipe(walkInAppointmentCreateSchema)) body: WalkInAppointmentCreateInput, @Req() req: Request) {
     const { user } = req as AuthenticatedRequest;
     const doctor = await this.actingDoctor(req);
-    return this.appointments.startWalkIn(doctor.id, body.patientId, user.sub);
+    return this.appointments.startWalkIn(doctor.id, body.patientId, user.sub, body.serviceId);
   }
 
   @Get(":id")

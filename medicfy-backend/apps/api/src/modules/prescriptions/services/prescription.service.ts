@@ -44,6 +44,45 @@ export class PrescriptionService {
     private readonly notificationLinkService: NotificationLinkService
   ) {}
 
+  // M8-RN-008/M9-RN-008a: el mismo cruce de create(), pero mientras
+  // el médico compone la receta. Antes el conflicto solo aparecía al
+  // pulsar "emitir": se podía agregar amoxicilina a un paciente con
+  // alergia a penicilinas sin ver nada. No bloquea (no hay nada que
+  // emitir todavía) — el bloqueo duro sigue en create().
+  async checkAllergiesForDraft(patientId: string, doctorUserId: string, medicationCatalogIds: string[]) {
+    const catalogEntries = await this.prisma.medicationCatalog.findMany({ where: { id: { in: medicationCatalogIds } } });
+    const activeAllergies = await this.prisma.patientAllergy.findMany({ where: { patientId, status: "ACTIVE" } });
+    const allergyCheck = crossCheckAllergies(activeAllergies, catalogEntries);
+
+    if (allergyCheck.matches.length > 0) {
+      // Prompt 35: "toda advertencia mostrada queda en bitácora".
+      await this.audit.log({
+        actorUserId: doctorUserId,
+        action: "PRESCRIPTION_ALLERGY_CONFLICT_SHOWN",
+        resourceType: "PRESCRIPTION_DRAFT",
+        patientId,
+        result: "SUCCESS",
+        // B-11 / R2: identificadores de catálogo, no nombres de medicamento.
+        metadata: { medicationCatalogIds: allergyCheck.matches.map((m) => m.medicationCatalogId), basis: allergyCheck.matches.map((m) => m.basis) },
+      });
+    }
+
+    return {
+      conflicts: allergyCheck.matches.map((m) => ({
+        medicationCatalogId: m.medicationCatalogId,
+        medication: m.genericName,
+        substance: m.substance,
+        reaction: m.reaction,
+        severity: m.severity,
+        registeredBy: m.source,
+        registeredAt: m.registeredAt,
+        basis: m.basis,
+        explanation: m.explanation,
+      })),
+      unverifiableAllergies: allergyCheck.unverifiable,
+    };
+  }
+
   // Corrección v2.1 de especificacion-plataforma-clinica-con-ia.md
   // §1: "la firma digital no debe ser obligatoria para imprimir una
   // receta". verify() (contraseña, M9-RN-009) solo aplica a la ruta
@@ -180,11 +219,16 @@ export class PrescriptionService {
     const interactionWarnings = await this.checkInteractions(patientId, doctorUserId, catalogEntries, input.interactionOverrideConfirmed === true);
 
     // M9-RN-008c: duplicidad terapéutica — advertencia, no bloquea.
+    // Recetar el MISMO fármaco que el paciente ya toma es una
+    // renovación, no una duplicidad: antes se marcaba (p. ej. renovar
+    // atorvastatina) y el aviso perdía sentido. Duplicidad por nombre
+    // es el mismo fármaco dos veces en esta receta; la de otro fármaco
+    // de la misma clase la cubre classDuplicates, abajo.
     const activeMedications = await this.prisma.patientMedication.findMany({ where: { patientId, status: "ACTIVE" } });
-    const duplicates = input.items
-      .map((item) => catalogById.get(item.medicationCatalogId))
-      .filter((catalog) => catalog && activeMedications.some((m) => m.genericName.toLowerCase() === catalog.genericName.toLowerCase()))
-      .map((catalog) => catalog?.genericName);
+    const prescribedNames = input.items
+      .map((item) => catalogById.get(item.medicationCatalogId)?.genericName)
+      .filter((name): name is string => name !== undefined);
+    const duplicates = [...new Set(prescribedNames.filter((name, index) => prescribedNames.findIndex((other) => other.toLowerCase() === name.toLowerCase()) !== index))];
 
     // M9-RN-008c extendida (2026-08-24, a petición explícita del
     // usuario — Fase 2 "alertas de interacciones y alergias"): misma

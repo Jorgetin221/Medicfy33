@@ -237,9 +237,17 @@ function PersonalSection({
 // relevante); personales = 1 pulsación por renglón + comentario
 // opcional. El avance se mide por bloques completos (sin
 // NO_INVESTIGADO pendiente en sus renglones base).
+// Tabaquismo, alcohol y otras sustancias se capturan en el bloque de
+// Toxicomanías (substance-uses, otra tabla), no en estos renglones —
+// exigirlos aquí dejaba "no patológicos" incompleto para siempre
+// aunque el médico ya los hubiera registrado.
+const CAPTURED_IN_TOXICOMANIAS = new Set(["tabaquismo", "alcohol", "otras_sustancias"]);
+
 function blockProgress(historyItems: PatientHistoryItem[]): { done: number; total: number } {
   const investigated = (category: Category, keys: string[]) =>
-    keys.every((k) => historyItems.some((i) => i.category === category && i.subtype === k && i.status !== "NO_INVESTIGADO"));
+    keys
+      .filter((k) => !CAPTURED_IN_TOXICOMANIAS.has(k))
+      .every((k) => historyItems.some((i) => i.category === category && i.subtype === k && i.status !== "NO_INVESTIGADO"));
   const blocks = [
     // Matriz heredofamiliar: al menos una celda investigada por fila núcleo.
     ["diabetes", "hipertension", "cancer"].every((k) =>

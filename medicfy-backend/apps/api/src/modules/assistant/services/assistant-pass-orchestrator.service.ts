@@ -10,7 +10,8 @@ import { ASSISTANT_MODEL_PORT, type AssistantModelPort } from "./assistant-model
 // muy por debajo del timeout de la lectura completa. 30s da margen
 // real sin acercarse a esa espera larga (petición explícita del
 // usuario, 2026-09-02: "debe durar menos").
-const SUMMARY_TIMEOUT_MS = 30_000;
+// 60 s: el resumen puede reintentar una vez si la salida no cumple el contrato.
+const SUMMARY_TIMEOUT_MS = 60_000;
 
 // Fase 8 · Prompt 51 — "Los cuatro pases". Cuándo disparar cada pase
 // (blur + 3s estable, botón "Volver a leer") es del frontend (Zona 3,

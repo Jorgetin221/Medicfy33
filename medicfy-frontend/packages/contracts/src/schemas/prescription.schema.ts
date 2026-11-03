@@ -94,6 +94,16 @@ export const prescriptionCancelSchema = z
   .strict();
 export type PrescriptionCancelInput = z.infer<typeof prescriptionCancelSchema>;
 
+// M8-RN-008/M9-RN-008a: cruce contra alergias MIENTRAS se compone la
+// receta, no solo al emitir — el médico ve el conflicto en cuanto
+// agrega el medicamento. El bloqueo real sigue en la emisión.
+export const prescriptionAllergyCheckSchema = z
+  .object({
+    medicationCatalogIds: z.array(z.string().uuid()).min(1).max(50),
+  })
+  .strict();
+export type PrescriptionAllergyCheckInput = z.infer<typeof prescriptionAllergyCheckSchema>;
+
 // M9-RN-014: registro de receta emitida en recetario físico
 // (Grupos I/II) — sin PDF, sin QR, sin pretensión de validez
 // electrónica. El folio es el del recetario oficial COFEPRIS del

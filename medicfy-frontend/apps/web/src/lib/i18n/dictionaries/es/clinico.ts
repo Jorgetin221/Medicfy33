@@ -363,7 +363,7 @@ export const clinico = {
       "Imprime esta receta y fírmala a mano antes de entregarla al paciente. Cuando la hayas entregado, márcalo en la pestaña de Recetas del expediente.",
     interaccionesInformadas: "Interacciones informadas",
     duplicidad: "Posible duplicidad terapéutica",
-    duplicidadCuerpo: "El paciente ya toma: {medicamentos}. Revisa antes de continuar.",
+    duplicidadCuerpo: "La receta incluye más de una vez: {medicamentos}. Revisa antes de continuar.",
     mismaClase: "Misma clase terapéutica que un medicamento ya activo",
     mismaClaseLinea: "{recetado} es de la misma clase que {existente}, que el paciente ya toma.",
     revisaAntes: "Revisa antes de continuar.",
@@ -385,6 +385,9 @@ export const clinico = {
     noSePudoTraer: "No se pudo traer la última receta.",
     pdfNoEncontrado: "No se encontró el PDF de esta receta.",
     indicacionesGenerales: "Indicaciones generales (opcional)",
+    alergiaNoVerificada: "No se pudo verificar alergias todavía",
+    alergiaNoVerificadaCuerpo: "Revisa las alergias del paciente. Al emitir, la receta se vuelve a cruzar contra ellas y se bloquea si hay conflicto.",
+    alergiaReaccion: "Reacción registrada: {reaccion} ({severidad}).",
     alergiaBloqueado: "Alergia registrada · bloqueado",
     alergiaCuerpo: "El paciente tiene alergia a: {agentes}.",
     alergiaDesbloqueo:

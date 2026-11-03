@@ -41,6 +41,8 @@ export const disponibilidad: typeof es = {
     vacio: "No services configured",
     vacioAyuda: 'Add the first one below, for example, "General consultation".',
     inactivo: "(inactive)",
+    desactivar: "Deactivate",
+    activar: "Activate",
     nombre: "Name",
     nombreEjemplo: "General consultation",
     tipo: "Type",

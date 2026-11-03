@@ -189,7 +189,12 @@ function validateModelOutput(rawInput: unknown): AssistantModelOutput | null {
 // ahí, en la pestaña Asistente), solo refleja objetivamente lo ya
 // escrito, rápido.
 const SUMMARY_TOOL_NAME = "emitir_resumen_objetivo";
-const SUMMARY_MAX_OUTPUT_TOKENS = 500;
+// 500 se quedaba corto con un contexto clínico completo (signos,
+// escalas, diagnósticos, recetas): la llamada a la herramienta se
+// cortaba por max_tokens antes de cerrar `resumen` y el médico veía
+// "No se pudo generar el resumen esta vez".
+const SUMMARY_MAX_OUTPUT_TOKENS = 1500;
+const SUMMARY_MAX_ATTEMPTS = 2;
 
 const untypedZodToJsonSchemaForSummary = zodToJsonSchema as (schema: unknown, options: unknown) => Record<string, unknown>;
 
@@ -369,40 +374,76 @@ export async function generateReadingWithClaude(
   return { kind: "unavailable", reason: "INVALID_OUTPUT" };
 }
 
+// El contrato es { resumen: string }. Se acepta también la salida con
+// claves de más (el esquema es .strict()) siempre que `resumen` sea
+// texto no vacío: una clave extra no hace inválido el resumen.
+function extractSummary(toolInput: unknown): string | null {
+  const parsed = assistantSummarySchema.safeParse(toolInput);
+  if (parsed.success) return parsed.data.resumen.trim() || null;
+  if (toolInput && typeof toolInput === "object" && "resumen" in toolInput) {
+    const resumen = (toolInput as { resumen: unknown }).resumen;
+    if (typeof resumen === "string" && resumen.trim().length > 0) return resumen.trim();
+  }
+  return null;
+}
+
 export async function generateSummaryWithClaude(
   client: Anthropic,
   input: AssistantSummaryCallInput,
   logger: AssistantModelLogger
 ): Promise<AssistantSummaryOutcome> {
   const modelId = process.env.ASSISTANT_MODEL_ID ?? DEFAULT_MODEL_ID;
-  let message: Anthropic.Message;
-  try {
-    message = await client.messages.create(
-      {
-        model: modelId,
-        max_tokens: SUMMARY_MAX_OUTPUT_TOKENS,
-        system: buildSummarySystemPrompt(input.locale),
-        messages: [{ role: "user", content: buildSummaryUserMessage(input) }],
-        tools: [SUMMARY_TOOL],
-        tool_choice: { type: "tool", name: SUMMARY_TOOL_NAME, disable_parallel_tool_use: true },
-        thinking: THINKING,
-        output_config: { effort: "low" },
-      },
-      { signal: input.signal }
+  const messages: Anthropic.MessageParam[] = [{ role: "user", content: buildSummaryUserMessage(input) }];
+
+  for (let attempt = 0; attempt < SUMMARY_MAX_ATTEMPTS; attempt++) {
+    let message: Anthropic.Message;
+    try {
+      message = await client.messages.create(
+        {
+          model: modelId,
+          max_tokens: SUMMARY_MAX_OUTPUT_TOKENS,
+          system: buildSummarySystemPrompt(input.locale),
+          messages,
+          tools: [SUMMARY_TOOL],
+          tool_choice: { type: "tool", name: SUMMARY_TOOL_NAME, disable_parallel_tool_use: true },
+          thinking: THINKING,
+          output_config: { effort: "low" },
+        },
+        { signal: input.signal }
+      );
+    } catch (error) {
+      if (error instanceof Anthropic.APIUserAbortError) return { kind: "cancelled" };
+      logger.error(`Claude summary call failed: ${(error as Error).message}`);
+      return { kind: "unavailable", reason: "PROVIDER_ERROR" };
+    }
+
+    const toolUse = message.content.find(
+      (block): block is Anthropic.ToolUseBlock => block.type === "tool_use" && block.name === SUMMARY_TOOL_NAME
     );
-  } catch (error) {
-    if (error instanceof Anthropic.APIUserAbortError) return { kind: "cancelled" };
-    logger.error(`Claude summary call failed: ${(error as Error).message}`);
-    return { kind: "unavailable", reason: "PROVIDER_ERROR" };
+    const resumen = toolUse ? extractSummary(toolUse.input) : null;
+    if (resumen) return { kind: "ok", resumen };
+
+    logger.warn(`Summary output failed validation (attempt=${attempt}, stop_reason=${message.stop_reason}, output_tokens=${message.usage.output_tokens})`);
+
+    // Mismo protocolo que el pase completo: todo tool_use necesita su
+    // tool_result; sin tool_use se reintenta desde el mensaje original.
+    if (toolUse) {
+      messages.push(
+        { role: "assistant", content: message.content },
+        {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: toolUse.id,
+              is_error: true,
+              content: `Tu respuesta no cumplió el contrato: se espera exactamente { "resumen": "<texto de 3 a 5 líneas>" }. Vuelve a llamar a ${SUMMARY_TOOL_NAME}, más breve.`,
+            },
+          ],
+        }
+      );
+    }
   }
 
-  const toolUse = message.content.find(
-    (block): block is Anthropic.ToolUseBlock => block.type === "tool_use" && block.name === SUMMARY_TOOL_NAME
-  );
-  const parsed = toolUse ? assistantSummarySchema.safeParse(toolUse.input) : null;
-  if (!parsed?.success) {
-    logger.warn(`Summary output failed validation (stop_reason=${message.stop_reason}, output_tokens=${message.usage.output_tokens})`);
-    return { kind: "unavailable", reason: "INVALID_OUTPUT" };
-  }
-  return { kind: "ok", resumen: parsed.data.resumen };
+  return { kind: "unavailable", reason: "INVALID_OUTPUT" };
 }

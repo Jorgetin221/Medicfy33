@@ -122,8 +122,10 @@ export type AppointmentCreateInput = z.infer<typeof appointmentCreateSchema>;
 // Pedido explícito del usuario (2026-10-27): "iniciar consulta sin
 // cita" crea una cita real para ahora mismo (ver
 // AppointmentStateMachineService.startWalkIn) — así es LA MISMA
-// pantalla de consulta que la agenda, no una distinta.
-export const walkInAppointmentCreateSchema = z.object({ patientId: z.string().uuid() }).strict();
+// pantalla de consulta que la agenda, no una distinta. `serviceId`
+// es el servicio que el médico eligió; si no eligió ninguno el
+// servidor usa el primero activo (o crea "Consulta general").
+export const walkInAppointmentCreateSchema = z.object({ patientId: z.string().uuid(), serviceId: z.string().uuid().optional() }).strict();
 export type WalkInAppointmentCreateInput = z.infer<typeof walkInAppointmentCreateSchema>;
 
 // M5-RN-010 (v2.3): a propósito SIN patientId — el agendamiento

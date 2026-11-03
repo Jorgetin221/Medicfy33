@@ -6,6 +6,17 @@ export const agenda: typeof esAgenda = {
   nuevaCita: "+ New appointment",
   sinCitasHoy: "No appointments today",
   sinCitasHoyAyuda: "Appointments you book for today will appear here.",
+  sinCitasDia: "No appointments this day",
+  sinCitasDiaAyuda: "There are no appointments booked for the selected date.",
+  navegacion: {
+    etiqueta: "Change day",
+    anterior: "Previous",
+    siguiente: "Next",
+    diaAnterior: "Previous day",
+    diaSiguiente: "Next day",
+    hoy: "Today",
+    elegirFecha: "Pick a date",
+  },
   confirmarCancelar: "Cancel this appointment?",
   confirmarNoShow: "Mark this appointment as a no-show?",
   acciones: {

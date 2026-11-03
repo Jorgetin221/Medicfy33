@@ -99,7 +99,7 @@ function NuevaCitaForm() {
     setIsStartingConsultation(true);
     setStartConsultationError(null);
     try {
-      const appointmentId = await startWalkInAppointment(patientId, accessToken);
+      const appointmentId = await startWalkInAppointment(patientId, accessToken, serviceId || undefined);
       router.push(`/consulta/${appointmentId}`);
     } catch (err) {
       setStartConsultationError(err);

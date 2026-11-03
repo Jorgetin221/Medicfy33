@@ -10,6 +10,8 @@ export interface AppointmentDetail {
   startsAt: string;
   endsAt: string;
   completedWithoutNoteReason: string | null;
+  // IN_PERSON | ONLINE — la decide el servicio de la cita (servidor).
+  modality: "IN_PERSON" | "ONLINE";
   patient: {
     firstName: string;
     lastNamePaternal: string;

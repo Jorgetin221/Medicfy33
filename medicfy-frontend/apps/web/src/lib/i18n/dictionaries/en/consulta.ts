@@ -7,6 +7,7 @@ import type { consulta as es } from "../es/consulta";
 export const consulta: typeof es = {
   iniciarNotaNueva: "Start a new note",
   iniciarTeleconsulta: "Start teleconsultation",
+  iniciarVideollamada: "Open video call",
   preparando: "Preparing the consultation…",
   tiempo: "Elapsed: {transcurrido} · target {objetivo}",
   rebasado: " · over target",

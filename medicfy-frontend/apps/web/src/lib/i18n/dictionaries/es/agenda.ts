@@ -5,6 +5,17 @@ export const agenda = {
   nuevaCita: "+ Nueva cita",
   sinCitasHoy: "Sin citas para hoy",
   sinCitasHoyAyuda: "Las citas que agendes para hoy aparecerán aquí.",
+  sinCitasDia: "Sin citas este día",
+  sinCitasDiaAyuda: "No hay citas agendadas para la fecha elegida.",
+  navegacion: {
+    etiqueta: "Cambiar de día",
+    anterior: "Anterior",
+    siguiente: "Siguiente",
+    diaAnterior: "Día anterior",
+    diaSiguiente: "Día siguiente",
+    hoy: "Hoy",
+    elegirFecha: "Elegir fecha",
+  },
   confirmarCancelar: "¿Cancelar esta cita?",
   confirmarNoShow: "¿Marcar esta cita como no presentado?",
   acciones: {

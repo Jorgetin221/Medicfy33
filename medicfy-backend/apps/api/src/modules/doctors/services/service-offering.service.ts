@@ -69,6 +69,18 @@ export class ServiceOfferingService {
 
   async remove(doctorId: string, serviceId: string): Promise<void> {
     await this.assertOwnership(doctorId, serviceId);
+    // Appointment.serviceId es obligatorio: un servicio con citas no se
+    // puede borrar sin romper el historial de agenda. Antes esto caía
+    // en la llave foránea (P2003) y llegaba como un 500 genérico.
+    const appointmentCount = await this.prisma.appointment.count({ where: { serviceId } });
+    if (appointmentCount > 0) {
+      throw new ApiException(
+        "SERVICE_HAS_APPOINTMENTS",
+        "No se puede eliminar este servicio porque ya tiene citas registradas. Desactívalo para que ya no se pueda agendar; el historial de citas se conserva.",
+        HttpStatus.CONFLICT,
+        { appointmentCount }
+      );
+    }
     await this.prisma.doctorService.delete({ where: { id: serviceId } });
   }
 

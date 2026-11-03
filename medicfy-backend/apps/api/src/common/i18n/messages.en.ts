@@ -199,6 +199,10 @@ export const MESSAGES_EN: Record<string, string> = {
   "Resultado no encontrado.": "Result not found.",
   "Servicio no encontrado para este médico.": "Service not found for this physician.",
   "Servicio no encontrado.": "Service not found.",
+  "Ya tienes una consulta en curso o una cita agendada que se cruza con este horario. Cierra la consulta en curso o elige un servicio más corto.":
+    "You already have a consultation in progress or a booked appointment that overlaps this time. Close the ongoing consultation or choose a shorter service.",
+  "No se puede eliminar este servicio porque ya tiene citas registradas. Desactívalo para que ya no se pueda agendar; el historial de citas se conserva.":
+    "This service cannot be deleted because it already has appointments. Deactivate it so it can no longer be booked; the appointment history is kept.",
   "Sesión del atlas no encontrada.": "Atlas session not found.",
   "Sesión no encontrada en esta instancia.": "Session not found in this instance.",
   "Solicitud de término no encontrada.": "Term request not found.",

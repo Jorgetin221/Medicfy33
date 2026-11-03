@@ -344,7 +344,10 @@ function PostsSection({ slug, doctor }: { slug: string; doctor: PublicDoctor }) 
                   key={m.id}
                   src={`${API_BASE_URL}/doctors/${slug}/public/posts/${post.id}/media/${m.id}`}
                   alt=""
-                  className="h-48 w-full max-w-sm rounded-md object-cover"
+                  // object-contain, no object-cover: la imagen de una
+                  // publicación se ve completa, sin recortes, sea cual
+                  // sea su proporción.
+                  className="max-h-96 w-auto max-w-full rounded-md bg-gray-100 object-contain"
                 />
               ))}
             </div>

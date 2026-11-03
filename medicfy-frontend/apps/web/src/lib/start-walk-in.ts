@@ -6,11 +6,11 @@ import { apiFetch } from "./api-client";
 // ahora mismo (ver AppointmentStateMachineService.startWalkIn) y
 // devuelve su id para navegar ahí. Sin esto, DOC-06 tendría que
 // existir dos veces: una vez con cita y otra sin ella.
-export async function startWalkInAppointment(patientId: string, accessToken: string): Promise<string> {
+export async function startWalkInAppointment(patientId: string, accessToken: string, serviceId?: string): Promise<string> {
   const appointment = await apiFetch<{ id: string }>("/appointments/walk-in", {
     method: "POST",
     accessToken,
-    body: { patientId },
+    body: serviceId ? { patientId, serviceId } : { patientId },
   });
   return appointment.id;
 }

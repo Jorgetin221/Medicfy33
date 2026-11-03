@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useI18n } from "@/lib/i18n/context";
 import type { MessageKey } from "@/lib/i18n/dictionaries";
-import { formatDateLong, formatDateMedium } from "@/lib/i18n/format";
+import { formatCalendarDateLong, formatDateMedium } from "@/lib/i18n/format";
 import { sexAtBirthLabel } from "@/lib/sex-label";
 import { tokenPrimaryRole } from "@/lib/jwt-claims";
 
@@ -66,7 +66,7 @@ export function PatientLinkRequests({
 
   const fields: IdentityField[] = [
     { key: "vinculacion.solicitudes.campos.nombre", value: fullName, compare: (d) => normalizeForCompare(fullName(d)) },
-    { key: "vinculacion.solicitudes.campos.fechaNacimiento", value: (d) => formatDateLong(locale, d.birthDate), compare: (d) => d.birthDate },
+    { key: "vinculacion.solicitudes.campos.fechaNacimiento", value: (d) => formatCalendarDateLong(locale, d.birthDate), compare: (d) => d.birthDate },
     { key: "vinculacion.solicitudes.campos.sexo", value: (d) => sexAtBirthLabel(t, d.sexAtBirth), compare: (d) => d.sexAtBirth },
     { key: "vinculacion.solicitudes.campos.telefono", value: (d) => d.phoneE164, compare: (d) => d.phoneE164 },
     { key: "vinculacion.solicitudes.campos.correo", value: (d) => d.email, compare: (d) => d.email.toLowerCase() },

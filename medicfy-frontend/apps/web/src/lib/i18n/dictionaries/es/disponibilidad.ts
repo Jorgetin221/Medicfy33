@@ -42,6 +42,8 @@ export const disponibilidad = {
     vacio: "Sin servicios configurados",
     vacioAyuda: 'Agrega el primero abajo, por ejemplo, "Consulta general".',
     inactivo: "(inactivo)",
+    desactivar: "Desactivar",
+    activar: "Activar",
     nombre: "Nombre",
     nombreEjemplo: "Consulta general",
     tipo: "Tipo",

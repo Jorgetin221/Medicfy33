@@ -9,7 +9,8 @@ import { Button, ButtonLink } from "@/components/ui/button";
 import { Card, LoadingState, EmptyState, ErrorState } from "@/components/ui/states";
 import { EstadoCita, type AppointmentStatus } from "@/components/ui/status-badge";
 import { useI18n } from "@/lib/i18n/context";
-import { formatTime, formatWeekdayLong } from "@/lib/i18n/format";
+import { formatDateKeyWeekdayLong, formatTime, shiftIsoDateKey, toIsoDateKey } from "@/lib/i18n/format";
+import { DateInput } from "@/components/ui/date-input";
 import type { MessageKey } from "@/lib/i18n/dictionaries";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 
@@ -28,9 +29,9 @@ interface Appointment {
   service: { name: string; durationMinutes: number };
 }
 
-// DOC-01. GET /appointments (extendido en Sprint 5c) ya filtra al día
-// calendario en America/Mexico_City en el servidor — "hoy" nunca se
-// decide en el navegador.
+// DOC-01. GET /appointments?date=YYYY-MM-DD filtra al día calendario
+// en America/Mexico_City en el servidor. El navegador solo elige QUÉ
+// día pedir (hoy, anterior, siguiente o uno del calendario).
 export default function AgendaPage() {
   const router = useRouter();
   const { accessToken, isLoading: authLoading } = useAuth();
@@ -70,15 +71,26 @@ function AgendaList({ accessToken }: { accessToken: string }) {
   const [actionError, setActionError] = useState<unknown>(null);
   const [completingId, setCompletingId] = useState<string | null>(null);
   const [justification, setJustification] = useState("");
+  const todayKey = toIsoDateKey(new Date());
+  const [day, setDay] = useState(todayKey);
+  const isToday = day === todayKey;
 
   const load = useCallback(async () => {
     setError(null);
     try {
-      setAppointments(await apiFetch<Appointment[]>("/appointments", { accessToken }));
+      setAppointments(await apiFetch<Appointment[]>(`/appointments?date=${day}`, { accessToken }));
     } catch (err) {
       setError(err);
     }
-  }, [accessToken]);
+  }, [accessToken, day]);
+
+  function goToDay(nextDay: string) {
+    if (!nextDay || nextDay === day) return;
+    setAppointments(null);
+    setCompletingId(null);
+    setJustification("");
+    setDay(nextDay);
+  }
 
   useEffect(() => {
     void load();
@@ -123,7 +135,7 @@ function AgendaList({ accessToken }: { accessToken: string }) {
     setJustification("");
   }
 
-  const today = formatWeekdayLong(locale, new Date());
+  const dayLabel = formatDateKeyWeekdayLong(locale, day);
 
   const summaryCounts = useMemo(() => {
     const list = appointments ?? [];
@@ -148,7 +160,7 @@ function AgendaList({ accessToken }: { accessToken: string }) {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h1 className="font-heading text-2xl text-gray-900">{t("agenda.titulo")}</h1>
-              <p className="text-base capitalize text-gray-500">{today}</p>
+              <p className="text-base capitalize text-gray-500">{dayLabel}</p>
             </div>
             <div className="flex items-center gap-3">
               <Link
@@ -161,10 +173,29 @@ function AgendaList({ accessToken }: { accessToken: string }) {
             </div>
           </div>
 
+          <nav aria-label={t("agenda.navegacion.etiqueta")} className="flex flex-wrap items-center gap-2">
+            <Button type="button" variant="secondary" onClick={() => goToDay(shiftIsoDateKey(day, -1))} aria-label={t("agenda.navegacion.diaAnterior")}>
+              ‹ {t("agenda.navegacion.anterior")}
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => goToDay(todayKey)} disabled={isToday}>
+              {t("agenda.navegacion.hoy")}
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => goToDay(shiftIsoDateKey(day, 1))} aria-label={t("agenda.navegacion.diaSiguiente")}>
+              {t("agenda.navegacion.siguiente")} ›
+            </Button>
+            <div className="w-48">
+              <DateInput value={day} onChange={goToDay} aria-label={t("agenda.navegacion.elegirFecha")} />
+            </div>
+          </nav>
+
           {appointments === null && !error ? <LoadingState /> : null}
           {error ? <ErrorState error={error} onRetry={load} /> : null}
           {appointments && appointments.length === 0 ? (
-            <EmptyState title={t("agenda.sinCitasHoy")} description={t("agenda.sinCitasHoyAyuda")} />
+            isToday ? (
+              <EmptyState title={t("agenda.sinCitasHoy")} description={t("agenda.sinCitasHoyAyuda")} />
+            ) : (
+              <EmptyState title={t("agenda.sinCitasDia")} description={t("agenda.sinCitasDiaAyuda")} />
+            )
           ) : null}
           {actionError ? <ErrorState error={actionError} /> : null}
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PrescriptionCreateInput, PrescriptionItemCreateInput } from "@medicfy/contracts";
 import { apiFetch, ApiError, newIdempotencyKey } from "@/lib/api-client";
 import { Panel } from "@/components/ui/panel";
@@ -36,6 +36,16 @@ interface IssuedPrescription {
 }
 
 type SignatureRoute = "HANDWRITTEN_AFTER_PRINT" | "ELECTRONIC";
+
+// Misma forma en el 409 PRESCRIPTION_ALLERGY_CONFLICT de la emisión y
+// en POST .../allergy-check (verificación al agregar el medicamento).
+interface AllergyConflict {
+  medication: string;
+  substance: string;
+  reaction: string | null;
+  severity: string;
+  explanation: string;
+}
 
 function toWireItem(item: PrescriptionDraftItem): PrescriptionItemCreateInput {
   return {
@@ -86,7 +96,8 @@ export function PrescriptionPanel({
   // ninguna de las dos por defecto.
   const [signatureRoute, setSignatureRoute] = useState<SignatureRoute | null>(null);
   const [password, setPassword] = useState("");
-  const [allergyConflict, setAllergyConflict] = useState<string[] | null>(null);
+  const [allergyConflict, setAllergyConflict] = useState<AllergyConflict[] | null>(null);
+  const [allergyCheckFailed, setAllergyCheckFailed] = useState(false);
   // Prompt 34 (F4): el bloqueo por alergia se libera SOLO con una
   // justificación clínica escrita — nunca con un checkbox.
   const [allergyJustification, setAllergyJustification] = useState("");
@@ -123,6 +134,7 @@ export function PrescriptionPanel({
     setSignatureRoute(null);
     setPassword("");
     setAllergyConflict(null);
+    setAllergyCheckFailed(false);
     setAllergyJustification("");
     setGraveInteractions(null);
     setInteractionConfirmed(false);
@@ -138,6 +150,37 @@ export function PrescriptionPanel({
     setExternalError(null);
     setExternalRegistered(false);
   }
+
+  // M8-RN-008: el cruce contra alergias corre en cuanto cambia la
+  // lista de medicamentos, no hasta pulsar "emitir". El servidor decide
+  // (familia ATC, principio activo, nombre comercial); aquí solo se
+  // muestra. Si la verificación falla, se avisa — la emisión vuelve a
+  // cruzar y bloquea de todos modos.
+  const medicationIdsKey = items.map((item) => item.medicationCatalogId).join(",");
+  useEffect(() => {
+    if (medicationIdsKey === "") {
+      setAllergyConflict(null);
+      setAllergyCheckFailed(false);
+      return;
+    }
+    let cancelled = false;
+    apiFetch<{ conflicts: AllergyConflict[] }>(`/prescriptions/encounters/${encounterId}/allergy-check`, {
+      method: "POST",
+      accessToken,
+      body: { medicationCatalogIds: [...new Set(medicationIdsKey.split(","))] },
+    })
+      .then((result) => {
+        if (cancelled) return;
+        setAllergyCheckFailed(false);
+        setAllergyConflict(result.conflicts.length > 0 ? result.conflicts : null);
+      })
+      .catch(() => {
+        if (!cancelled) setAllergyCheckFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [medicationIdsKey, encounterId, accessToken]);
 
   function handleClose() {
     resetAll();
@@ -177,8 +220,8 @@ export function PrescriptionPanel({
       onIssued();
     } catch (error) {
       if (error instanceof ApiError && error.code === "PRESCRIPTION_ALLERGY_CONFLICT") {
-        const details = error.details as { medications?: string[] } | undefined;
-        setAllergyConflict(details?.medications ?? []);
+        const details = error.details as { conflicts?: AllergyConflict[] } | undefined;
+        setAllergyConflict(details?.conflicts ?? []);
       } else if (error instanceof ApiError && error.code === "PRESCRIPTION_INTERACTION_GRAVE") {
         const details = error.details as { interactions?: InteractionWarning[] } | undefined;
         setGraveInteractions(details?.interactions ?? []);
@@ -419,9 +462,23 @@ export function PrescriptionPanel({
             <TextInput id="rx-instructions" value={generalInstructions} onChange={(e) => setGeneralInstructions(e.target.value)} />
           </FieldWrapper>
 
+          {allergyCheckFailed && !allergyConflict ? (
+            <Aviso variant="advertencia" title={t("clinico.receta.alergiaNoVerificada")}>
+              {t("clinico.receta.alergiaNoVerificadaCuerpo")}
+            </Aviso>
+          ) : null}
+
           {allergyConflict && (
             <Aviso variant="critico" title={t("clinico.receta.alergiaBloqueado")}>
-              <p>{t("clinico.receta.alergiaCuerpo", { agentes: allergyConflict.join(", ") })}</p>
+              <p>{t("clinico.receta.alergiaCuerpo", { agentes: [...new Set(allergyConflict.map((c) => c.substance))].join(", ") })}</p>
+              <ul className="mt-1 list-disc pl-5 text-base">
+                {allergyConflict.map((c, i) => (
+                  <li key={i}>
+                    <strong>{c.medication}</strong>: {c.explanation}
+                    {c.reaction ? ` ${t("clinico.receta.alergiaReaccion", { reaccion: c.reaction, severidad: c.severity })}` : null}
+                  </li>
+                ))}
+              </ul>
               <p className="mt-1">{t("clinico.receta.alergiaDesbloqueo")}</p>
               <FieldWrapper label={t("clinico.receta.justificacion")} htmlFor="rx-allergy-justification">
                 <Textarea

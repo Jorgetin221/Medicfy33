@@ -14,6 +14,7 @@ import { PrismaClient } from "@prisma/client";
 import * as argon2 from "argon2";
 import cie10Dgis from "./data/cie10-dgis.json" with { type: "json" };
 import { LAB_STUDIES, LAB_STUDY_MOTIVES, LAB_STUDY_TYPES } from "../packages/contracts/src/catalogs/lab-studies";
+import { MEDICATIONS } from "./medication-catalog";
 
 const prisma = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL });
 
@@ -116,109 +117,6 @@ const SPECIALTIES = [
 // la misma fuente.
 const ICD10_CODES: { code: string; description: string }[] = cie10Dgis;
 
-// Catálogo sintético mínimo para probar el flujo de punta a punta
-// (M9-RN-012 bloqueo de Grupo I/II incluido). Nombres genéricos y
-// clasificación de grupo son datos públicos (Ley General de Salud
-// art. 226); dosis/presentaciones aquí son de ejemplo, NO una
-// indicación clínica real — ver el plan sobre no inventar contenido
-// clínico. Poblar el Cuadro Básico completo queda pendiente.
-const MEDICATIONS = [
-  { genericName: "Paracetamol", brandNames: ["Tempra"], presentations: [{ label: "Tableta 500 mg" }], atcCode: "N02BE01", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Ibuprofeno", brandNames: ["Motrin"], presentations: [{ label: "Tableta 400 mg" }], atcCode: "M01AE01", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Amoxicilina", brandNames: ["Amoxil"], presentations: [{ label: "Cápsula 500 mg" }], atcCode: "J01CA04", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Losartán", brandNames: ["Cozaar"], presentations: [{ label: "Tableta 50 mg" }], atcCode: "C09CA01", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Metformina", brandNames: ["Glucophage"], presentations: [{ label: "Tableta 850 mg" }], atcCode: "A10BA02", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Omeprazol", brandNames: ["Losec"], presentations: [{ label: "Cápsula 20 mg" }], atcCode: "A02BC01", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Loratadina", brandNames: ["Clarityne"], presentations: [{ label: "Tableta 10 mg" }], atcCode: "R06AX13", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Diazepam", brandNames: ["Valium"], presentations: [{ label: "Tableta 10 mg" }], atcCode: "N05BA01", controlGroup: "IV" as const, isElectronicallyPrescribable: true },
-  { genericName: "Tramadol", brandNames: ["Tradol"], presentations: [{ label: "Cápsula 50 mg" }], atcCode: "N02AX02", controlGroup: "IV" as const, isElectronicallyPrescribable: true },
-  // Grupo I — deliberadamente incluido para poder probar
-  // PRESCRIPTION_CONTROLLED_BLOCKED de punta a punta (M9-CA-002).
-  { genericName: "Morfina", brandNames: [], presentations: [{ label: "Solución inyectable 10 mg/mL" }], atcCode: "N02AA01", controlGroup: "I" as const, isElectronicallyPrescribable: false },
-
-  // Ampliación del catálogo (2026-09-02) — a petición explícita del
-  // usuario, tras el hallazgo de que 10 medicamentos de demostración
-  // no alcanzan para uso real. Cubre las 4 especialidades piloto
-  // (medicina general, ginecología y obstetricia, pediatría, medicina
-  // interna). Solo medicamentos de identidad y clasificación bien
-  // establecidas (Ley General de Salud art. 226) — nada en zona gris.
-  // Igual que el resto del catálogo, PENDIENTE de validación médica
-  // formal antes de producción (ver seedCatalogosPrompt9 arriba: la
-  // base clínica real llega con licencia).
-
-  // Analgésicos / antiinflamatorios (Grupo VI)
-  { genericName: "Naproxeno", brandNames: ["Flanax"], presentations: [{ label: "Tableta 250 mg" }], atcCode: "M01AE02", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Diclofenaco", brandNames: ["Voltaren"], presentations: [{ label: "Tableta 100 mg" }], atcCode: "M01AB05", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Ketorolaco", brandNames: ["Dolac"], presentations: [{ label: "Ampolleta 30 mg/mL" }], atcCode: "M01AB15", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Metamizol sódico", brandNames: ["Neo-Melubrina"], presentations: [{ label: "Tableta 500 mg" }], atcCode: "N02BB02", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Ácido acetilsalicílico", brandNames: ["Aspirina"], presentations: [{ label: "Tableta 100 mg" }], atcCode: "N02BA01", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Prednisona", brandNames: ["Meticorten"], presentations: [{ label: "Tableta 5 mg" }], atcCode: "H02AB07", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-
-  // Antibióticos (Grupo VI)
-  { genericName: "Azitromicina", brandNames: ["Zithromax"], presentations: [{ label: "Tableta 500 mg" }], atcCode: "J01FA10", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Ciprofloxacino", brandNames: ["Ciproxina"], presentations: [{ label: "Tableta 500 mg" }], atcCode: "J01MA02", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Trimetoprim/Sulfametoxazol", brandNames: ["Bactrim"], presentations: [{ label: "Tableta 800/160 mg" }], atcCode: "J01EE01", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Cefalexina", brandNames: ["Keflex"], presentations: [{ label: "Cápsula 500 mg" }], atcCode: "J01DB01", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Clindamicina", brandNames: ["Dalacin"], presentations: [{ label: "Cápsula 300 mg" }], atcCode: "J01FF01", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Doxiciclina", brandNames: ["Vibramicina"], presentations: [{ label: "Cápsula 100 mg" }], atcCode: "J01AA02", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Nitrofurantoína", brandNames: ["Macrodantina"], presentations: [{ label: "Cápsula 100 mg" }], atcCode: "J01XE01", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Penicilina G benzatínica", brandNames: ["Benzetacil"], presentations: [{ label: "Ampolleta 1,200,000 U" }], atcCode: "J01CE08", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Metronidazol", brandNames: ["Flagyl"], presentations: [{ label: "Tableta 500 mg" }], atcCode: "J01XD01", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Claritromicina", brandNames: ["Klaricid"], presentations: [{ label: "Tableta 500 mg" }], atcCode: "J01FA09", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Amoxicilina/Ácido clavulánico", brandNames: ["Clavulin"], presentations: [{ label: "Tableta 875/125 mg" }], atcCode: "J01CR02", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-
-  // Cardiovascular (Grupo VI)
-  { genericName: "Enalapril", brandNames: ["Renitec"], presentations: [{ label: "Tableta 10 mg" }], atcCode: "C09AA02", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Amlodipino", brandNames: ["Norvasc"], presentations: [{ label: "Tableta 5 mg" }], atcCode: "C08CA01", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Metoprolol", brandNames: ["Lopresor"], presentations: [{ label: "Tableta 100 mg" }], atcCode: "C07AB02", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Hidroclorotiazida", brandNames: ["Microzide"], presentations: [{ label: "Tableta 25 mg" }], atcCode: "C03AA03", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Atorvastatina", brandNames: ["Lipitor"], presentations: [{ label: "Tableta 20 mg" }], atcCode: "C10AA05", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Furosemida", brandNames: ["Lasix"], presentations: [{ label: "Tableta 40 mg" }], atcCode: "C03CA01", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Espironolactona", brandNames: ["Aldactone"], presentations: [{ label: "Tableta 25 mg" }], atcCode: "C03DA01", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Clopidogrel", brandNames: ["Plavix"], presentations: [{ label: "Tableta 75 mg" }], atcCode: "B01AC04", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Warfarina", brandNames: ["Coumadin"], presentations: [{ label: "Tableta 5 mg" }], atcCode: "B01AA03", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-
-  // Diabetes / endocrino (Grupo VI)
-  { genericName: "Glibenclamida", brandNames: ["Daonil"], presentations: [{ label: "Tableta 5 mg" }], atcCode: "A10BB01", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Insulina NPH", brandNames: ["Humulin N"], presentations: [{ label: "Suspensión inyectable 100 UI/mL" }], atcCode: "A10AC01", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Insulina glargina", brandNames: ["Lantus"], presentations: [{ label: "Solución inyectable 100 UI/mL" }], atcCode: "A10AE04", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Levotiroxina", brandNames: ["Synthroid"], presentations: [{ label: "Tableta 100 mcg" }], atcCode: "H03AA01", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-
-  // Gastrointestinal (Grupo VI)
-  { genericName: "Pantoprazol", brandNames: ["Pantozol"], presentations: [{ label: "Tableta 40 mg" }], atcCode: "A02BC02", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Butilhioscina", brandNames: ["Buscapina"], presentations: [{ label: "Tableta 10 mg" }], atcCode: "A03BB01", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Metoclopramida", brandNames: ["Plasil"], presentations: [{ label: "Tableta 10 mg" }], atcCode: "A03FA01", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Loperamida", brandNames: ["Imodium"], presentations: [{ label: "Cápsula 2 mg" }], atcCode: "A07DA03", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Simeticona", brandNames: ["Flatoril"], presentations: [{ label: "Tableta 125 mg" }], atcCode: "A03AX13", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-
-  // Respiratorio / alergia (Grupo VI)
-  { genericName: "Salbutamol", brandNames: ["Ventolin"], presentations: [{ label: "Inhalador 100 mcg/dosis" }], atcCode: "R03AC02", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Budesonida", brandNames: ["Pulmicort"], presentations: [{ label: "Inhalador 200 mcg/dosis" }], atcCode: "R03BA02", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Cetirizina", brandNames: ["Zyrtec"], presentations: [{ label: "Tableta 10 mg" }], atcCode: "R06AE07", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Ambroxol", brandNames: ["Mucosolvan"], presentations: [{ label: "Jarabe 15 mg/5mL" }], atcCode: "R05CB06", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Dimenhidrinato", brandNames: ["Dramamine"], presentations: [{ label: "Tableta 50 mg" }], atcCode: "R06AA02", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-
-  // Ginecología y obstetricia (Grupo VI)
-  { genericName: "Ácido fólico", brandNames: [], presentations: [{ label: "Tableta 5 mg" }], atcCode: "B03BB01", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Sulfato ferroso", brandNames: ["Ferrifol"], presentations: [{ label: "Tableta 200 mg" }], atcCode: "B03AA07", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Progesterona micronizada", brandNames: ["Utrogestan"], presentations: [{ label: "Cápsula 200 mg" }], atcCode: "G03DA04", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Nifedipino", brandNames: ["Adalat"], presentations: [{ label: "Tableta 30 mg" }], atcCode: "C08CA05", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Etinilestradiol/Levonorgestrel", brandNames: ["Microgynon"], presentations: [{ label: "Tableta 0.03/0.15 mg" }], atcCode: "G03AA07", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Clotrimazol", brandNames: ["Canesten"], presentations: [{ label: "Óvulo vaginal 100 mg" }], atcCode: "G01AF02", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Oxitocina", brandNames: ["Syntocinon"], presentations: [{ label: "Ampolleta 10 UI/mL" }], atcCode: "H01BB02", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-
-  // Psiquiatría / neurología no controlados (Grupo VI)
-  { genericName: "Sertralina", brandNames: ["Zoloft"], presentations: [{ label: "Tableta 50 mg" }], atcCode: "N06AB06", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Fluoxetina", brandNames: ["Prozac"], presentations: [{ label: "Cápsula 20 mg" }], atcCode: "N06AB03", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-  { genericName: "Levetiracetam", brandNames: ["Keppra"], presentations: [{ label: "Tableta 500 mg" }], atcCode: "N03AX14", controlGroup: "VI" as const, isElectronicallyPrescribable: true },
-
-  // Controlados adicionales — mismo criterio que Diazepam/Tramadol/
-  // Morfina ya sembrados: clasificación bien establecida, sin zona
-  // gris, para que R5 siga probado también en Grupo II (no solo I/IV).
-  { genericName: "Clonazepam", brandNames: ["Rivotril"], presentations: [{ label: "Tableta 2 mg" }], atcCode: "N03AE01", controlGroup: "IV" as const, isElectronicallyPrescribable: true },
-  { genericName: "Alprazolam", brandNames: ["Tafil"], presentations: [{ label: "Tableta 0.5 mg" }], atcCode: "N05BA12", controlGroup: "IV" as const, isElectronicallyPrescribable: true },
-  { genericName: "Metilfenidato", brandNames: ["Ritalin"], presentations: [{ label: "Tableta 10 mg" }], atcCode: "N06BA04", controlGroup: "II" as const, isElectronicallyPrescribable: false },
-];
 
 // Motor de escalas (SpecialtyFieldSchema, sección ESCALAS): la
 // infraestructura ya existía en el esquema desde M8-RN-014 sin una

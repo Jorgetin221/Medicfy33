@@ -4,6 +4,7 @@
 export const consulta = {
   iniciarNotaNueva: "Iniciar una nota nueva",
   iniciarTeleconsulta: "Iniciar teleconsulta",
+  iniciarVideollamada: "Abrir videollamada",
   preparando: "Preparando la consulta…",
   tiempo: "Tiempo transcurrido: {transcurrido} · objetivo {objetivo}",
   rebasado: " · rebasado",

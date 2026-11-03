@@ -294,7 +294,7 @@ export function ConsultaScreen({ appointmentId, accessToken }: { appointmentId: 
 
   return (
     <>
-      {teleconsultaVisible && !callOpen && <TeleconsultaButton onClick={() => void openCall()} />}
+      {teleconsultaVisible && !callOpen && <TeleconsultaButton onClick={() => void openCall()} modality={appointment.modality} />}
 
       {/* M7 (Teleconsulta, MVP) + pedido explícito del usuario
           (2026-10-27): la llamada abre en el mismo Modal que ya usa el

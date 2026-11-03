@@ -511,13 +511,21 @@ const sampleIcd10 = [
 
 // id: UUID, igual que en el API real — prescriptionItemCreateSchema
 // exige medicationCatalogId uuid; sin id la receta no se podía armar.
-const sampleMedications = [
-  { id: "6f1c2a10-0001-4a00-8000-000000000001", genericName: "Paracetamol", brandNames: ["Tempra"], presentations: [{ label: "Tableta 500 mg" }], atcCode: "N02BE01", controlGroup: "VI", isElectronicallyPrescribable: true },
-  { id: "6f1c2a10-0002-4a00-8000-000000000002", genericName: "Ibuprofeno", brandNames: ["Motrin"], presentations: [{ label: "Tableta 400 mg" }], atcCode: "M01AE01", controlGroup: "VI", isElectronicallyPrescribable: true },
-  { id: "6f1c2a10-0003-4a00-8000-000000000003", genericName: "Amoxicilina", brandNames: ["Amoxil"], presentations: [{ label: "Cápsula 500 mg" }], atcCode: "J01CA04", controlGroup: "VI", isElectronicallyPrescribable: true },
-  { id: "6f1c2a10-0004-4a00-8000-000000000004", genericName: "Losartán", brandNames: ["Cozaar"], presentations: [{ label: "Tableta 50 mg" }], atcCode: "C09CA01", controlGroup: "VI", isElectronicallyPrescribable: true },
-  { id: "6f1c2a10-0005-4a00-8000-000000000005", genericName: "Omeprazol", brandNames: ["Losec"], presentations: [{ label: "Cápsula 20 mg" }], atcCode: "A02BC01", controlGroup: "VI", isElectronicallyPrescribable: true }
-];
+const { MEDICATIONS: catalogMedications } = await import('./prisma/medication-catalog.ts');
+// Los primeros cinco conservan el id que ya tenían en el mock (recetas
+// guardadas en .mock-state los referencian); el resto recibe un UUID
+// determinista por posición.
+const LEGACY_MEDICATION_IDS = {
+  Paracetamol: "6f1c2a10-0001-4a00-8000-000000000001",
+  Ibuprofeno: "6f1c2a10-0002-4a00-8000-000000000002",
+  Amoxicilina: "6f1c2a10-0003-4a00-8000-000000000003",
+  "Losartán": "6f1c2a10-0004-4a00-8000-000000000004",
+  Omeprazol: "6f1c2a10-0005-4a00-8000-000000000005",
+};
+const sampleMedications = catalogMedications.map((m, i) => ({
+  id: LEGACY_MEDICATION_IDS[m.genericName] ?? `6f1c2a11-${String(i + 1).padStart(4, "0")}-4a00-8000-${String(i + 1).padStart(12, "0")}`,
+  ...m,
+}));
 
 // Mismo catálogo que prisma/seed.ts (seedEstudiosFase4), compartido en
 // packages/contracts/src/catalogs/lab-studies.ts: el tipo de cada
@@ -1219,9 +1227,9 @@ const server = http.createServer(async (req, res) => {
     return sendJson(
       isSeedDoctor
         ? [
-            { id: "srv-1", doctorId: "doc-1", name: "Consulta General", durationMinutes: 30, priceCents: 80000, isActive: true },
-            { id: "srv-2", doctorId: "doc-1", name: "Consulta de Seguimiento", durationMinutes: 20, priceCents: 60000, isActive: true },
-            { id: "srv-3", doctorId: "doc-1", name: "Primera Vez", durationMinutes: 45, priceCents: 100000, isActive: true }
+            { id: "srv-1", doctorId: "doc-1", name: "Consulta General", serviceType: "FOLLOW_UP", durationMinutes: 30, priceMxnCents: 80000, isActive: true },
+            { id: "srv-2", doctorId: "doc-1", name: "Consulta de Seguimiento", serviceType: "FOLLOW_UP", durationMinutes: 20, priceMxnCents: 60000, isActive: true },
+            { id: "srv-3", doctorId: "doc-1", name: "Primera Vez", serviceType: "FIRST_VISIT", durationMinutes: 45, priceMxnCents: 100000, isActive: true }
           ]
         : []
     );
@@ -1288,22 +1296,36 @@ const server = http.createServer(async (req, res) => {
     const patient = patients.find(p => p.id === body.patientId);
     if (!patient) return sendError('PATIENT_NOT_FOUND', 'Paciente no encontrado.', 404);
     const startsAt = new Date();
+    // Mismo contrato que startWalkIn: el servicio elegido manda.
+    const walkInServices = {
+      "srv-1": { id: "srv-1", name: "Consulta General", durationMinutes: 30 },
+      "srv-2": { id: "srv-2", name: "Consulta de Seguimiento", durationMinutes: 20 },
+      "srv-3": { id: "srv-3", name: "Primera Vez", durationMinutes: 45 },
+    };
+    const service = walkInServices[body.serviceId] || walkInServices["srv-1"];
     const newApt = {
       id: `apt-${Date.now()}`,
       patientId: patient.id,
       doctorId: "doc-1",
+      serviceId: service.id,
       startsAt: startsAt.toISOString(),
-      endsAt: new Date(startsAt.getTime() + 30 * 60000).toISOString(),
+      endsAt: new Date(startsAt.getTime() + service.durationMinutes * 60000).toISOString(),
       status: "IN_PROGRESS",
       modality: "IN_PERSON",
       videoRoomUrl: null,
       completedWithoutNoteReason: null,
       patient,
-      service: { id: "srv-1", name: "Consulta General", durationMinutes: 30 },
+      service,
       encounter: null
     };
     appointments.push(newApt);
     return sendJson(newApt, 201);
+  }
+
+  // M8-RN-008: verificación de alergias al componer la receta. El mock
+  // no tiene catálogo ATC, así que nunca reporta conflicto.
+  if (pathname.match(/^\/prescriptions\/encounters\/[^\/]+\/allergy-check$/) && method === 'POST') {
+    return sendJson({ conflicts: [], unverifiableAllergies: [] });
   }
 
   // M-27: siguiente cita confirmada del día (la decide el servidor).
@@ -1609,7 +1631,24 @@ const server = http.createServer(async (req, res) => {
 
   if (pathname.match(/^\/records\/patients\/[^\/]+\/history$/)) {
     const patId = pathname.split('/')[3];
-    return sendJson(historyItems[patId] || []);
+    historyItems[patId] ??= [];
+    // Mismo contrato que upsertHistoryItem: una fila por
+    // (categoría, subtipo, parentesco). Antes el POST no guardaba
+    // nada y el avance de antecedentes nunca subía.
+    if (method === 'POST') {
+      const familyRelationship = body.familyRelationship || 'NONE';
+      const list = historyItems[patId];
+      const existing = list.find(i => i.category === body.category && i.subtype === body.subtype && i.familyRelationship === familyRelationship);
+      const data = { status: body.status, freeText: body.freeText ?? null, structuredValue: body.structuredValue ?? null, familyRelationshipDetail: body.familyRelationshipDetail ?? null, updatedAt: new Date().toISOString() };
+      if (existing) {
+        Object.assign(existing, data);
+        return sendJson(existing);
+      }
+      const created = { id: `hist-${Date.now()}`, patientId: patId, category: body.category, subtype: body.subtype, familyRelationship, ...data };
+      list.push(created);
+      return sendJson(created, 201);
+    }
+    return sendJson(historyItems[patId]);
   }
 
   // Forma { encounters, prescriptions, labOrders, standaloneResults }

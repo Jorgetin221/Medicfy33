@@ -3,6 +3,7 @@
 // externo (Daily.co); Medicfy no construye WebRTC propio.
 export const teleconsulta = {
   titulo: "Teleconsulta",
+  presencial: "Consulta presencial",
   cargando: "Conectando con la videollamada…",
   avisoGrabacion: "Esta llamada no se grabará y no se comparte con nadie fuera de la consulta.",
   proveedorExterno: "La videollamada corre sobre un proveedor externo; Medicfy no almacena su contenido.",
